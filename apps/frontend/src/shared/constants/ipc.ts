@@ -33,6 +33,7 @@ export const IPC_CHANNELS = {
   TASK_CHECK_RUNNING: 'task:checkRunning',
   TASK_RESUME_PAUSED: 'task:resumePaused',  // Resume a rate-limited or auth-paused task
   TASK_LOAD_IMAGE_THUMBNAIL: 'task:loadImageThumbnail',
+  TASK_CHECK_WORKTREE_CHANGES: 'task:checkWorktreeChanges',
 
   // Workspace management (for human review)
   // Per-spec architecture: Each spec has its own worktree at .worktrees/{spec-name}/

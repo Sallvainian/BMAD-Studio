@@ -306,6 +306,12 @@ const browserMockAPI: ElectronAPI = {
     data: { path: cliPath }
   }),
 
+  // Worktree Change Detection
+  checkWorktreeChanges: async () => ({
+    success: true,
+    data: { hasChanges: false, changedFileCount: 0 }
+  }),
+
   // Terminal Worktree Operations
   createTerminalWorktree: async () => ({
     success: false,
