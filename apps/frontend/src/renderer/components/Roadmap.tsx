@@ -152,6 +152,7 @@ export function Roadmap({ projectId, onGoToTask }: RoadmapProps) {
         analysis={competitorAnalysis}
         open={showCompetitorViewer}
         onOpenChange={setShowCompetitorViewer}
+        projectId={projectId}
       />
 
       {/* Add Feature Dialog */}

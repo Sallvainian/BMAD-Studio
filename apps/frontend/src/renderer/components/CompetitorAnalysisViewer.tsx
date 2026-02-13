@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TrendingUp, ExternalLink, AlertCircle } from 'lucide-react';
+import { TrendingUp, ExternalLink, AlertCircle, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,21 +9,26 @@ import {
   DialogDescription,
 } from './ui/dialog';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
+import { AddCompetitorDialog } from './AddCompetitorDialog';
 import type { CompetitorAnalysis } from '../../shared/types';
 
 interface CompetitorAnalysisViewerProps {
   analysis: CompetitorAnalysis | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectId: string;
 }
 
 export function CompetitorAnalysisViewer({
   analysis,
   open,
   onOpenChange,
+  projectId,
 }: CompetitorAnalysisViewerProps) {
   const { t } = useTranslation('common');
+  const [showAddDialog, setShowAddDialog] = useState(false);
 
   if (!analysis) return null;
 
@@ -37,6 +43,15 @@ export function CompetitorAnalysisViewer({
           <DialogDescription>
             Analyzed {analysis.competitors.length} competitors to identify market gaps and opportunities
           </DialogDescription>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAddDialog(true)}
+            className="mt-2 self-start"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            {t('competitorAnalysis.addCompetitor')}
+          </Button>
         </DialogHeader>
 
         <ScrollArea className="flex-1 overflow-auto pr-4" style={{ maxHeight: 'calc(85vh - 120px)' }}>
@@ -51,6 +66,11 @@ export function CompetitorAnalysisViewer({
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-lg font-semibold">{competitor.name}</h3>
+                      {(competitor as any).source === 'manual' && (
+                        <Badge variant="outline" className="text-xs">
+                          {t('competitorAnalysis.manualBadge')}
+                        </Badge>
+                      )}
                       {competitor.marketPosition && (
                         <Badge variant="secondary" className="text-xs">
                           {competitor.marketPosition}
@@ -188,6 +208,12 @@ export function CompetitorAnalysisViewer({
           </div>
         </ScrollArea>
       </DialogContent>
+
+      <AddCompetitorDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        projectId={projectId}
+      />
     </Dialog>
   );
 }
