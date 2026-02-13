@@ -66,7 +66,7 @@ export function CompetitorAnalysisViewer({
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="text-lg font-semibold">{competitor.name}</h3>
-                      {(competitor as any).source === 'manual' && (
+                      {competitor.source === 'manual' && (
                         <Badge variant="outline" className="text-xs">
                           {t('competitorAnalysis.manualBadge')}
                         </Badge>
