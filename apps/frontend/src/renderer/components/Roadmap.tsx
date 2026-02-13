@@ -88,6 +88,7 @@ export function Roadmap({ projectId, onGoToTask }: RoadmapProps) {
           onRunNew={handleRunNewAnalysis}
           onSkip={handleSkipAnalysis}
           analysisDate={competitorAnalysisDate}
+          projectId={projectId}
         />
       </>
     );
@@ -147,6 +148,7 @@ export function Roadmap({ projectId, onGoToTask }: RoadmapProps) {
         onRunNew={handleRunNewAnalysis}
         onSkip={handleSkipAnalysis}
         analysisDate={competitorAnalysisDate}
+        projectId={projectId}
       />
 
       {/* Competitor Analysis Viewer */}

@@ -2,6 +2,7 @@
   "competitorAnalysis": {
     "addCompetitor": "Add Competitor",
     "addKnownCompetitors": "Add known competitors",
+    "addKnownCompetitorsDescription": "Manually add competitors you already know about to the existing analysis.",
     "manualBadge": "Manual",
     "noCompetitorsYet": "No competitors added yet",
     "addCompetitorToStart": "Add a competitor to get started"
