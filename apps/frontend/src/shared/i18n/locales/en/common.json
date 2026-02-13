@@ -1,4 +1,11 @@
 {
+  "competitorAnalysis": {
+    "addCompetitor": "Add Competitor",
+    "addKnownCompetitors": "Add known competitors",
+    "manualBadge": "Manual",
+    "noCompetitorsYet": "No competitors added yet",
+    "addCompetitorToStart": "Add a competitor to get started"
+  },
   "projectTab": {
     "settings": "Project settings",
     "showArchived": "Show archived",
