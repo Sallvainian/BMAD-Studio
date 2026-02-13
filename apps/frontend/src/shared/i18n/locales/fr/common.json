@@ -1,4 +1,11 @@
 {
+  "competitorAnalysis": {
+    "addCompetitor": "Ajouter un concurrent",
+    "addKnownCompetitors": "Ajouter des concurrents connus",
+    "manualBadge": "Manuel",
+    "noCompetitorsYet": "Aucun concurrent ajouté pour l'instant",
+    "addCompetitorToStart": "Ajoutez un concurrent pour commencer"
+  },
   "projectTab": {
     "settings": "Paramètres du projet",
     "showArchived": "Afficher archivés",
