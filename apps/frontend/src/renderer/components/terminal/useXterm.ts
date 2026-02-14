@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { terminalBufferManager } from '../../lib/terminal-buffer-manager';
-import { registerOutputCallback, unregisterOutputCallback } from '../../stores/terminal-store';
+import { registerOutputCallback, unregisterOutputCallback, useTerminalStore } from '../../stores/terminal-store';
 import { useTerminalFontSettingsStore } from '../../stores/terminal-font-settings-store';
 import { isWindows as checkIsWindows, isLinux as checkIsLinux } from '../../lib/os-detection';
 import { debounce } from '../../lib/debounce';
@@ -279,9 +279,25 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
     // Use atomic getAndClear to prevent race condition where new output could arrive between get() and clear()
     const bufferedOutput = terminalBufferManager.getAndClear(terminalId);
     if (bufferedOutput && bufferedOutput.length > 0) {
-      debugLog(`[useXterm] Replaying buffered output for terminal: ${terminalId}, buffer size: ${bufferedOutput.length} chars`);
-      xterm.write(bufferedOutput);
-      debugLog(`[useXterm] Buffer replay complete and cleared for terminal: ${terminalId}`);
+      // For Claude-mode terminals that are NOT being restored for the first time
+      // (i.e., project switch remount), skip buffer replay.
+      // Reason: the buffer contains serialized state + accumulated raw PTY output
+      // from the TUI during the unmount period. This concatenation creates garbled
+      // display. The forced SIGWINCH (from pty-manager) will make Claude Code redraw
+      // its full TUI properly.
+      // For initial restore (isRestored=true), we DO replay to show the saved state
+      // as a loading preview while claude --continue starts.
+      const terminal = useTerminalStore.getState().terminals.find(t => t.id === terminalId);
+      const isClaudeActive = terminal?.isClaudeMode || terminal?.pendingClaudeResume;
+      const isInitialRestore = terminal?.isRestored === true;
+
+      if (isClaudeActive && !isInitialRestore) {
+        debugLog(`[useXterm] Skipping buffer replay for Claude-mode terminal on project switch remount: ${terminalId}`);
+      } else {
+        debugLog(`[useXterm] Replaying buffered output for terminal: ${terminalId}, buffer size: ${bufferedOutput.length} chars`);
+        xterm.write(bufferedOutput);
+        debugLog(`[useXterm] Buffer replay complete and cleared for terminal: ${terminalId}`);
+      }
     } else {
       debugLog(`[useXterm] No buffered output to replay for terminal: ${terminalId}`);
     }
