@@ -71,6 +71,7 @@ interface RoadmapState {
   updateFeaturePhase: (featureId: string, newPhaseId: string) => void;
   addFeature: (feature: Omit<RoadmapFeature, 'id'>) => string;
   addCompetitor: (input: ManualCompetitorInput) => string;
+  removeCompetitor: (competitorId: string) => void;
   updateCompetitorAnalysis: (analysis: CompetitorAnalysis) => void;
 }
 
@@ -319,6 +320,21 @@ export const useRoadmapStore = create<RoadmapState>((set) => ({
     });
 
     return newId;
+  },
+
+  // Remove a competitor by ID (used for rollback on save failure)
+  removeCompetitor: (competitorId) => {
+    set((state) => {
+      if (!state.competitorAnalysis) return state;
+      return {
+        competitorAnalysis: {
+          ...state.competitorAnalysis,
+          competitors: state.competitorAnalysis.competitors.filter(
+            (c) => c.id !== competitorId
+          )
+        }
+      };
+    });
   },
 
   // Replace the entire competitor analysis object

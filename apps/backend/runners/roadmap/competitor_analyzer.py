@@ -105,6 +105,8 @@ class CompetitorAnalyzer:
             print(f"  {muted('Error:')} {err}")
 
         self._create_error_analysis_file("Analysis failed after retries", errors)
+        if manual_competitors:
+            self._merge_manual_competitors(manual_competitors)
 
         # Return success=True for graceful degradation (don't block roadmap generation)
         return RoadmapPhaseResult(

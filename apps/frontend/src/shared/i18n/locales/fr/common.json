@@ -1,11 +1,21 @@
 {
   "competitorAnalysis": {
     "addCompetitor": "Ajouter un concurrent",
-    "addKnownCompetitors": "Ajouter des concurrents connus",
-    "addKnownCompetitorsDescription": "Ajoutez manuellement les concurrents que vous connaissez déjà à l'analyse existante.",
     "manualBadge": "Manuel",
     "noCompetitorsYet": "Aucun concurrent ajouté pour l'instant",
-    "addCompetitorToStart": "Ajoutez un concurrent pour commencer"
+    "addCompetitorToStart": "Ajoutez un concurrent pour commencer",
+    "analysisResults": "Résultats de l'analyse concurrentielle",
+    "analysisDescription": "{{count}} concurrents analysés pour identifier les opportunités et lacunes du marché",
+    "visit": "Visiter",
+    "identifiedPainPoints": "Points de douleur identifiés ({{count}})",
+    "noPainPointsIdentified": "Aucun point de douleur identifié",
+    "source": "Source :",
+    "frequency": "Fréquence :",
+    "opportunity": "Opportunité :",
+    "marketInsightsSummary": "Résumé des perspectives du marché",
+    "topPainPoints": "Principaux points de douleur :",
+    "differentiatorOpportunities": "Opportunités de différenciation :",
+    "marketTrends": "Tendances du marché :"
   },
   "projectTab": {
     "settings": "Paramètres du projet",

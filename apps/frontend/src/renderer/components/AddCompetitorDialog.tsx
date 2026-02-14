@@ -155,6 +155,8 @@ export function AddCompetitorDialog({
       if (competitorAnalysis) {
         const result = await window.electronAPI.saveCompetitorAnalysis(projectId, competitorAnalysis);
         if (!result.success) {
+          // Rollback store state since save failed
+          useRoadmapStore.getState().removeCompetitor(newCompetitorId);
           throw new Error(result.error || 'Failed to save competitor analysis');
         }
       }

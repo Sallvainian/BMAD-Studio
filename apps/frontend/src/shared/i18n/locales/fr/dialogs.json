@@ -204,7 +204,21 @@
     "knowYourCompetitors": "Vous connaissez déjà vos concurrents ?",
     "addThemDirectly": "Ajoutez-les directement pour améliorer la précision de l'analyse",
     "addKnownCompetitors": "Ajouter des concurrents connus",
+    "addKnownCompetitorsDescription": "Ajoutez manuellement les concurrents que vous connaissez déjà à l'analyse existante.",
     "competitorsAdded": "{{count}} ajouté(s)"
+  },
+  "existingCompetitorAnalysis": {
+    "title": "Options d'analyse concurrentielle",
+    "description": "Ce projet a une analyse concurrentielle existante du {{date}}",
+    "recently": "récemment",
+    "useExistingTitle": "Utiliser l'analyse existante",
+    "recommended": "(Recommandé)",
+    "useExistingDescription": "Réutilisez les informations concurrentielles que vous avez déjà. Plus rapide et sans recherches web supplémentaires.",
+    "runNewTitle": "Lancer une nouvelle analyse",
+    "runNewDescription": "Effectuer de nouvelles recherches web pour obtenir des informations concurrentielles à jour. Prend plus de temps.",
+    "skipTitle": "Ignorer l'analyse concurrentielle",
+    "skipDescription": "Générer la feuille de route sans informations concurrentielles.",
+    "cancel": "Annuler"
   },
   "versionWarning": {
     "title": "Action requise",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search, Globe, AlertTriangle, TrendingUp, UserPlus } from 'lucide-react';
 import {
@@ -32,6 +32,13 @@ export function CompetitorAnalysisDialog({
   const { t } = useTranslation(['dialogs']);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addedCount, setAddedCount] = useState(0);
+
+  // Reset addedCount when dialog reopens
+  useEffect(() => {
+    if (open) {
+      setAddedCount(0);
+    }
+  }, [open]);
 
   const handleAccept = () => {
     onAccept();

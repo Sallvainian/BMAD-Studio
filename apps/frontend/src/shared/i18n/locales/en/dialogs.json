@@ -204,7 +204,21 @@
     "knowYourCompetitors": "Already know your competitors?",
     "addThemDirectly": "Add them directly to improve analysis accuracy",
     "addKnownCompetitors": "Add Known Competitors",
+    "addKnownCompetitorsDescription": "Manually add competitors you already know about to the existing analysis.",
     "competitorsAdded": "{{count}} added"
+  },
+  "existingCompetitorAnalysis": {
+    "title": "Competitor Analysis Options",
+    "description": "This project has an existing competitor analysis from {{date}}",
+    "recently": "recently",
+    "useExistingTitle": "Use existing analysis",
+    "recommended": "(Recommended)",
+    "useExistingDescription": "Reuse the competitor insights you already have. Faster and no additional web searches.",
+    "runNewTitle": "Run new analysis",
+    "runNewDescription": "Perform fresh web searches to get updated competitor information. Takes longer.",
+    "skipTitle": "Skip competitor analysis",
+    "skipDescription": "Generate roadmap without any competitor insights.",
+    "cancel": "Cancel"
   },
   "versionWarning": {
     "title": "Action Required",

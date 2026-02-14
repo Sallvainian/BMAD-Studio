@@ -31,7 +31,7 @@ export function ExistingCompetitorAnalysisDialog({
   analysisDate,
   projectId,
 }: ExistingCompetitorAnalysisDialogProps) {
-  const { t } = useTranslation(['common']);
+  const { t } = useTranslation(['dialogs']);
   const [showAddDialog, setShowAddDialog] = useState(false);
 
   const handleUseExisting = () => {
@@ -50,7 +50,7 @@ export function ExistingCompetitorAnalysisDialog({
   };
 
   const formatDate = (date?: Date) => {
-    if (!date) return 'recently';
+    if (!date) return t('dialogs:existingCompetitorAnalysis.recently');
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
@@ -65,10 +65,10 @@ export function ExistingCompetitorAnalysisDialog({
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-foreground">
               <TrendingUp className="h-5 w-5 text-primary" />
-              Competitor Analysis Options
+              {t('dialogs:existingCompetitorAnalysis.title')}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground">
-              This project has an existing competitor analysis from {formatDate(analysisDate)}
+              {t('dialogs:existingCompetitorAnalysis.description', { date: formatDate(analysisDate) })}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -82,11 +82,11 @@ export function ExistingCompetitorAnalysisDialog({
                 <CheckCircle className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
-                    Use existing analysis
-                    <span className="text-xs text-primary font-normal">(Recommended)</span>
+                    {t('dialogs:existingCompetitorAnalysis.useExistingTitle')}
+                    <span className="text-xs text-primary font-normal">{t('dialogs:existingCompetitorAnalysis.recommended')}</span>
                   </h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Reuse the competitor insights you already have. Faster and no additional web searches.
+                    {t('dialogs:existingCompetitorAnalysis.useExistingDescription')}
                   </p>
                 </div>
               </div>
@@ -101,10 +101,10 @@ export function ExistingCompetitorAnalysisDialog({
                 <RefreshCw className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="text-sm font-medium text-foreground">
-                    Run new analysis
+                    {t('dialogs:existingCompetitorAnalysis.runNewTitle')}
                   </h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Perform fresh web searches to get updated competitor information. Takes longer.
+                    {t('dialogs:existingCompetitorAnalysis.runNewDescription')}
                   </p>
                 </div>
               </div>
@@ -119,10 +119,10 @@ export function ExistingCompetitorAnalysisDialog({
                 <UserPlus className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="text-sm font-medium text-foreground">
-                    {t('common:competitorAnalysis.addKnownCompetitors')}
+                    {t('dialogs:competitorAnalysis.addKnownCompetitors')}
                   </h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {t('common:competitorAnalysis.addKnownCompetitorsDescription')}
+                    {t('dialogs:competitorAnalysis.addKnownCompetitorsDescription')}
                   </p>
                 </div>
               </div>
@@ -137,10 +137,10 @@ export function ExistingCompetitorAnalysisDialog({
                 <Globe className="h-5 w-5 text-muted-foreground/60 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="text-sm font-medium text-muted-foreground">
-                    Skip competitor analysis
+                    {t('dialogs:existingCompetitorAnalysis.skipTitle')}
                   </h4>
                   <p className="text-xs text-muted-foreground/80 mt-1">
-                    Generate roadmap without any competitor insights.
+                    {t('dialogs:existingCompetitorAnalysis.skipDescription')}
                   </p>
                 </div>
               </div>
@@ -149,7 +149,7 @@ export function ExistingCompetitorAnalysisDialog({
 
           <AlertDialogFooter className="sm:justify-start">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('dialogs:existingCompetitorAnalysis.cancel')}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
