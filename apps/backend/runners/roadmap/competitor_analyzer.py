@@ -31,6 +31,7 @@ class CompetitorAnalyzer:
         self.refresh = refresh
         self.agent_executor = agent_executor
         self.analysis_file = output_dir / "competitor_analysis.json"
+        self.manual_competitors_file = output_dir / "manual_competitors.json"
         self.discovery_file = output_dir / "roadmap_discovery.json"
         self.project_index_file = output_dir / "project_index.json"
 
@@ -119,26 +120,47 @@ class CompetitorAnalyzer:
         )
 
     def _get_manual_competitors(self) -> list[dict]:
-        """Extract manually-added competitors from the existing analysis file.
+        """Extract manually-added competitors from the dedicated manual file and analysis file.
 
+        Reads from manual_competitors.json (primary, never overwritten by agent) and
+        falls back to competitor_analysis.json. Deduplicates by competitor ID.
         Returns a list of competitor dicts where source == 'manual'.
-        Returns an empty list if the file doesn't exist or is malformed.
         """
-        if not self.analysis_file.exists():
-            return []
+        competitors_by_id: dict[str, dict] = {}
 
-        try:
-            with open(self.analysis_file, encoding="utf-8") as f:
-                data = json.load(f)
+        # Primary source: dedicated manual competitors file (never overwritten by agent)
+        if self.manual_competitors_file.exists():
+            try:
+                with open(self.manual_competitors_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                for c in data.get("competitors", []):
+                    if isinstance(c, dict) and c.get("id"):
+                        competitors_by_id[c["id"]] = c
+            except (json.JSONDecodeError, OSError) as e:
+                print_status(
+                    f"Warning: could not read manual competitors file: {e}", "warning"
+                )
 
-            return [
-                c
-                for c in data.get("competitors", [])
-                if isinstance(c, dict) and c.get("source") == "manual"
-            ]
-        except (json.JSONDecodeError, OSError) as e:
-            print_status(f"Warning: could not read manual competitors: {e}", "warning")
-            return []
+        # Fallback: also check analysis file for manual competitors
+        if self.analysis_file.exists():
+            try:
+                with open(self.analysis_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                for c in data.get("competitors", []):
+                    if (
+                        isinstance(c, dict)
+                        and c.get("source") == "manual"
+                        and c.get("id")
+                        and c["id"] not in competitors_by_id
+                    ):
+                        competitors_by_id[c["id"]] = c
+            except (json.JSONDecodeError, OSError) as e:
+                print_status(
+                    f"Warning: could not read manual competitors from analysis: {e}",
+                    "warning",
+                )
+
+        return list(competitors_by_id.values())
 
     def _merge_manual_competitors(self, manual_competitors: list[dict]) -> None:
         """Merge manual competitors back into the newly-generated analysis file.

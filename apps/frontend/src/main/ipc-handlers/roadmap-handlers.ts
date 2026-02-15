@@ -882,6 +882,44 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
           );
         });
 
+        // Also persist manual competitors to a separate file that the backend
+        // agent never overwrites, preventing data loss during concurrent analysis
+        const manualCompetitors = competitorAnalysis.competitors.filter(
+          (c) => c.source === "manual"
+        );
+        if (manualCompetitors.length > 0) {
+          const manualCompetitorsPath = path.join(
+            roadmapDir,
+            AUTO_BUILD_PATHS.MANUAL_COMPETITORS
+          );
+          const manualSerialized = {
+            competitors: manualCompetitors.map((c) => ({
+              id: c.id,
+              name: c.name,
+              url: c.url,
+              description: c.description,
+              relevance: c.relevance,
+              pain_points: c.painPoints.map((p) => ({
+                id: p.id,
+                description: p.description,
+                source: p.source,
+                severity: p.severity,
+                frequency: p.frequency,
+                opportunity: p.opportunity,
+              })),
+              strengths: c.strengths,
+              market_position: c.marketPosition,
+              source: c.source,
+            })),
+            updated_at: new Date().toISOString(),
+          };
+          await writeFileWithRetry(
+            manualCompetitorsPath,
+            JSON.stringify(manualSerialized, null, 2),
+            { encoding: "utf-8" }
+          );
+        }
+
         debugLog("[Roadmap Handler] Saved competitor analysis:", { projectId });
         return { success: true };
       } catch (error) {
