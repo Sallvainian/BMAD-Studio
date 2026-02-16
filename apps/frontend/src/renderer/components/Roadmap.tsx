@@ -75,11 +75,14 @@ export function Roadmap({ projectId, onGoToTask }: RoadmapProps) {
 
   const confirmArchiveFeature = async () => {
     if (!pendingArchiveFeatureId) return;
-    await deleteFeature(pendingArchiveFeatureId);
-    if (selectedFeature?.id === pendingArchiveFeatureId) {
-      setSelectedFeature(null);
+    try {
+      await deleteFeature(pendingArchiveFeatureId);
+      if (selectedFeature?.id === pendingArchiveFeatureId) {
+        setSelectedFeature(null);
+      }
+    } finally {
+      setPendingArchiveFeatureId(null);
     }
-    setPendingArchiveFeatureId(null);
   };
 
   // Show generation progress

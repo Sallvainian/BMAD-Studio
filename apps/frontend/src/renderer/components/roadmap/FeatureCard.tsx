@@ -95,6 +95,7 @@ export function FeatureCard({
               variant="ghost"
               size="sm"
               title={t('roadmap.archiveFeature')}
+              aria-label={t('accessibility.archiveFeatureAriaLabel')}
               onClick={(e) => {
                 e.stopPropagation();
                 onArchive(feature.id);
