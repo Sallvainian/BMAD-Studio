@@ -85,6 +85,7 @@ from .memory_manager import debug_memory_system_status, get_graphiti_context
 from .session import post_session_processing, run_agent_session
 from .utils import (
     find_phase_for_subtask,
+    find_subtask_in_plan,
     get_commit_count,
     get_latest_commit,
     load_implementation_plan,
@@ -112,6 +113,11 @@ _EXCLUDE_DIRS = frozenset(
         ".auto-claude",
         "coverage",
         ".tox",
+        ".idea",
+        ".vscode",
+        "vendor",
+        "target",
+        "out",
     }
 )
 
@@ -164,8 +170,40 @@ def _build_file_index(
     return index
 
 
+def _score_and_select(candidates: list[tuple[str, float]]) -> str | None:
+    """
+    Select the best candidate from a scored list of (path, score) pairs.
+
+    Requires a minimum score of 8.0 and a gap of at least 3.0 from the
+    runner-up to avoid ambiguous matches.
+
+    Args:
+        candidates: List of (relative_path, score) tuples
+
+    Returns:
+        Best path if unambiguous, None otherwise
+    """
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    best_path, best_score = candidates[0]
+
+    if best_score < 8.0:
+        return None
+
+    if len(candidates) > 1:
+        runner_up_score = candidates[1][1]
+        if best_score - runner_up_score < 3.0:
+            return None
+
+    return best_path
+
+
 def _find_correct_path_indexed(
-    missing_path: str, parent_parts: tuple[str, ...], file_index: dict
+    missing_path: str,
+    parent_parts: tuple[str, ...],
+    file_index: dict[str, list[tuple[str, Path]]],
 ) -> str | None:
     """
     Find the correct path using a pre-built file index (no tree walk needed).
@@ -211,21 +249,7 @@ def _find_correct_path_indexed(
         score -= 0.5 * depth_diff
         candidates.append((rel_str, score))
 
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    best_path, best_score = candidates[0]
-
-    if best_score < 8.0:
-        return None
-
-    if len(candidates) > 1:
-        runner_up_score = candidates[1][1]
-        if best_score - runner_up_score < 3.0:
-            return None
-
-    return best_path
+    return _score_and_select(candidates)
 
 
 def _find_correct_path(missing_path: str, project_dir: Path) -> str | None:
@@ -294,23 +318,7 @@ def _find_correct_path(missing_path: str, project_dir: Path) -> str | None:
 
             candidates.append((rel_str, score))
 
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda x: x[1], reverse=True)
-    best_path, best_score = candidates[0]
-
-    # Require minimum score
-    if best_score < 8.0:
-        return None
-
-    # Require clear winner (gap >= 3.0 from runner-up)
-    if len(candidates) > 1:
-        runner_up_score = candidates[1][1]
-        if best_score - runner_up_score < 3.0:
-            return None  # Ambiguous match
-
-    return best_path
+    return _score_and_select(candidates)
 
 
 def _auto_correct_subtask_files(
@@ -336,8 +344,21 @@ def _auto_correct_subtask_files(
     corrections: dict[str, str] = {}
     still_missing: list[str] = []
 
+    # Build file index once for all missing files (avoids repeated os.walk)
+    suffixes_needed: set[str] = set()
     for missing_path in missing_files:
-        corrected = _find_correct_path(missing_path, project_dir)
+        suffix = Path(missing_path).suffix
+        if suffix:
+            suffixes_needed.add(suffix)
+    file_index = (
+        _build_file_index(project_dir, suffixes_needed) if suffixes_needed else {}
+    )
+
+    for missing_path in missing_files:
+        missing = Path(missing_path)
+        corrected = _find_correct_path_indexed(
+            missing_path, missing.parent.parts, file_index
+        )
         if corrected:
             corrections[missing_path] = corrected
             logger.info(f"Auto-corrected file path: {missing_path} -> {corrected}")
@@ -361,24 +382,18 @@ def _auto_correct_subtask_files(
 
             subtask_id = subtask.get("id")
             if subtask_id is not None:
-                found = False
-                for phase in plan.get("phases", []):
-                    for plan_subtask in phase.get("subtasks", []):
-                        if plan_subtask.get("id") == subtask_id:
-                            plan_files = plan_subtask.get("files_to_modify", [])
-                            plan_subtask["files_to_modify"] = [
-                                corrections.get(f, f) for f in plan_files
-                            ]
-                            found = True
-                            break
-                    if found:
-                        break
+                plan_subtask = find_subtask_in_plan(plan, subtask_id)
+                if plan_subtask:
+                    plan_files = plan_subtask.get("files_to_modify", [])
+                    plan_subtask["files_to_modify"] = [
+                        corrections.get(f, f) for f in plan_files
+                    ]
 
             write_json_atomic(plan_file, plan)
             logger.info(
                 f"Persisted {len(corrections)} path correction(s) to implementation_plan.json"
             )
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+        except OSError as e:
             logger.warning(f"Failed to persist path corrections: {e}")
 
     return still_missing
@@ -413,7 +428,7 @@ def _validate_plan_file_paths(spec_dir: Path, project_dir: Path) -> str | None:
 
     # First pass: collect all missing files and their suffixes
     missing_entries: list[
-        tuple[dict, int, str]
+        tuple[list[str], int, str]
     ] = []  # (subtask_files_list, index, path)
     suffixes_needed: set[str] = set()
 
@@ -459,7 +474,7 @@ def _validate_plan_file_paths(spec_dir: Path, project_dir: Path) -> str | None:
         try:
             write_json_atomic(plan_file, plan)
             logger.info(f"Persisted {corrections_made} post-plan path correction(s)")
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+        except OSError as e:
             logger.warning(f"Failed to persist post-plan corrections: {e}")
 
     if not all_missing:
