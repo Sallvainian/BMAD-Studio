@@ -350,6 +350,15 @@ class SpecOrchestrator:
             "planning": phase_executor.phase_planning,
             "validation": phase_executor.phase_validation,
             "quick_spec": phase_executor.phase_quick_spec,
+            # BMAD phases (legacy)
+            "bmad_analysis": phase_executor.phase_bmad_analysis,
+            "bmad_planning": phase_executor.phase_bmad_planning,
+            "bmad_solutioning": phase_executor.phase_bmad_solutioning,
+            # BMAD phases (granular)
+            "bmad_prd_writing": phase_executor.phase_bmad_prd_writing,
+            "bmad_architecture": phase_executor.phase_bmad_architecture,
+            "bmad_story_planning": phase_executor.phase_bmad_story_planning,
+            "bmad_quick_spec": phase_executor.phase_bmad_quick_spec,
         }
 
         # Get remaining phases to run based on complexity

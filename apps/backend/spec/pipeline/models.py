@@ -273,4 +273,13 @@ PHASE_DISPLAY: dict[str, tuple[str, str]] = {
     "self_critique": ("SPEC SELF-CRITIQUE", Icons.GEAR),
     "planning": ("IMPLEMENTATION PLANNING", Icons.SUBTASK),
     "validation": ("FINAL VALIDATION", Icons.SUCCESS),
+    # BMAD phases (legacy)
+    "bmad_analysis": ("BMAD ANALYSIS", Icons.SEARCH),
+    "bmad_planning": ("BMAD PRD CREATION", Icons.FILE),
+    "bmad_solutioning": ("BMAD SOLUTIONING", Icons.SUBTASK),
+    # BMAD phases (granular)
+    "bmad_prd_writing": ("BMAD PRD WRITING", Icons.FILE),
+    "bmad_architecture": ("BMAD ARCHITECTURE", Icons.GEAR),
+    "bmad_story_planning": ("BMAD STORY PLANNING", Icons.SUBTASK),
+    "bmad_quick_spec": ("BMAD QUICK SPEC", Icons.LIGHTNING),
 }
