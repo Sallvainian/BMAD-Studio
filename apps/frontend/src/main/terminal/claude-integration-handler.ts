@@ -1211,7 +1211,10 @@ export function resumeClaude(
       console.warn('[ClaudeIntegration:resumeClaude] sessionId parameter is deprecated and ignored; using claude --continue instead');
     }
 
-    const command = `${pathPrefix}${escapedClaudeCmd} --continue`;
+    // Preserve YOLO mode flag from terminal's stored state
+    const extraFlags = terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : '';
+
+    const command = `${pathPrefix}${escapedClaudeCmd} --continue${extraFlags}`;
 
     // Use PtyManager.writeToPty for safer write with error handling
     PtyManager.writeToPty(terminal, `${command}\r`);

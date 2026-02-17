@@ -71,6 +71,7 @@ export const terminalMachine = createMachine(
       claude_starting: {
         on: {
           CLAUDE_ACTIVE: { target: 'claude_active', actions: 'setClaudeSessionId' },
+          CLAUDE_BUSY: { actions: 'setBusy' },
           CLAUDE_EXITED: { target: 'shell_ready', actions: ['setError', 'clearSession'] },
           SHELL_EXITED: { target: 'exited', actions: 'clearSession' },
           RESET: { target: 'idle', actions: 'resetContext' },
@@ -78,7 +79,7 @@ export const terminalMachine = createMachine(
       },
       claude_active: {
         on: {
-          CLAUDE_ACTIVE: { actions: 'setClaudeSessionId' },
+          CLAUDE_ACTIVE: { actions: 'updateClaudeSessionId' },
           CLAUDE_BUSY: { actions: 'setBusy' },
           CLAUDE_EXITED: { target: 'shell_ready', actions: ['setError', 'clearSession'] },
           SWAP_INITIATED: {
@@ -94,12 +95,15 @@ export const terminalMachine = createMachine(
       swapping: {
         on: {
           SWAP_SESSION_CAPTURED: {
+            guard: 'isCapturingPhase',
             actions: ['setCapturedSession', 'setSwapPhaseMigrating'],
           },
           SWAP_MIGRATED: {
+            guard: 'isMigratingPhase',
             actions: 'setSwapPhaseRecreating',
           },
           SWAP_TERMINAL_RECREATED: {
+            guard: 'isRecreatingPhase',
             actions: 'setSwapPhaseResuming',
           },
           SWAP_RESUME_COMPLETE: {
@@ -117,6 +121,7 @@ export const terminalMachine = createMachine(
       pending_resume: {
         on: {
           CLAUDE_ACTIVE: { target: 'claude_active', actions: 'setClaudeSessionId' },
+          CLAUDE_BUSY: { actions: 'setBusy' },
           RESUME_COMPLETE: { target: 'claude_active', actions: 'setClaudeSessionId' },
           RESUME_FAILED: { target: 'shell_ready', actions: ['setError', 'clearSession'] },
           SHELL_EXITED: { target: 'exited', actions: 'clearSession' },
@@ -134,6 +139,9 @@ export const terminalMachine = createMachine(
   {
     guards: {
       hasActiveSession: ({ context }) => context.claudeSessionId !== undefined,
+      isCapturingPhase: ({ context }) => context.swapPhase === 'capturing',
+      isMigratingPhase: ({ context }) => context.swapPhase === 'migrating',
+      isRecreatingPhase: ({ context }) => context.swapPhase === 'recreating',
     },
     actions: {
       setProfileId: assign({
@@ -148,16 +156,16 @@ export const terminalMachine = createMachine(
           if (event.type === 'RESUME_REQUESTED') return event.claudeSessionId;
           return undefined;
         },
-        // Preserve isBusy during self-transitions (CLAUDE_ACTIVE in claude_active state)
-        // Only clear it when transitioning into claude_active from another state
-        isBusy: ({ context, event }) => {
-          if (event.type === 'CLAUDE_ACTIVE' && context.claudeSessionId) {
-            // Self-transition: preserve existing isBusy state
-            return context.isBusy;
-          }
-          // Transition into claude_active: clear isBusy
-          return false;
-        },
+        // Clear isBusy when entering claude_active from another state
+        isBusy: () => false,
+        error: () => undefined,
+      }),
+      // Self-transition action for CLAUDE_ACTIVE within claude_active state:
+      // Updates sessionId but preserves isBusy (avoids resetting busy indicator
+      // when the session ID is refreshed without a state change)
+      updateClaudeSessionId: assign({
+        claudeSessionId: ({ event }) =>
+          event.type === 'CLAUDE_ACTIVE' ? event.claudeSessionId : undefined,
         error: () => undefined,
       }),
       setBusy: assign({

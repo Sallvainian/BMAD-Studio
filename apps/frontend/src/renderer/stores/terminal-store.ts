@@ -481,6 +481,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       } else {
         // No claudeSessionId - can't send RESUME_REQUESTED, so don't set pendingClaudeResume
         // to avoid XState/Zustand divergence (UI would show pending but machine wouldn't know)
+        debugLog('[terminal-store] setPendingClaudeResume: dropping request for terminal', id, '- no claudeSessionId');
         shouldUpdateZustand = false;
       }
     } else {
