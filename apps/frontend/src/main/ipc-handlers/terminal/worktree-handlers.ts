@@ -396,8 +396,9 @@ async function setupWorktreeDependencies(projectPath: string, worktreePath: stri
                 debugLog('[TerminalWorktree] Symlinked venv health check passed:', config.sourceRelPath);
               } catch {
                 debugLog('[TerminalWorktree] Symlinked venv health check failed, falling back to recreate:', config.sourceRelPath);
+                debugLog('[TerminalWorktree] Venv fallback: removing broken symlink and recreating for', config.sourceRelPath);
                 // Remove the broken symlink and recreate
-                try { rmSync(path.join(worktreePath, config.sourceRelPath), { recursive: true, force: true }); } catch { /* best-effort */ }
+                try { rmSync(venvPath, { recursive: true, force: true }); } catch { /* best-effort */ }
                 performed = await applyRecreateStrategy(projectPath, worktreePath, config);
               }
             }
@@ -441,13 +442,15 @@ function applySymlinkStrategy(projectPath: string, worktreePath: string, config:
     return false;
   }
 
-  // Check for broken symlinks
-  try {
-    lstatSync(targetPath);
-    debugLog('[TerminalWorktree] Skipping symlink', config.sourceRelPath, '- target exists (possibly broken symlink)');
-    return false;
-  } catch {
-    // Target doesn't exist at all — good, we can create symlink
+  // Check for broken symlinks and remove them so a fresh symlink can be created
+  if (isSymlinkOrJunction(targetPath)) {
+    if (!existsSync(targetPath)) {
+      debugLog('[TerminalWorktree] Removing broken symlink for', config.sourceRelPath);
+      try { rmSync(targetPath, { force: true }); } catch { /* best-effort */ }
+    } else {
+      debugLog('[TerminalWorktree] Skipping symlink', config.sourceRelPath, '- target exists (symlink)');
+      return false;
+    }
   }
 
   const targetDir = path.dirname(targetPath);

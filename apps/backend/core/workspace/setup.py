@@ -628,7 +628,7 @@ def setup_worktree_dependencies(
             results[strategy_name] = []
 
         try:
-            performed = True
+            performed = False
             if config.strategy == DependencyStrategy.SYMLINK:
                 performed = _apply_symlink_strategy(project_dir, worktree_path, config)
                 # For venvs, verify the symlink is usable — fall back to recreate
@@ -765,7 +765,7 @@ def _popen_with_cleanup(
     are released before any cleanup (e.g. shutil.rmtree).
 
     Returns (returncode, stdout, stderr).
-    Raises subprocess.TimeoutExpired if the process could not be stopped.
+    Raises subprocess.TimeoutExpired if the command exceeds the given timeout (after cleanup is attempted).
     """
     proc = subprocess.Popen(
         cmd,
