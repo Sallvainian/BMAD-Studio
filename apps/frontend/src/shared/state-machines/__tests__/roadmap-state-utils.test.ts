@@ -5,6 +5,8 @@ import {
   mapGenerationStateToPhase,
   mapFeatureStateToStatus,
 } from '../roadmap-state-utils';
+import { roadmapGenerationMachine } from '../roadmap-generation-machine';
+import { roadmapFeatureMachine } from '../roadmap-feature-machine';
 
 describe('mapGenerationStateToPhase', () => {
   it('should map every GENERATION_STATE_NAMES entry to a non-default phase', () => {
@@ -36,6 +38,14 @@ describe('mapGenerationStateToPhase', () => {
       if (state === defaultValue) continue; // 'idle' is both a valid state and the default
       const result = mapGenerationStateToPhase(state);
       expect(result).not.toBe(defaultValue);
+    }
+  });
+
+  it('should include every machine state in GENERATION_STATE_NAMES (reverse direction)', () => {
+    const machineStates = Object.keys(roadmapGenerationMachine.config.states ?? {});
+    const stateNameSet = new Set<string>(GENERATION_STATE_NAMES);
+    for (const machineState of machineStates) {
+      expect(stateNameSet.has(machineState), `Machine state '${machineState}' missing from GENERATION_STATE_NAMES`).toBe(true);
     }
   });
 });
@@ -70,6 +80,14 @@ describe('mapFeatureStateToStatus', () => {
       if (state === defaultValue) continue; // 'under_review' is both valid and default
       const result = mapFeatureStateToStatus(state);
       expect(result).not.toBe(defaultValue);
+    }
+  });
+
+  it('should include every machine state in FEATURE_STATE_NAMES (reverse direction)', () => {
+    const machineStates = Object.keys(roadmapFeatureMachine.config.states ?? {});
+    const stateNameSet = new Set<string>(FEATURE_STATE_NAMES);
+    for (const machineState of machineStates) {
+      expect(stateNameSet.has(machineState), `Machine state '${machineState}' missing from FEATURE_STATE_NAMES`).toBe(true);
     }
   });
 });

@@ -237,7 +237,16 @@ export const useRoadmapStore = create<RoadmapState>((set) => ({
   setCompetitorAnalysis: (analysis) => set({ competitorAnalysis: analysis }),
 
   setGenerationStatus: (status) => {
-    const actor = getOrCreateGenerationActor();
+    const actor = getOrCreateGenerationActor(
+      status.phase !== 'idle' ? status.phase : undefined,
+      status.phase !== 'idle' ? {
+        progress: status.progress,
+        message: status.message,
+        error: status.error,
+        startedAt: status.startedAt?.getTime(),
+        lastActivityAt: status.lastActivityAt?.getTime()
+      } : undefined
+    );
 
     // Map the incoming status phase to an XState event
     let event: RoadmapGenerationEvent | null = null;
@@ -332,11 +341,9 @@ export const useRoadmapStore = create<RoadmapState>((set) => ({
     }
 
     // Send progress updates for active states
-    if (status.progress !== undefined && status.message !== undefined) {
-      const currentState = String(actor.getSnapshot().value);
-      if (currentState === 'analyzing' || currentState === 'discovering' || currentState === 'generating') {
-        actor.send({ type: 'PROGRESS_UPDATE', progress: status.progress, message: status.message });
-      }
+    const currentState = String(actor.getSnapshot().value);
+    if (currentState === 'analyzing' || currentState === 'discovering' || currentState === 'generating') {
+      actor.send({ type: 'PROGRESS_UPDATE', progress: status.progress, message: status.message });
     }
 
     // Derive store state from the actor snapshot
@@ -463,8 +470,8 @@ export const useRoadmapStore = create<RoadmapState>((set) => ({
     const derivedStatus = mapFeatureStateToStatus(String(snapshot.value));
     const ctx = snapshot.context;
 
-    // Skip store write if XState silently ignored the event (no linkedSpecId in context)
-    if (!ctx.linkedSpecId) return;
+    // Skip store write if nothing changed (same linkedSpecId and status)
+    if (ctx.linkedSpecId === feature.linkedSpecId && derivedStatus === feature.status) return;
 
     set((s) => {
       if (!s.roadmap) return s;
@@ -619,7 +626,7 @@ async function reconcileLinkedFeatures(projectId: string, roadmap: Roadmap): Pro
   let hasChanges = false;
 
   for (const feature of featuresNeedingReconciliation) {
-    // Safe: linkedSpecId is guaranteed to exist by the filter on line 531
+    // Safe: linkedSpecId is guaranteed to exist by the filter above
     const linkedSpecId = feature.linkedSpecId;
     if (!linkedSpecId) continue;
 
