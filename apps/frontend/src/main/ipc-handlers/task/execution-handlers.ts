@@ -82,6 +82,22 @@ async function ensureProfileManagerInitialized(): Promise<
 }
 
 /**
+ * Get the spec directory for file watching, preferring the worktree path if it exists.
+ * When a task runs in a worktree, implementation_plan.json is written there,
+ * not in the main project's spec directory.
+ */
+function getSpecDirForWatcher(projectPath: string, specsBaseDir: string, specId: string): string {
+  const worktreePath = findTaskWorktree(projectPath, specId);
+  if (worktreePath) {
+    const worktreeSpecDir = path.join(worktreePath, specsBaseDir, specId);
+    if (existsSync(path.join(worktreeSpecDir, 'implementation_plan.json'))) {
+      return worktreeSpecDir;
+    }
+  }
+  return path.join(projectPath, specsBaseDir, specId);
+}
+
+/**
  * Register task execution handlers (start, stop, review, status management, recovery)
  */
 export function registerTaskExecutionHandlers(
@@ -234,10 +250,15 @@ export function registerTaskExecutionHandlers(
         console.warn(`[TASK_START] Reset ${resetResult.resetCount} stuck subtask(s) before starting`);
       }
 
-      // Start file watcher for this task (specsBaseDir and specDir already computed above)
-      fileWatcher.watch(taskId, specDir);
+      // Start file watcher for this task
+      // Use worktree path if it exists, since the backend writes implementation_plan.json there
+      const watchSpecDir = getSpecDirForWatcher(project.path, specsBaseDir, task.specId);
+      fileWatcher.watch(taskId, watchSpecDir).catch((err) => {
+        console.error(`[TASK_START] Failed to watch spec dir for ${taskId}:`, err);
+      });
 
       // Check if spec.md exists (indicates spec creation was already done or in progress)
+      // Check main project path for spec file (spec is created before worktree)
       const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
       const hasSpec = existsSync(specFilePath);
 
@@ -311,7 +332,9 @@ export function registerTaskExecutionHandlers(
    */
   ipcMain.on(IPC_CHANNELS.TASK_STOP, (_, taskId: string) => {
     agentManager.killTask(taskId);
-    fileWatcher.unwatch(taskId);
+    fileWatcher.unwatch(taskId).catch((err) => {
+      console.error('[TASK_STOP] Failed to unwatch:', err);
+    });
 
     // Find task and project to emit USER_STOPPED with plan context
     const { task, project } = findTaskAndProject(taskId);
@@ -732,7 +755,11 @@ export function registerTaskExecutionHandlers(
           }
 
           // Start file watcher for this task
-          fileWatcher.watch(taskId, specDir);
+          // Use worktree path if it exists, since the backend writes implementation_plan.json there
+          const watchSpecDir = getSpecDirForWatcher(project.path, specsBaseDir, task.specId);
+          fileWatcher.watch(taskId, watchSpecDir).catch((err) => {
+            console.error(`[TASK_UPDATE_STATUS] Failed to watch spec dir for ${taskId}:`, err);
+          });
 
           // Check if spec.md exists
           const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
@@ -1099,7 +1126,9 @@ export function registerTaskExecutionHandlers(
         }
 
         // Stop file watcher if it was watching this task
-        fileWatcher.unwatch(taskId);
+        fileWatcher.unwatch(taskId).catch((err) => {
+          console.error('[TASK_RECOVER_STUCK] Failed to unwatch:', err);
+        });
 
         // Auto-restart the task if requested
         let autoRestarted = false;
@@ -1180,12 +1209,16 @@ export function registerTaskExecutionHandlers(
 
             // Start the task execution
             // Start file watcher for this task
-            const specsBaseDir = getSpecsDir(project.autoBuildPath);
-            const specDirForWatcher = path.join(project.path, specsBaseDir, task.specId);
-            fileWatcher.watch(taskId, specDirForWatcher);
+            // Use worktree path if it exists, since the backend writes implementation_plan.json there
+            const watchSpecDir = getSpecDirForWatcher(project.path, specsBaseDir, task.specId);
+            fileWatcher.watch(taskId, watchSpecDir).catch((err) => {
+              console.error(`[Recovery] Failed to watch spec dir for ${taskId}:`, err);
+            });
 
             // Check if spec.md exists to determine whether to run spec creation or task execution
-            const specFilePath = path.join(specDirForWatcher, AUTO_BUILD_PATHS.SPEC_FILE);
+            // Check main project path for spec file (spec is created before worktree)
+            // mainSpecDir is declared earlier in the handler scope
+            const specFilePath = path.join(mainSpecDir, AUTO_BUILD_PATHS.SPEC_FILE);
             const hasSpec = existsSync(specFilePath);
             const needsSpecCreation = !hasSpec;
 
@@ -1196,7 +1229,7 @@ export function registerTaskExecutionHandlers(
               // No spec file - need to run spec_runner.py to create the spec
               const taskDescription = task.description || task.title;
               console.warn(`[Recovery] Starting spec creation for: ${task.specId}`);
-              agentManager.startSpecCreation(taskId, project.path, taskDescription, specDirForWatcher, task.metadata, baseBranchForRecovery, project.id);
+              agentManager.startSpecCreation(taskId, project.path, taskDescription, mainSpecDir, task.metadata, baseBranchForRecovery, project.id);
             } else {
               // Spec exists - run task execution
               console.warn(`[Recovery] Starting task execution for: ${task.specId}`);
