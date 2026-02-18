@@ -27,10 +27,10 @@ export class SessionStorage {
    * Load a specific session from disk
    */
   loadSessionById(projectPath: string, sessionId: string): InsightsSession | null {
-    const sessionPath = this.paths.getSessionPath(projectPath, sessionId);
-    if (!existsSync(sessionPath)) return null;
-
     try {
+      const sessionPath = this.paths.getSessionPath(projectPath, sessionId);
+      if (!existsSync(sessionPath)) return null;
+
       const content = readFileSync(sessionPath, 'utf-8');
       const session = JSON.parse(content) as InsightsSession;
       // Convert date strings back to Date objects
@@ -58,13 +58,18 @@ export class SessionStorage {
    * Save session to disk
    */
   saveSession(projectPath: string, session: InsightsSession): void {
-    const sessionsDir = this.paths.getSessionsDir(projectPath);
-    if (!existsSync(sessionsDir)) {
-      mkdirSync(sessionsDir, { recursive: true });
-    }
+    try {
+      const sessionsDir = this.paths.getSessionsDir(projectPath);
+      if (!existsSync(sessionsDir)) {
+        mkdirSync(sessionsDir, { recursive: true });
+      }
 
-    const sessionPath = this.paths.getSessionPath(projectPath, session.id);
-    writeFileSync(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+      const sessionPath = this.paths.getSessionPath(projectPath, session.id);
+      writeFileSync(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+    } catch (error) {
+      console.error(`[SessionStorage] Failed to save session ${session.id}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -141,10 +146,10 @@ export class SessionStorage {
    * Delete a session from disk
    */
   deleteSession(projectPath: string, sessionId: string): boolean {
-    const sessionPath = this.paths.getSessionPath(projectPath, sessionId);
-    if (!existsSync(sessionPath)) return false;
-
     try {
+      const sessionPath = this.paths.getSessionPath(projectPath, sessionId);
+      if (!existsSync(sessionPath)) return false;
+
       unlinkSync(sessionPath);
       return true;
     } catch {

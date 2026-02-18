@@ -307,8 +307,8 @@ export function ChatHistorySidebar({
                     onCancelEdit={handleCancelEdit}
                     onEditTitleChange={setEditTitle}
                     onDelete={() => setDeleteSessionId(session.id)}
-                    onArchive={onArchiveSession ? () => onArchiveSession(session.id).catch((e) => console.error('Archive failed:', e)) : undefined}
-                    onUnarchive={onUnarchiveSession ? () => onUnarchiveSession(session.id).catch((e) => console.error('Unarchive failed:', e)) : undefined}
+                    onArchive={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
+                    onUnarchive={onUnarchiveSession ? () => onUnarchiveSession(session.id) : undefined}
                     isArchived={!!session.archivedAt}
                     isSelectionMode={isSelectionMode}
                     isSelected={selectedIds.has(session.id)}

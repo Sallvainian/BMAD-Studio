@@ -219,7 +219,7 @@ export class SessionManager {
     for (const [projectId, cachedSession] of this.sessions) {
       if (cachedSession.id === sessionId) {
         cachedSession.modelConfig = modelConfig;
-        cachedSession.updatedAt = new Date();
+        cachedSession.updatedAt = session.updatedAt;
         this.sessions.set(projectId, cachedSession);
         break;
       }
