@@ -110,7 +110,7 @@ export function Insights({ projectId }: InsightsProps) {
   const [creatingTask, setCreatingTask] = useState<Set<string>>(new Set());
   const [taskCreated, setTaskCreated] = useState<Set<string>>(new Set());
   const [showSidebar, setShowSidebar] = useState(true);
-  const [showArchived, setShowArchived] = useState(false);
+  const showArchived = useInsightsStore((state) => state.showArchived);
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [viewportEl, setViewportEl] = useState<HTMLElement | null>(null);
 
@@ -272,7 +272,7 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const handleToggleShowArchived = () => {
-    setShowArchived(prev => !prev);
+    useInsightsStore.getState().setShowArchived(!showArchived);
   };
 
   const handleCreateTask = async (

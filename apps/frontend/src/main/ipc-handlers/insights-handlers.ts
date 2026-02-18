@@ -264,6 +264,10 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_DELETE_SESSIONS,
     async (_, projectId: string, sessionIds: string[]): Promise<IPCResult<{ deletedIds: string[]; failedIds: string[] }>> => {
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        return { success: false, error: "No sessions specified" };
+      }
+
       const project = projectStore.getProject(projectId);
       if (!project) {
         return { success: false, error: "Project not found" };
@@ -299,6 +303,10 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_ARCHIVE_SESSIONS,
     async (_, projectId: string, sessionIds: string[]): Promise<IPCResult<{ archivedIds: string[]; failedIds: string[] }>> => {
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        return { success: false, error: "No sessions specified" };
+      }
+
       const project = projectStore.getProject(projectId);
       if (!project) {
         return { success: false, error: "Project not found" };

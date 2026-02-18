@@ -190,6 +190,17 @@ export class SessionManager {
     session.title = newTitle;
     session.updatedAt = new Date();
     this.storage.saveSession(projectPath, session);
+
+    // Update cache if this session is cached
+    for (const [projectId, cachedSession] of this.sessions) {
+      if (cachedSession.id === sessionId) {
+        cachedSession.title = newTitle;
+        cachedSession.updatedAt = session.updatedAt;
+        this.sessions.set(projectId, cachedSession);
+        break;
+      }
+    }
+
     return true;
   }
 

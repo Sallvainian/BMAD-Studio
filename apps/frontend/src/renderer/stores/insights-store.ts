@@ -27,6 +27,7 @@ interface InsightsState {
   currentTool: ToolUsage | null; // Currently executing tool
   toolsUsed: InsightsToolUsage[]; // Tools used during current response
   isLoadingSessions: boolean;
+  showArchived: boolean; // Whether to include archived sessions in listings
 
   // Actions
   setSession: (session: InsightsSession | null) => void;
@@ -44,6 +45,7 @@ interface InsightsState {
   finalizeStreamingMessage: () => void;
   clearSession: () => void;
   setLoadingSessions: (loading: boolean) => void;
+  setShowArchived: (showArchived: boolean) => void;
 }
 
 const initialStatus: InsightsChatStatus = {
@@ -62,6 +64,7 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   currentTool: null,
   toolsUsed: [],
   isLoadingSessions: false,
+  showArchived: false,
 
   // Actions
   setSession: (session) => set({ session }),
@@ -71,6 +74,8 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   setStatus: (status) => set({ status }),
 
   setLoadingSessions: (loading) => set({ isLoadingSessions: loading }),
+
+  setShowArchived: (showArchived) => set({ showArchived }),
 
   setPendingMessage: (message) => set({ pendingMessage: message }),
 
@@ -211,8 +216,11 @@ export async function loadInsightsSessions(projectId: string, includeArchived?: 
   const store = useInsightsStore.getState();
   store.setLoadingSessions(true);
 
+  // Use explicit parameter if provided, otherwise read from store
+  const archived = includeArchived ?? store.showArchived;
+
   try {
-    const result = await window.electronAPI.listInsightsSessions(projectId, includeArchived);
+    const result = await window.electronAPI.listInsightsSessions(projectId, archived);
     if (result.success && result.data) {
       store.setSessions(result.data);
     } else {
