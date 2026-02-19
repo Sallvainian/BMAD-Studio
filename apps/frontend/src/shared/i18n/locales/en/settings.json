@@ -893,5 +893,76 @@
       "label": "PR Template Filler",
       "description": "AI-fills GitHub PR templates from code changes"
     }
+  },
+  "provider": {
+    "title": "AI Provider",
+    "description": "Configure your AI provider and model preferences",
+    "selection": {
+      "label": "Provider",
+      "description": "Select which AI provider to use for agent tasks",
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "ollama": "Ollama (Local)",
+      "openrouter": "OpenRouter"
+    },
+    "apiKey": {
+      "label": "API Key",
+      "description": "Your API key for the selected provider",
+      "placeholder": "Enter your API key",
+      "anthropicPlaceholder": "sk-ant-...",
+      "openaiPlaceholder": "sk-...",
+      "openrouterPlaceholder": "sk-or-...",
+      "validation": {
+        "required": "API key is required for this provider",
+        "invalid": "Invalid API key format"
+      }
+    },
+    "ollama": {
+      "endpointUrl": "Ollama Endpoint URL",
+      "endpointDescription": "The URL where your Ollama instance is running",
+      "endpointPlaceholder": "http://localhost:11434",
+      "validation": {
+        "urlRequired": "Endpoint URL is required for Ollama",
+        "urlInvalid": "Invalid URL format (must be http:// or https://)"
+      }
+    },
+    "phaseModels": {
+      "title": "Per-Phase Model Preferences",
+      "description": "Configure which model to use for each pipeline phase",
+      "spec": {
+        "label": "Spec Creation Model",
+        "description": "Model used for discovery, requirements, and context gathering"
+      },
+      "planning": {
+        "label": "Planning Model",
+        "description": "Model used for implementation planning and architecture"
+      },
+      "coding": {
+        "label": "Coding Model",
+        "description": "Model used for code implementation"
+      },
+      "qa": {
+        "label": "QA Review Model",
+        "description": "Model used for quality assurance and validation"
+      },
+      "placeholder": "Select a model",
+      "useDefault": "Use default model"
+    },
+    "testConnection": {
+      "label": "Test Connection",
+      "testing": "Testing...",
+      "success": "Connection successful",
+      "failure": "Connection failed"
+    },
+    "toast": {
+      "saved": {
+        "title": "Provider settings saved",
+        "description": "Your AI provider configuration has been updated."
+      },
+      "error": {
+        "title": "Failed to save provider settings",
+        "description": "An error occurred while saving your provider configuration."
+      }
+    }
   }
 }

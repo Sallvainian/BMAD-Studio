@@ -893,5 +893,76 @@
       "label": "Remplisseur de modèle PR",
       "description": "Remplit intelligemment les modèles de PR GitHub à partir des changements de code"
     }
+  },
+  "provider": {
+    "title": "Fournisseur IA",
+    "description": "Configurez votre fournisseur IA et vos préférences de modèle",
+    "selection": {
+      "label": "Fournisseur",
+      "description": "Sélectionnez le fournisseur IA à utiliser pour les tâches d'agent",
+      "anthropic": "Anthropic",
+      "openai": "OpenAI",
+      "ollama": "Ollama (Local)",
+      "openrouter": "OpenRouter"
+    },
+    "apiKey": {
+      "label": "Clé API",
+      "description": "Votre clé API pour le fournisseur sélectionné",
+      "placeholder": "Entrez votre clé API",
+      "anthropicPlaceholder": "sk-ant-...",
+      "openaiPlaceholder": "sk-...",
+      "openrouterPlaceholder": "sk-or-...",
+      "validation": {
+        "required": "La clé API est requise pour ce fournisseur",
+        "invalid": "Format de clé API invalide"
+      }
+    },
+    "ollama": {
+      "endpointUrl": "URL de l'endpoint Ollama",
+      "endpointDescription": "L'URL où votre instance Ollama est en cours d'exécution",
+      "endpointPlaceholder": "http://localhost:11434",
+      "validation": {
+        "urlRequired": "L'URL de l'endpoint est requise pour Ollama",
+        "urlInvalid": "Format d'URL invalide (doit être http:// ou https://)"
+      }
+    },
+    "phaseModels": {
+      "title": "Préférences de modèle par phase",
+      "description": "Configurez le modèle à utiliser pour chaque phase du pipeline",
+      "spec": {
+        "label": "Modèle de création de spec",
+        "description": "Modèle utilisé pour la découverte, les exigences et la collecte de contexte"
+      },
+      "planning": {
+        "label": "Modèle de planification",
+        "description": "Modèle utilisé pour la planification de l'implémentation et l'architecture"
+      },
+      "coding": {
+        "label": "Modèle de codage",
+        "description": "Modèle utilisé pour l'implémentation du code"
+      },
+      "qa": {
+        "label": "Modèle de révision QA",
+        "description": "Modèle utilisé pour l'assurance qualité et la validation"
+      },
+      "placeholder": "Sélectionner un modèle",
+      "useDefault": "Utiliser le modèle par défaut"
+    },
+    "testConnection": {
+      "label": "Tester la connexion",
+      "testing": "Test en cours...",
+      "success": "Connexion réussie",
+      "failure": "Échec de la connexion"
+    },
+    "toast": {
+      "saved": {
+        "title": "Paramètres du fournisseur enregistrés",
+        "description": "La configuration de votre fournisseur IA a été mise à jour."
+      },
+      "error": {
+        "title": "Échec de l'enregistrement des paramètres du fournisseur",
+        "description": "Une erreur s'est produite lors de l'enregistrement de la configuration du fournisseur."
+      }
+    }
   }
 }
