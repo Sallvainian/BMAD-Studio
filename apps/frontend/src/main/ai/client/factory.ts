@@ -16,7 +16,6 @@ import type { Tool as AITool } from 'ai';
 
 import { resolveAuth } from '../auth/resolver';
 import {
-  getAgentConfig,
   getDefaultThinkingLevel,
   getRequiredMcpServers,
 } from '../config/agent-configs';
@@ -27,7 +26,6 @@ import { createMcpClientsForAgent, closeAllMcpClients, mergeMcpTools } from '../
 import type { McpClientResult } from '../mcp/types';
 import { createProviderFromModelId } from '../providers/factory';
 import { ToolRegistry } from '../tools/registry';
-import type { ToolContext } from '../tools/types';
 import type {
   AgentClientConfig,
   AgentClientResult,
