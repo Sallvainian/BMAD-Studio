@@ -1,0 +1,108 @@
+/**
+ * Client Types
+ * ============
+ *
+ * Type definitions for the AI client factory layer.
+ * Mirrors the configuration surface of apps/backend/core/client.py.
+ */
+
+import type { LanguageModel } from 'ai';
+import type { Tool as AITool } from 'ai';
+
+import type { AgentType } from '../config/agent-configs';
+import type { ModelShorthand, Phase, ThinkingLevel } from '../config/types';
+import type { McpClientResult } from '../mcp/types';
+import type { ToolContext } from '../tools/types';
+
+// =============================================================================
+// Client Configuration
+// =============================================================================
+
+/**
+ * Configuration for creating a full agent client.
+ * Includes tool resolution, MCP server setup, and model configuration.
+ */
+export interface AgentClientConfig {
+  /** Agent type — determines tool set and MCP servers */
+  agentType: AgentType;
+  /** System prompt for the agent */
+  systemPrompt: string;
+  /** Tool context for filesystem and security */
+  toolContext: ToolContext;
+  /** Pipeline phase for model/thinking resolution */
+  phase: Phase;
+  /** Model shorthand override (defaults to phase config) */
+  modelShorthand?: ModelShorthand;
+  /** Thinking level override (defaults to agent config) */
+  thinkingLevel?: ThinkingLevel;
+  /** Maximum agentic steps */
+  maxSteps?: number;
+  /** Profile ID for credential resolution */
+  profileId?: string;
+  /** Abort signal for cancellation */
+  abortSignal?: AbortSignal;
+  /** Additional custom MCP server IDs to enable */
+  additionalMcpServers?: string[];
+}
+
+/**
+ * Configuration for creating a simple (utility) client.
+ * Minimal setup — no tool registry, no MCP servers.
+ * Used for utility runners (commit message, PR template, etc.).
+ */
+export interface SimpleClientConfig {
+  /** System prompt for the utility call */
+  systemPrompt: string;
+  /** Model shorthand (defaults to 'haiku') */
+  modelShorthand?: ModelShorthand;
+  /** Thinking level (defaults to 'low') */
+  thinkingLevel?: ThinkingLevel;
+  /** Profile ID for credential resolution */
+  profileId?: string;
+  /** Maximum agentic steps (defaults to 1 for single-turn) */
+  maxSteps?: number;
+  /** Specific tools to include (if any) */
+  tools?: Record<string, AITool>;
+}
+
+// =============================================================================
+// Client Result
+// =============================================================================
+
+/**
+ * Fully configured client ready for use with `runAgentSession()`.
+ * Bundles the resolved model, tools, MCP clients, and configuration.
+ */
+export interface AgentClientResult {
+  /** Resolved language model instance */
+  model: LanguageModel;
+  /** Merged tool map (builtin + MCP tools) */
+  tools: Record<string, AITool>;
+  /** Active MCP client connections (must be closed after session) */
+  mcpClients: McpClientResult[];
+  /** Resolved system prompt */
+  systemPrompt: string;
+  /** Maximum agentic steps */
+  maxSteps: number;
+  /** Resolved thinking level */
+  thinkingLevel: ThinkingLevel;
+  /** Cleanup function — closes all MCP connections */
+  cleanup: () => Promise<void>;
+}
+
+/**
+ * Simple client result for utility runners.
+ * No MCP clients, minimal tool set.
+ */
+export interface SimpleClientResult {
+  /** Resolved language model instance */
+  model: LanguageModel;
+  /** Tools (may be empty for pure text generation) */
+  tools: Record<string, AITool>;
+  /** System prompt */
+  systemPrompt: string;
+  /** Maximum agentic steps */
+  maxSteps: number;
+  /** Resolved thinking level */
+  thinkingLevel: ThinkingLevel;
+}
