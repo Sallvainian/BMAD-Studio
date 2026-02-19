@@ -11,6 +11,8 @@ import { EventEmitter } from 'events';
 import { AgentState } from './agent-state';
 import { AgentEvents } from './agent-events';
 import { ProcessType, ExecutionProgressData } from './types';
+import type { AgentExecutorConfig } from '../ai/agent/types';
+import { WorkerBridge } from '../ai/agent/worker-bridge';
 import type { CompletablePhase } from '../../shared/constants/phase-protocol';
 import { parseTaskEvent } from './task-event-parser';
 import { detectRateLimit, createSDKRateLimitInfo, getBestAvailableProfileEnv, detectAuthFailure } from '../rate-limit-detector';
@@ -933,6 +935,117 @@ export class AgentProcessManager {
   }
 
   /**
+   * Spawn a worker thread for TypeScript AI SDK agent execution.
+   * Replaces Python subprocess spawn for autonomous task pipelines.
+   *
+   * Uses the WorkerBridge to relay postMessage() events into the
+   * existing AgentManagerEvents interface so the UI sees no difference.
+   *
+   * The 9-level environment variable precedence hierarchy is preserved:
+   * env vars are resolved in the main thread and passed to the worker
+   * via the serializable session config.
+   */
+  async spawnWorkerProcess(
+    taskId: string,
+    executorConfig: AgentExecutorConfig,
+    extraEnv: Record<string, string> = {},
+    processType: ProcessType = 'task-execution',
+    projectId?: string
+  ): Promise<void> {
+    this.killProcess(taskId);
+
+    const spawnId = this.state.generateSpawnId();
+
+    // Add to tracking immediately (same pattern as spawnProcess)
+    this.state.addProcess(taskId, {
+      taskId,
+      process: null, // No ChildProcess for worker threads
+      startedAt: new Date(),
+      spawnId,
+      worker: null, // Will be set after bridge.spawn()
+    });
+
+    // Check if killed during setup
+    if (this.state.wasSpawnKilled(spawnId)) {
+      this.state.deleteProcess(taskId);
+      this.state.clearKilledSpawn(spawnId);
+      return;
+    }
+
+    const bridge = new WorkerBridge();
+
+    // Forward all bridge events to the main emitter (matching existing event contract)
+    bridge.on('log', (tId: string, log: string, pId?: string) => {
+      this.emitter.emit('log', tId, log, pId);
+    });
+
+    bridge.on('error', (tId: string, error: string, pId?: string) => {
+      this.emitter.emit('error', tId, error, pId);
+    });
+
+    bridge.on('execution-progress', (tId: string, progress: ExecutionProgressData, pId?: string) => {
+      this.emitter.emit('execution-progress', tId, progress, pId);
+    });
+
+    bridge.on('task-event', (tId: string, event: unknown, pId?: string) => {
+      this.emitter.emit('task-event', tId, event, pId);
+    });
+
+    bridge.on('exit', (tId: string, code: number | null, pType: ProcessType, pId?: string) => {
+      this.state.deleteProcess(tId);
+
+      if (this.state.wasSpawnKilled(spawnId)) {
+        this.state.clearKilledSpawn(spawnId);
+        return;
+      }
+
+      if (code !== 0) {
+        // Collect any output for rate limit / auth failure detection
+        // For worker threads, error messages are emitted via 'error' events
+        // rather than stdout parsing. The handleProcessFailure method still works
+        // with accumulated output if needed.
+        this.emitter.emit('execution-progress', tId, {
+          phase: 'failed',
+          phaseProgress: 0,
+          overallProgress: 0,
+          message: `Worker exited with code ${code}`,
+        }, pId);
+      }
+
+      this.emitter.emit('exit', tId, code, pType, pId);
+    });
+
+    // Spawn the worker via the bridge
+    try {
+      bridge.spawn(executorConfig);
+    } catch (err) {
+      this.state.deleteProcess(taskId);
+      this.emitter.emit('error', taskId, err instanceof Error ? err.message : String(err), projectId);
+      throw err;
+    }
+
+    // Store the worker reference for kill support
+    this.state.updateProcess(taskId, { worker: bridge.workerInstance });
+
+    // Check if killed during bridge setup
+    const currentSpawnId = this.state.getProcess(taskId)?.spawnId ?? spawnId;
+    if (this.state.wasSpawnKilled(currentSpawnId)) {
+      await bridge.terminate();
+      this.state.deleteProcess(taskId);
+      this.state.clearKilledSpawn(currentSpawnId);
+      return;
+    }
+
+    // Emit initial progress
+    this.emitter.emit('execution-progress', taskId, {
+      phase: processType === 'spec-creation' ? 'planning' : 'planning',
+      phaseProgress: 0,
+      overallProgress: 0,
+      message: 'Starting AI agent session...',
+    }, projectId);
+  }
+
+  /**
    * Kill a specific task's process
    */
   killProcess(taskId: string): boolean {
@@ -945,16 +1058,29 @@ export class AgentProcessManager {
     // If process hasn't been spawned yet (still in async setup phase, before spawn() returns),
     // just remove from tracking. The spawn() call will still complete, but the spawned process
     // will be terminated by the post-spawn wasSpawnKilled() check (see spawnProcess() after updateProcess).
-    if (!agentProcess.process) {
+    if (!agentProcess.process && !agentProcess.worker) {
       this.state.deleteProcess(taskId);
       return true;
     }
 
-    // Use shared platform-aware kill utility
-    killProcessGracefully(agentProcess.process, {
-      debugPrefix: '[AgentProcess]',
-      debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
-    });
+    // Handle worker thread termination
+    if (agentProcess.worker) {
+      try {
+        agentProcess.worker.terminate();
+      } catch {
+        // Worker may already be terminated
+      }
+      this.state.deleteProcess(taskId);
+      return true;
+    }
+
+    // Use shared platform-aware kill utility for ChildProcess
+    if (agentProcess.process) {
+      killProcessGracefully(agentProcess.process, {
+        debugPrefix: '[AgentProcess]',
+        debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development'
+      });
+    }
 
     this.state.deleteProcess(taskId);
     return true;
@@ -975,10 +1101,15 @@ export class AgentProcessManager {
           return;
         }
 
-        // If process hasn't been spawned yet (still in async setup phase before spawn() returns),
-        // just resolve immediately. The spawn() call will still complete, but the spawned process
-        // will be terminated by the post-spawn wasSpawnKilled() check (see spawnProcess() after updateProcess).
-        if (!agentProcess.process) {
+        // If process/worker hasn't been spawned yet, just kill and resolve
+        if (!agentProcess.process && !agentProcess.worker) {
+          this.killProcess(taskId);
+          resolve();
+          return;
+        }
+
+        // Worker threads terminate immediately
+        if (agentProcess.worker && !agentProcess.process) {
           this.killProcess(taskId);
           resolve();
           return;
@@ -991,7 +1122,7 @@ export class AgentProcessManager {
 
         // Listen for exit event if the process supports it
         // (process.once is available on real ChildProcess objects, but may not be in test mocks)
-        if (typeof agentProcess.process.once === 'function') {
+        if (agentProcess.process && typeof agentProcess.process.once === 'function') {
           agentProcess.process.once('exit', () => {
             clearTimeout(timeoutId);
             resolve();
