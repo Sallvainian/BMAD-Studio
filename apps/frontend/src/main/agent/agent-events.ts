@@ -9,7 +9,86 @@ import {
 } from '../../shared/constants/phase-protocol';
 import { EXECUTION_PHASE_WEIGHTS } from '../../shared/constants/task';
 
+/**
+ * Structured progress event from a worker thread (via postMessage).
+ * Mirrors the data shape of WorkerProgressMessage without importing from the ai/ layer.
+ */
+export interface StructuredProgressEvent {
+  phase: ExecutionPhase;
+  message?: string;
+  currentSubtask?: string;
+  phaseProgress?: number;
+  overallProgress?: number;
+  resetTimestamp?: number;
+  profileId?: string;
+  completedPhases?: ExecutionProgressData['completedPhases'];
+}
+
 export class AgentEvents {
+  /**
+   * Handle a structured progress event from the worker thread (via postMessage).
+   * This bypasses text-matching entirely — the worker provides typed phase data.
+   *
+   * Returns a phase update object compatible with parseExecutionPhase's return type,
+   * or null if the phase would regress from the current state.
+   */
+  handleStructuredProgress(
+    event: StructuredProgressEvent,
+    currentPhase: ExecutionProgressData['phase']
+  ): {
+    phase: ExecutionProgressData['phase'];
+    message?: string;
+    currentSubtask?: string;
+    resetTimestamp?: number;
+    profileId?: string;
+  } | null {
+    // Terminal states can't be changed unless the incoming event is also terminal
+    if (isTerminalPhase(currentPhase) && !isTerminalPhase(event.phase)) {
+      return null;
+    }
+
+    // Prevent phase regression (e.g., going from qa_review back to coding)
+    if (
+      isValidExecutionPhase(currentPhase) &&
+      isValidExecutionPhase(event.phase) &&
+      wouldPhaseRegress(currentPhase, event.phase)
+    ) {
+      return null;
+    }
+
+    return {
+      phase: event.phase,
+      message: event.message,
+      currentSubtask: event.currentSubtask,
+      resetTimestamp: event.resetTimestamp,
+      profileId: event.profileId,
+    };
+  }
+
+  /**
+   * Convert a structured progress event into a full ExecutionProgressData object.
+   * Convenience method for callers that need the complete progress shape.
+   */
+  buildProgressData(
+    event: StructuredProgressEvent,
+    currentPhase: ExecutionProgressData['phase']
+  ): ExecutionProgressData | null {
+    const update = this.handleStructuredProgress(event, currentPhase);
+    if (!update) return null;
+
+    const phaseProgress = event.phaseProgress ?? 0;
+    const overallProgress = event.overallProgress ?? this.calculateOverallProgress(update.phase, phaseProgress);
+
+    return {
+      phase: update.phase,
+      phaseProgress,
+      overallProgress,
+      currentSubtask: update.currentSubtask,
+      message: update.message,
+      completedPhases: event.completedPhases,
+    };
+  }
+
   parseExecutionPhase(
     log: string,
     currentPhase: ExecutionProgressData['phase'],
