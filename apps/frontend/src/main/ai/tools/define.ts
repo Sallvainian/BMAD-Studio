@@ -112,11 +112,12 @@ function define<TInput extends z.ZodType, TOutput>(
         return execute(input as z.infer<TInput>, context) as Promise<TOutput>;
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic TInput can't satisfy tool() overloads at definition site
       return tool({
         description: metadata.description,
-        parameters: inputSchema,
-        execute: executeWithHooks,
-      } as unknown as Parameters<typeof tool>[0]) as AITool<Input, TOutput>;
+        inputSchema: inputSchema as any,
+        execute: executeWithHooks as any,
+      }) as AITool<Input, TOutput>;
     },
   };
 }

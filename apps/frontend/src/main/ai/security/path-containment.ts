@@ -14,6 +14,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { isWindows } from '../../platform/';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -43,7 +45,7 @@ function normalizePath(filePath: string, projectDir: string): string {
     : path.normalize(path.resolve(projectDir, filePath));
 
   // On Windows, lowercase for case-insensitive comparison
-  if (process.platform === 'win32') {
+  if (isWindows()) {
     return resolved.toLowerCase();
   }
 

@@ -153,5 +153,4 @@ async function run(): Promise<void> {
 run().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   postError(`Unhandled worker error: ${message}`);
-  process.exit(1);
 });
