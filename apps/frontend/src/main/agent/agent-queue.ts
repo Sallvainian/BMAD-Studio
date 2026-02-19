@@ -1,48 +1,30 @@
-import { spawn } from 'child_process';
 import path from 'path';
 import { existsSync, mkdirSync, unlinkSync, promises as fsPromises } from 'fs';
 import { EventEmitter } from 'events';
 import { AgentState } from './agent-state';
-import { AgentEvents } from './agent-events';
+import type { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
 import { RoadmapConfig } from './types';
 import type { IdeationConfig, Idea } from '../../shared/types';
 import { AUTO_BUILD_PATHS } from '../../shared/constants';
-import { detectRateLimit, createSDKRateLimitInfo, getBestAvailableProfileEnv } from '../rate-limit-detector';
-import { getAPIProfileEnv } from '../services/profile';
-import { getOAuthModeClearVars, normalizeEnvPathKey } from './env-utils';
+import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
-import { stripAnsiCodes } from '../../shared/utils/ansi-sanitizer';
-import { parsePythonCommand } from '../python-detector';
-import { pythonEnvManager } from '../python-env-manager';
 import { transformIdeaFromSnakeCase, transformSessionFromSnakeCase } from '../ipc-handlers/ideation/transformers';
 import { transformRoadmapFromSnakeCase } from '../ipc-handlers/roadmap/transformers';
 import type { RawIdea } from '../ipc-handlers/ideation/types';
-import { getPathDelimiter } from '../platform';
 import { debounce } from '../utils/debounce';
 import { writeFileWithRetry } from '../utils/atomic-file';
-
-/** Maximum length for status messages displayed in progress UI */
-const STATUS_MESSAGE_MAX_LENGTH = 200;
-
-/**
- * Formats a raw log line for display as a status message.
- * Strips ANSI escape codes, extracts the first line, and truncates to max length.
- *
- * @param log - Raw log output from backend process
- * @returns Formatted status message safe for UI display
- */
-function formatStatusMessage(log: string): string {
-  if (!log) return '';
-  return stripAnsiCodes(log.trim()).split('\n')[0].substring(0, STATUS_MESSAGE_MAX_LENGTH);
-}
+import { runIdeation, IDEATION_TYPES } from '../ai/runners/ideation';
+import type { IdeationType, IdeationStreamEvent } from '../ai/runners/ideation';
+import { runRoadmapGeneration } from '../ai/runners/roadmap';
+import type { RoadmapStreamEvent } from '../ai/runners/roadmap';
+import type { ModelShorthand, ThinkingLevel } from '../ai/config/types';
 
 /**
  * Queue management for ideation and roadmap generation
  */
 export class AgentQueueManager {
   private state: AgentState;
-  private events: AgentEvents;
   private processManager: AgentProcessManager;
   private emitter: EventEmitter;
   private debouncedPersistRoadmapProgress: (
@@ -57,12 +39,11 @@ export class AgentQueueManager {
 
   constructor(
     state: AgentState,
-    events: AgentEvents,
+    _events: AgentEvents,
     processManager: AgentProcessManager,
     emitter: EventEmitter
   ) {
     this.state = state;
-    this.events = events;
     this.processManager = processManager;
     this.emitter = emitter;
 
@@ -78,28 +59,8 @@ export class AgentQueueManager {
     this.cancelPersistRoadmapProgress = cancel;
   }
 
-  /**
-   * Ensure Python environment is ready before spawning processes.
-   * Prevents the race condition where generation starts before dependencies are installed,
-   * which would cause it to fall back to system Python and fail with ModuleNotFoundError.
-   *
-   * Delegates to AgentProcessManager.ensurePythonEnvReady() for the actual initialization.
-   *
-   * @param projectId - The project ID for error event emission
-   * @param eventType - The error event type to emit on failure
-   * @returns true if environment is ready, false if initialization failed (error already emitted)
-   */
-  private async ensurePythonEnvReady(
-    projectId: string,
-    eventType: 'ideation-error' | 'roadmap-error'
-  ): Promise<boolean> {
-    const status = await this.processManager.ensurePythonEnvReady('AgentQueue');
-    if (!status.ready) {
-      this.emitter.emit(eventType, projectId, `Python environment not ready: ${status.error || 'initialization failed'}`);
-      return false;
-    }
-    return true;
-  }
+  /** Map of active AbortControllers for cancellation support */
+  private abortControllers: Map<string, AbortController> = new Map();
 
   /**
    * Persist roadmap generation progress to disk.
@@ -183,7 +144,7 @@ export class AgentQueueManager {
     projectPath: string,
     refresh: boolean = false,
     enableCompetitorAnalysis: boolean = false,
-    refreshCompetitorAnalysis: boolean = false,
+    _refreshCompetitorAnalysis: boolean = false,
     config?: RoadmapConfig
   ): Promise<void> {
     debugLog('[Agent Queue] Starting roadmap generation:', {
@@ -191,55 +152,11 @@ export class AgentQueueManager {
       projectPath,
       refresh,
       enableCompetitorAnalysis,
-      refreshCompetitorAnalysis,
       config
     });
 
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
-
-    if (!autoBuildSource) {
-      debugError('[Agent Queue] Auto-build source path not found');
-      this.emitter.emit('roadmap-error', projectId, 'Auto-build source path not found. Please configure it in App Settings.');
-      return;
-    }
-
-    const roadmapRunnerPath = path.join(autoBuildSource, 'runners', 'roadmap_runner.py');
-
-    if (!existsSync(roadmapRunnerPath)) {
-      debugError('[Agent Queue] Roadmap runner not found at:', roadmapRunnerPath);
-      this.emitter.emit('roadmap-error', projectId, `Roadmap runner not found at: ${roadmapRunnerPath}`);
-      return;
-    }
-
-    const args = [roadmapRunnerPath, '--project', projectPath];
-
-    if (refresh) {
-      args.push('--refresh');
-    }
-
-    // Add competitor analysis flag if enabled
-    if (enableCompetitorAnalysis) {
-      args.push('--competitor-analysis');
-    }
-
-    // Add refresh competitor analysis flag if user wants fresh competitor data
-    if (refreshCompetitorAnalysis) {
-      args.push('--refresh-competitor-analysis');
-    }
-
-    // Add model and thinking level from config
-    // Pass shorthand (opus/sonnet/haiku) - backend resolves using API profile env vars
-    if (config?.model) {
-      args.push('--model', config.model);
-    }
-    if (config?.thinkingLevel) {
-      args.push('--thinking-level', config.thinkingLevel);
-    }
-
-    debugLog('[Agent Queue] Spawning roadmap process with args:', args);
-
     // Use projectId as taskId for roadmap operations
-    await this.spawnRoadmapProcess(projectId, projectPath, args);
+    await this.runRoadmapRunner(projectId, projectPath, refresh, enableCompetitorAnalysis, config);
   }
 
   /**
@@ -249,534 +166,230 @@ export class AgentQueueManager {
     projectId: string,
     projectPath: string,
     config: IdeationConfig,
-    refresh: boolean = false
+    _refresh: boolean = false
   ): Promise<void> {
     debugLog('[Agent Queue] Starting ideation generation:', {
       projectId,
       projectPath,
-      config,
-      refresh
+      config
     });
 
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
-
-    if (!autoBuildSource) {
-      debugError('[Agent Queue] Auto-build source path not found');
-      this.emitter.emit('ideation-error', projectId, 'Auto-build source path not found. Please configure it in App Settings.');
-      return;
-    }
-
-    const ideationRunnerPath = path.join(autoBuildSource, 'runners', 'ideation_runner.py');
-
-    if (!existsSync(ideationRunnerPath)) {
-      debugError('[Agent Queue] Ideation runner not found at:', ideationRunnerPath);
-      this.emitter.emit('ideation-error', projectId, `Ideation runner not found at: ${ideationRunnerPath}`);
-      return;
-    }
-
-    const args = [ideationRunnerPath, '--project', projectPath];
-
-    // Add enabled types as comma-separated list
-    if (config.enabledTypes.length > 0) {
-      args.push('--types', config.enabledTypes.join(','));
-    }
-
-    // Add context flags (script uses --no-roadmap/--no-kanban negative flags)
-    if (!config.includeRoadmapContext) {
-      args.push('--no-roadmap');
-    }
-    if (!config.includeKanbanContext) {
-      args.push('--no-kanban');
-    }
-
-    // Add max ideas per type
-    if (config.maxIdeasPerType) {
-      args.push('--max-ideas', config.maxIdeasPerType.toString());
-    }
-
-    if (refresh) {
-      args.push('--refresh');
-    }
-
-    // Add append flag to preserve existing ideas
-    if (config.append) {
-      args.push('--append');
-    }
-
-    // Add model and thinking level from config
-    // Pass shorthand (opus/sonnet/haiku) - backend resolves using API profile env vars
-    if (config.model) {
-      args.push('--model', config.model);
-    }
-    if (config.thinkingLevel) {
-      args.push('--thinking-level', config.thinkingLevel);
-    }
-
-    debugLog('[Agent Queue] Spawning ideation process with args:', args);
-
     // Use projectId as taskId for ideation operations
-    await this.spawnIdeationProcess(projectId, projectPath, args);
+    await this.runIdeationRunner(projectId, projectPath, config);
   }
 
   /**
-   * Spawn a Python process for ideation generation
+   * Run ideation generation using the TypeScript ideation runner.
+   * Replaces the previous Python subprocess spawning approach.
    */
-  private async spawnIdeationProcess(
+  private async runIdeationRunner(
     projectId: string,
     projectPath: string,
-    args: string[]
+    config: IdeationConfig
   ): Promise<void> {
-    debugLog('[Agent Queue] Spawning ideation process:', { projectId, projectPath });
+    debugLog('[Agent Queue] Running ideation via TS runner:', { projectId, projectPath });
 
-    // Run from auto-claude source directory so imports work correctly
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
-    const cwd = autoBuildSource || process.cwd();
-
-    // Ensure Python environment is ready before spawning
-    if (!await this.ensurePythonEnvReady(projectId, 'ideation-error')) {
-      return;
+    // Cancel any existing ideation for this project
+    const existingController = this.abortControllers.get(`ideation:${projectId}`);
+    if (existingController) {
+      existingController.abort();
+      this.abortControllers.delete(`ideation:${projectId}`);
     }
 
-    // Kill existing process for this project if any
-    const wasKilled = this.processManager.killProcess(projectId);
-    if (wasKilled) {
-      debugLog('[Agent Queue] Killed existing process for project:', projectId);
-    }
+    // Kill existing process for this project if any (legacy cleanup)
+    this.processManager.killProcess(projectId);
 
-    // Generate unique spawn ID for this process instance
+    const abortController = new AbortController();
+    this.abortControllers.set(`ideation:${projectId}`, abortController);
+
+    // Mark as running in state
     const spawnId = this.state.generateSpawnId();
-    debugLog('[Agent Queue] Generated spawn ID:', spawnId);
-
-
-    // Get combined environment variables
-    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
-
-    // Get best available Claude profile environment (automatically handles rate limits)
-    const profileResult = getBestAvailableProfileEnv();
-    const profileEnv = profileResult.env;
-
-    // Get active API profile environment variables
-    const apiProfileEnv = await getAPIProfileEnv();
-
-    // Get OAuth mode clearing vars (clears stale ANTHROPIC_* vars when in OAuth mode)
-    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
-
-    // Get Python path from process manager (uses venv if configured)
-    const pythonPath = this.processManager.getPythonPath();
-
-    // Get Python environment from pythonEnvManager (includes bundled site-packages)
-    const pythonEnv = pythonEnvManager.getPythonEnv();
-
-    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource for local imports
-    const pythonPathParts: string[] = [];
-    if (pythonEnv.PYTHONPATH) {
-      pythonPathParts.push(pythonEnv.PYTHONPATH);
-    }
-    if (autoBuildSource) {
-      pythonPathParts.push(autoBuildSource);
-    }
-    const combinedPythonPath = pythonPathParts.join(getPathDelimiter());
-
-    // Build final environment with proper precedence:
-    // 1. process.env (system)
-    // 2. pythonEnv (bundled packages environment)
-    // 3. combinedEnv (auto-claude/.env for CLI usage)
-    // 4. oauthModeClearVars (clear stale ANTHROPIC_* vars when in OAuth mode)
-    // 5. profileEnv (Electron app OAuth token)
-    // 6. apiProfileEnv (Active API profile config - highest priority for ANTHROPIC_* vars)
-    // 7. Our specific overrides
-    const finalEnv = {
-      ...process.env,
-      ...pythonEnv,
-      ...combinedEnv,
-      ...oauthModeClearVars,
-      ...profileEnv,
-      ...apiProfileEnv,
-      PYTHONPATH: combinedPythonPath,
-      PYTHONUNBUFFERED: '1',
-      PYTHONUTF8: '1'
-    };
-
-    // Normalize PATH key to a single uppercase 'PATH' entry.
-    // On Windows, process.env spread produces 'Path' while pythonEnv may write 'PATH',
-    // resulting in duplicate keys in the final object. Without normalization the child
-    // process inherits both keys, which can cause tool-not-found errors (#1661).
-    normalizeEnvPathKey(finalEnv as Record<string, string | undefined>);
-
-    // Debug: Show OAuth token source (token values intentionally omitted for security - AC4)
-    const tokenSource = profileEnv['CLAUDE_CODE_OAUTH_TOKEN']
-      ? 'Electron app profile'
-      : (combinedEnv['CLAUDE_CODE_OAUTH_TOKEN'] ? 'auto-claude/.env' : 'not found');
-    const hasToken = !!(finalEnv as Record<string, string | undefined>)['CLAUDE_CODE_OAUTH_TOKEN'];
-    debugLog('[Agent Queue] OAuth token status:', {
-      source: tokenSource,
-      hasToken
-    });
-
-    // Parse Python command to handle space-separated commands like "py -3"
-    const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
-    const childProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
-      cwd,
-      env: finalEnv
-    });
-
     this.state.addProcess(projectId, {
       taskId: projectId,
-      process: childProcess,
+      process: null as unknown as import('child_process').ChildProcess,
       startedAt: new Date(),
-      projectPath, // Store project path for loading session on completion
+      projectPath,
       spawnId,
       queueProcessType: 'ideation'
     });
 
-    // Track progress through output
-    let progressPhase = 'analyzing';
-    let progressPercent = 10;
-    // Collect output for rate limit detection
-    let allOutput = '';
-
-    // Helper to emit logs - split multi-line output into individual log lines
-    const emitLogs = (log: string) => {
-      const lines = log.split('\n').filter(line => line.trim().length > 0);
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.length > 0) {
-          this.emitter.emit('ideation-log', projectId, trimmed);
-        }
-      }
-    };
-
-    // Track completed types for progress calculation
+    // Track progress
     const completedTypes = new Set<string>();
-    // Derive totalTypes from --types argument instead of hardcoding
-    const typesArgIndex = args.findIndex((arg) => arg === '--types');
-    const totalTypes =
-      typesArgIndex > -1 && args[typesArgIndex + 1]
-        ? args[typesArgIndex + 1].split(',').length
-        : 6; // Default to 6 if not specified
+    const enabledTypes = config.enabledTypes.length > 0
+      ? config.enabledTypes
+      : [...IDEATION_TYPES];
+    const totalTypes = enabledTypes.length;
 
-    // Handle stdout - explicitly decode as UTF-8 for cross-platform Unicode support
-    childProcess.stdout?.on('data', (data: Buffer) => {
-      const log = data.toString('utf-8');
-      // Collect output for rate limit detection (keep last 10KB)
-      allOutput = (allOutput + log).slice(-10000);
+    // Resolve prompts directory
+    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+    const promptsDir = autoBuildSource
+      ? path.join(autoBuildSource, 'prompts')
+      : path.join(projectPath, '.auto-claude', 'prompts');
 
-      // Emit all log lines for the activity log
-      emitLogs(log);
+    const outputDir = path.join(projectPath, '.auto-claude', 'ideation');
 
-      const typeCompleteMatch = log.match(/IDEATION_TYPE_COMPLETE:(\w+):(\d+)/);
-      if (typeCompleteMatch) {
-        const [, ideationType, ideasCount] = typeCompleteMatch;
-        completedTypes.add(ideationType);
+    // Emit initial progress
+    this.emitter.emit('ideation-progress', projectId, {
+      phase: 'analyzing',
+      progress: 10,
+      message: 'Starting ideation generation...',
+      completedTypes: []
+    });
 
-        debugLog('[Agent Queue] Ideation type completed:', {
-          projectId,
-          ideationType,
-          ideasCount: parseInt(ideasCount, 10),
-          totalCompleted: completedTypes.size
-        });
+    // Run each ideation type sequentially (matches Python runner behavior)
+    for (const ideationType of enabledTypes) {
+      if (abortController.signal.aborted) {
+        debugLog('[Agent Queue] Ideation aborted before type:', ideationType);
+        break;
+      }
 
-        const typeFilePath = path.join(
-          projectPath,
-          '.auto-claude',
-          'ideation',
-          `${ideationType}_ideas.json`
+      const typeProgress = Math.round(10 + (completedTypes.size / totalTypes) * 80);
+      this.emitter.emit('ideation-progress', projectId, {
+        phase: 'generating',
+        progress: typeProgress,
+        message: `Generating ${ideationType} ideas...`,
+        completedTypes: Array.from(completedTypes)
+      });
+      this.emitter.emit('ideation-log', projectId, `Starting ${ideationType}...`);
+
+      try {
+        const result = await runIdeation(
+          {
+            projectDir: projectPath,
+            outputDir,
+            promptsDir,
+            ideationType: ideationType as IdeationType,
+            modelShorthand: (config.model || 'sonnet') as ModelShorthand,
+            thinkingLevel: (config.thinkingLevel || 'medium') as ThinkingLevel,
+            maxIdeasPerType: config.maxIdeasPerType || 5,
+            abortSignal: abortController.signal,
+          },
+          (event: IdeationStreamEvent) => {
+            if (event.type === 'text-delta') {
+              this.emitter.emit('ideation-log', projectId, event.text);
+            }
+          }
         );
 
-        const loadIdeationType = async (): Promise<void> => {
+        if (result.success) {
+          completedTypes.add(ideationType);
+          debugLog('[Agent Queue] Ideation type completed:', { projectId, ideationType });
+
+          // Load and emit type-specific ideas
+          const typeFilePath = path.join(outputDir, `${ideationType}_ideas.json`);
           try {
             const content = await fsPromises.readFile(typeFilePath, 'utf-8');
             const data: Record<string, RawIdea[]> = JSON.parse(content);
             const rawIdeas: RawIdea[] = data[ideationType] || [];
             const ideas: Idea[] = rawIdeas.map(transformIdeaFromSnakeCase);
-            debugLog('[Agent Queue] Loaded ideas for type:', {
-              ideationType,
-              loadedCount: ideas.length,
-              filePath: typeFilePath
-            });
             this.emitter.emit('ideation-type-complete', projectId, ideationType, ideas);
           } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-              debugError('[Agent Queue] Ideas file not found:', typeFilePath);
-            } else {
-              debugError('[Agent Queue] Failed to load ideas for type:', ideationType, err);
-            }
+            debugError('[Agent Queue] Failed to load ideas for type:', ideationType, err);
             this.emitter.emit('ideation-type-complete', projectId, ideationType, []);
           }
-        };
-        loadIdeationType().catch((err: unknown) => {
-          debugError('[Agent Queue] Unhandled error in ideation type handler (event already emitted):', {
-            ideationType,
-            projectId,
-            typeFilePath
-          }, err);
-        });
-      }
+        } else {
+          debugError('[Agent Queue] Ideation type failed:', { projectId, ideationType, error: result.error });
+          this.emitter.emit('ideation-type-failed', projectId, ideationType);
 
-      const typeFailedMatch = log.match(/IDEATION_TYPE_FAILED:(\w+)/);
-      if (typeFailedMatch) {
-        const [, ideationType] = typeFailedMatch;
-        completedTypes.add(ideationType);
-
-        debugError('[Agent Queue] Ideation type failed:', { projectId, ideationType });
+          // Check for rate limit
+          if (result.error) {
+            const rateLimitDetection = detectRateLimit(result.error);
+            if (rateLimitDetection.isRateLimited) {
+              const rateLimitInfo = createSDKRateLimitInfo('ideation', rateLimitDetection, { projectId });
+              this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+            }
+          }
+        }
+      } catch (err) {
+        if (abortController.signal.aborted) {
+          debugLog('[Agent Queue] Ideation type aborted:', ideationType);
+          break;
+        }
+        debugError('[Agent Queue] Ideation type error:', { ideationType, err });
         this.emitter.emit('ideation-type-failed', projectId, ideationType);
       }
+    }
 
-      // Parse progress using AgentEvents
-      const progressUpdate = this.events.parseIdeationProgress(
-        log,
-        progressPhase,
-        progressPercent,
-        completedTypes,
-        totalTypes
-      );
-      progressPhase = progressUpdate.phase;
-      progressPercent = progressUpdate.progress;
+    // Clean up
+    this.abortControllers.delete(`ideation:${projectId}`);
+    this.state.deleteProcess(projectId);
 
-      // Emit progress update with a clean message for the status bar
-      const statusMessage = formatStatusMessage(log);
-      this.emitter.emit('ideation-progress', projectId, {
-        phase: progressPhase,
-        progress: progressPercent,
-        message: statusMessage,
-        completedTypes: Array.from(completedTypes)
-      });
-    });
-
-    // Handle stderr - also emit as logs, explicitly decode as UTF-8
-    childProcess.stderr?.on('data', (data: Buffer) => {
-      const log = data.toString('utf-8');
-      // Collect stderr for rate limit detection too
-      allOutput = (allOutput + log).slice(-10000);
-      console.error('[Ideation STDERR]', log);
-      emitLogs(log);
-      this.emitter.emit('ideation-progress', projectId, {
-        phase: progressPhase,
-        progress: progressPercent,
-        message: formatStatusMessage(log)
-      });
-    });
-
-    // Handle process exit
-    childProcess.on('exit', (code: number | null) => {
-      debugLog('[Agent Queue] Ideation process exited:', { projectId, code, spawnId });
-
-      // Check if this process was intentionally stopped by the user
-      const wasIntentionallyStopped = this.state.wasSpawnKilled(spawnId);
-      if (wasIntentionallyStopped) {
-        debugLog('[Agent Queue] Ideation process was intentionally stopped, ignoring exit');
-        this.state.clearKilledSpawn(spawnId);
-        // Note: Don't call deleteProcess here - killProcess() already deleted it.
-        // A new process with the same projectId may have been started.
-        // Emit stopped event to ensure UI updates
-        this.emitter.emit('ideation-stopped', projectId);
-        return;
-      }
-
-      // Get the stored project path before deleting from map
-      const processInfo = this.state.getProcess(projectId);
-      const storedProjectPath = processInfo?.projectPath;
-      this.state.deleteProcess(projectId);
-
-      // Check for rate limit if process failed
-      if (code !== 0) {
-        debugLog('[Agent Queue] Checking for rate limit (non-zero exit)');
-        const rateLimitDetection = detectRateLimit(allOutput);
-        if (rateLimitDetection.isRateLimited) {
-          debugLog('[Agent Queue] Rate limit detected for ideation');
-          const rateLimitInfo = createSDKRateLimitInfo('ideation', rateLimitDetection, {
-            projectId
-          });
-          this.emitter.emit('sdk-rate-limit', rateLimitInfo);
-        }
-      }
-
-      if (code === 0) {
-        debugLog('[Agent Queue] Ideation generation completed successfully');
-        this.emitter.emit('ideation-progress', projectId, {
-          phase: 'complete',
-          progress: 100,
-          message: 'Ideation generation complete'
-        });
-
-        // Load and emit the complete ideation session
-        if (storedProjectPath) {
-          try {
-            const ideationFilePath = path.join(
-              storedProjectPath,
-              '.auto-claude',
-              'ideation',
-              'ideation.json'
-            );
-            debugLog('[Agent Queue] Loading ideation session from:', ideationFilePath);
-            if (existsSync(ideationFilePath)) {
-              const loadSession = async (): Promise<void> => {
-                try {
-                  const content = await fsPromises.readFile(ideationFilePath, 'utf-8');
-                  const rawSession = JSON.parse(content);
-                  const session = transformSessionFromSnakeCase(rawSession, projectId);
-                  debugLog('[Agent Queue] Loaded ideation session:', {
-                    totalIdeas: session.ideas?.length || 0
-                  });
-                  this.emitter.emit('ideation-complete', projectId, session);
-                } catch (err) {
-                  debugError('[Ideation] Failed to load ideation session:', err);
-                  this.emitter.emit('ideation-error', projectId,
-                    `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                }
-              };
-              loadSession().catch((err: unknown) => {
-                debugError('[Agent Queue] Unhandled error loading ideation session:', err);
-              });
-            } else {
-              debugError('[Ideation] ideation.json not found at:', ideationFilePath);
-              this.emitter.emit('ideation-error', projectId,
-                'Ideation completed but session file not found. Ideas may have been saved to individual type files.');
-            }
-          } catch (err) {
-            debugError('[Ideation] Unexpected error in ideation completion:', err);
-            this.emitter.emit('ideation-error', projectId,
-              `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
-          }
-        } else {
-          debugError('[Ideation] No project path available to load session');
-          this.emitter.emit('ideation-error', projectId,
-            'Ideation completed but project path unavailable');
-        }
-      } else {
-        debugError('[Agent Queue] Ideation generation failed:', { projectId, code });
-        this.emitter.emit('ideation-error', projectId, `Ideation generation failed with exit code ${code}`);
-      }
-    });
-
-    // Handle process error
-    childProcess.on('error', (err: Error) => {
-      console.error('[Ideation] Process error:', err.message);
-      this.state.deleteProcess(projectId);
-      this.emitter.emit('ideation-error', projectId, err.message);
-    });
-  }
-
-  /**
-   * Spawn a Python process for roadmap generation
-   */
-  private async spawnRoadmapProcess(
-    projectId: string,
-    projectPath: string,
-    args: string[]
-  ): Promise<void> {
-    debugLog('[Agent Queue] Spawning roadmap process:', { projectId, projectPath });
-
-    // Run from auto-claude source directory so imports work correctly
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
-    const cwd = autoBuildSource || process.cwd();
-
-    // Ensure Python environment is ready before spawning
-    if (!await this.ensurePythonEnvReady(projectId, 'roadmap-error')) {
+    if (abortController.signal.aborted) {
+      this.emitter.emit('ideation-stopped', projectId);
       return;
     }
 
-    // Kill existing process for this project if any
-    const wasKilled = this.processManager.killProcess(projectId);
-    if (wasKilled) {
-      debugLog('[Agent Queue] Killed existing roadmap process for project:', projectId);
+    // Emit completion
+    this.emitter.emit('ideation-progress', projectId, {
+      phase: 'complete',
+      progress: 100,
+      message: 'Ideation generation complete',
+      completedTypes: Array.from(completedTypes)
+    });
+
+    // Load and emit the complete ideation session
+    try {
+      const ideationFilePath = path.join(outputDir, 'ideation.json');
+      if (existsSync(ideationFilePath)) {
+        const content = await fsPromises.readFile(ideationFilePath, 'utf-8');
+        const rawSession = JSON.parse(content);
+        const session = transformSessionFromSnakeCase(rawSession, projectId);
+        debugLog('[Agent Queue] Loaded ideation session:', { totalIdeas: session.ideas?.length || 0 });
+        this.emitter.emit('ideation-complete', projectId, session);
+      } else {
+        debugLog('[Agent Queue] ideation.json not found, individual type files used');
+        this.emitter.emit('ideation-complete', projectId, null);
+      }
+    } catch (err) {
+      debugError('[Agent Queue] Failed to load ideation session:', err);
+      this.emitter.emit('ideation-error', projectId,
+        `Failed to load ideation session: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Run roadmap generation using the TypeScript roadmap runner.
+   * Replaces the previous Python subprocess spawning approach.
+   */
+  private async runRoadmapRunner(
+    projectId: string,
+    projectPath: string,
+    refresh: boolean,
+    enableCompetitorAnalysis: boolean,
+    config?: RoadmapConfig
+  ): Promise<void> {
+    debugLog('[Agent Queue] Running roadmap via TS runner:', { projectId, projectPath });
+
+    // Cancel any existing roadmap for this project
+    const existingController = this.abortControllers.get(`roadmap:${projectId}`);
+    if (existingController) {
+      existingController.abort();
+      this.abortControllers.delete(`roadmap:${projectId}`);
     }
 
-    // Generate unique spawn ID for this process instance
+    // Kill existing process for this project if any (legacy cleanup)
+    this.processManager.killProcess(projectId);
+
+    const abortController = new AbortController();
+    this.abortControllers.set(`roadmap:${projectId}`, abortController);
+
+    // Mark as running in state
     const spawnId = this.state.generateSpawnId();
-    debugLog('[Agent Queue] Generated roadmap spawn ID:', spawnId);
-
-
-    // Get combined environment variables
-    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
-
-    // Get best available Claude profile environment (automatically handles rate limits)
-    const profileResult = getBestAvailableProfileEnv();
-    const profileEnv = profileResult.env;
-
-    // Get active API profile environment variables
-    const apiProfileEnv = await getAPIProfileEnv();
-
-    // Get OAuth mode clearing vars (clears stale ANTHROPIC_* vars when in OAuth mode)
-    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
-
-    // Get Python path from process manager (uses venv if configured)
-    const pythonPath = this.processManager.getPythonPath();
-
-    // Get Python environment from pythonEnvManager (includes bundled site-packages)
-    const pythonEnv = pythonEnvManager.getPythonEnv();
-
-    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource for local imports
-    const pythonPathParts: string[] = [];
-    if (pythonEnv.PYTHONPATH) {
-      pythonPathParts.push(pythonEnv.PYTHONPATH);
-    }
-    if (autoBuildSource) {
-      pythonPathParts.push(autoBuildSource);
-    }
-    const combinedPythonPath = pythonPathParts.join(getPathDelimiter());
-
-    // Build final environment with proper precedence:
-    // 1. process.env (system)
-    // 2. pythonEnv (bundled packages environment)
-    // 3. combinedEnv (auto-claude/.env for CLI usage)
-    // 4. oauthModeClearVars (clear stale ANTHROPIC_* vars when in OAuth mode)
-    // 5. profileEnv (Electron app OAuth token)
-    // 6. apiProfileEnv (Active API profile config - highest priority for ANTHROPIC_* vars)
-    // 7. Our specific overrides
-    const finalEnv = {
-      ...process.env,
-      ...pythonEnv,
-      ...combinedEnv,
-      ...oauthModeClearVars,
-      ...profileEnv,
-      ...apiProfileEnv,
-      PYTHONPATH: combinedPythonPath,
-      PYTHONUNBUFFERED: '1',
-      PYTHONUTF8: '1'
-    };
-
-    // Normalize PATH key to a single uppercase 'PATH' entry.
-    // On Windows, process.env spread produces 'Path' while pythonEnv may write 'PATH',
-    // resulting in duplicate keys in the final object. Without normalization the child
-    // process inherits both keys, which can cause tool-not-found errors (#1661).
-    normalizeEnvPathKey(finalEnv as Record<string, string | undefined>);
-
-    // Debug: Show OAuth token source (token values intentionally omitted for security - AC4)
-    const tokenSource = profileEnv['CLAUDE_CODE_OAUTH_TOKEN']
-      ? 'Electron app profile'
-      : (combinedEnv['CLAUDE_CODE_OAUTH_TOKEN'] ? 'auto-claude/.env' : 'not found');
-    const hasToken = !!(finalEnv as Record<string, string | undefined>)['CLAUDE_CODE_OAUTH_TOKEN'];
-    debugLog('[Agent Queue] OAuth token status:', {
-      source: tokenSource,
-      hasToken
-    });
-
-    // Parse Python command to handle space-separated commands like "py -3"
-    const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
-    const childProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
-      cwd,
-      env: finalEnv
-    });
-
     this.state.addProcess(projectId, {
       taskId: projectId,
-      process: childProcess,
+      process: null as unknown as import('child_process').ChildProcess,
       startedAt: new Date(),
-      projectPath, // Store project path for loading roadmap on completion
+      projectPath,
       spawnId,
       queueProcessType: 'roadmap'
     });
 
-    // Track progress through output
+    // Track progress
     let progressPhase = 'analyzing';
     let progressPercent = 10;
-    // Collect output for rate limit detection
-    let allRoadmapOutput = '';
-    // Track startedAt timestamp for progress persistence
     const roadmapStartedAt = new Date().toISOString();
 
-    // Persist initial progress state (debounced - will execute immediately due to leading: true)
+    // Persist initial progress
     this.debouncedPersistRoadmapProgress(
       projectPath,
       progressPhase,
@@ -786,184 +399,127 @@ export class AgentQueueManager {
       true
     );
 
-    // Helper to emit logs - split multi-line output into individual log lines
-    const emitLogs = (log: string) => {
-      const lines = log.split('\n').filter(line => line.trim().length > 0);
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.length > 0) {
-          this.emitter.emit('roadmap-log', projectId, trimmed);
+    // Emit initial progress
+    this.emitter.emit('roadmap-progress', projectId, {
+      phase: progressPhase,
+      progress: progressPercent,
+      message: 'Starting roadmap generation...'
+    });
+
+    try {
+      const result = await runRoadmapGeneration(
+        {
+          projectDir: projectPath,
+          modelShorthand: (config?.model || 'sonnet') as ModelShorthand,
+          thinkingLevel: (config?.thinkingLevel || 'medium') as ThinkingLevel,
+          refresh,
+          enableCompetitorAnalysis,
+          abortSignal: abortController.signal,
+        },
+        (event: RoadmapStreamEvent) => {
+          switch (event.type) {
+            case 'phase-start': {
+              progressPhase = event.phase;
+              progressPercent = Math.min(progressPercent + 20, 90);
+              const msg = `Running ${event.phase} phase...`;
+              this.emitter.emit('roadmap-log', projectId, msg);
+              this.emitter.emit('roadmap-progress', projectId, {
+                phase: progressPhase,
+                progress: progressPercent,
+                message: msg
+              });
+              this.debouncedPersistRoadmapProgress(
+                projectPath, progressPhase, progressPercent, msg, roadmapStartedAt, true
+              );
+              break;
+            }
+            case 'phase-complete': {
+              const msg = `Phase ${event.phase} ${event.success ? 'completed' : 'failed'}`;
+              this.emitter.emit('roadmap-log', projectId, msg);
+              break;
+            }
+            case 'text-delta': {
+              this.emitter.emit('roadmap-log', projectId, event.text);
+              break;
+            }
+            case 'error': {
+              this.emitter.emit('roadmap-log', projectId, `Error: ${event.error}`);
+              break;
+            }
+          }
         }
-      }
-    };
-
-    // Handle stdout - explicitly decode as UTF-8 for cross-platform Unicode support
-    childProcess.stdout?.on('data', (data: Buffer) => {
-      const log = data.toString('utf-8');
-      // Collect output for rate limit detection (keep last 10KB)
-      allRoadmapOutput = (allRoadmapOutput + log).slice(-10000);
-
-      // Emit all log lines for debugging
-      emitLogs(log);
-
-      // Parse progress using AgentEvents
-      const progressUpdate = this.events.parseRoadmapProgress(log, progressPhase, progressPercent);
-      progressPhase = progressUpdate.phase;
-      progressPercent = progressUpdate.progress;
-
-      // Get status message for display
-      const statusMessage = formatStatusMessage(log);
-
-      // Persist progress to disk for recovery after restart (debounced to limit writes)
-      this.debouncedPersistRoadmapProgress(
-        projectPath,
-        progressPhase,
-        progressPercent,
-        statusMessage,
-        roadmapStartedAt,
-        true
       );
 
-      // Emit progress update
-      this.emitter.emit('roadmap-progress', projectId, {
-        phase: progressPhase,
-        progress: progressPercent,
-        message: statusMessage
-      });
-    });
+      // Clean up
+      this.abortControllers.delete(`roadmap:${projectId}`);
+      this.state.deleteProcess(projectId);
 
-    // Handle stderr - explicitly decode as UTF-8
-    childProcess.stderr?.on('data', (data: Buffer) => {
-      const log = data.toString('utf-8');
-      // Collect stderr for rate limit detection too
-      allRoadmapOutput = (allRoadmapOutput + log).slice(-10000);
-      console.error('[Roadmap STDERR]', log);
-      emitLogs(log);
-
-      const statusMessage = formatStatusMessage(log);
-
-      // Persist progress to disk (debounced - also on stderr to show activity)
-      this.debouncedPersistRoadmapProgress(
-        projectPath,
-        progressPhase,
-        progressPercent,
-        statusMessage,
-        roadmapStartedAt,
-        true
-      );
-
-      this.emitter.emit('roadmap-progress', projectId, {
-        phase: progressPhase,
-        progress: progressPercent,
-        message: statusMessage
-      });
-    });
-
-    // Handle process exit
-    childProcess.on('exit', (code: number | null) => {
-      debugLog('[Agent Queue] Roadmap process exited:', { projectId, code, spawnId });
-
-      // Check if this process was intentionally stopped by the user
-      const wasIntentionallyStopped = this.state.wasSpawnKilled(spawnId);
-      if (wasIntentionallyStopped) {
-        debugLog('[Agent Queue] Roadmap process was intentionally stopped, ignoring exit');
-        this.state.clearKilledSpawn(spawnId);
-        // Clear progress file on intentional stop
+      if (abortController.signal.aborted) {
         this.clearRoadmapProgress(projectPath);
-        // Note: Don't call deleteProcess here - killProcess() already deleted it.
-        // A new process with the same projectId may have been started.
+        this.emitter.emit('roadmap-stopped', projectId);
         return;
       }
 
-      // Get the stored project path before deleting from map
-      const processInfo = this.state.getProcess(projectId);
-      const storedProjectPath = processInfo?.projectPath;
-      this.state.deleteProcess(projectId);
-
-      // Check for rate limit if process failed
-      if (code !== 0) {
-        debugLog('[Agent Queue] Checking for rate limit (non-zero exit)');
-        const rateLimitDetection = detectRateLimit(allRoadmapOutput);
-        if (rateLimitDetection.isRateLimited) {
-          debugLog('[Agent Queue] Rate limit detected for roadmap');
-          const rateLimitInfo = createSDKRateLimitInfo('roadmap', rateLimitDetection, {
-            projectId
-          });
-          this.emitter.emit('sdk-rate-limit', rateLimitInfo);
-        }
-      }
-
-      if (code === 0) {
+      if (result.success) {
         debugLog('[Agent Queue] Roadmap generation completed successfully');
         this.emitter.emit('roadmap-progress', projectId, {
           phase: 'complete',
           progress: 100,
           message: 'Roadmap generation complete'
         });
-
-        // Clear progress file on successful completion
         this.clearRoadmapProgress(projectPath);
 
         // Load and emit the complete roadmap
-        if (storedProjectPath) {
+        const roadmapFilePath = path.join(projectPath, '.auto-claude', 'roadmap', 'roadmap.json');
+        if (existsSync(roadmapFilePath)) {
           try {
-            const roadmapFilePath = path.join(
-              storedProjectPath,
-              '.auto-claude',
-              'roadmap',
-              'roadmap.json'
-            );
-            debugLog('[Agent Queue] Loading roadmap from:', roadmapFilePath);
-            if (existsSync(roadmapFilePath)) {
-              const loadRoadmap = async (): Promise<void> => {
-                try {
-                  const content = await fsPromises.readFile(roadmapFilePath, 'utf-8');
-                  const rawRoadmap = JSON.parse(content);
-                  const transformedRoadmap = transformRoadmapFromSnakeCase(rawRoadmap, projectId);
-                  debugLog('[Agent Queue] Loaded roadmap:', {
-                    featuresCount: transformedRoadmap.features?.length || 0,
-                    phasesCount: transformedRoadmap.phases?.length || 0
-                  });
-                  this.emitter.emit('roadmap-complete', projectId, transformedRoadmap);
-                } catch (err) {
-                  debugError('[Roadmap] Failed to load roadmap:', err);
-                  this.emitter.emit('roadmap-error', projectId,
-                    `Failed to load roadmap: ${err instanceof Error ? err.message : 'Unknown error'}`);
-                }
-              };
-              loadRoadmap().catch((err: unknown) => {
-                debugError('[Agent Queue] Unhandled error loading roadmap:', err);
-              });
-            } else {
-              debugError('[Roadmap] roadmap.json not found at:', roadmapFilePath);
-              this.emitter.emit('roadmap-error', projectId,
-                'Roadmap completed but file not found.');
-            }
+            const content = await fsPromises.readFile(roadmapFilePath, 'utf-8');
+            const rawRoadmap = JSON.parse(content);
+            const transformedRoadmap = transformRoadmapFromSnakeCase(rawRoadmap, projectId);
+            debugLog('[Agent Queue] Loaded roadmap:', {
+              featuresCount: transformedRoadmap.features?.length || 0,
+              phasesCount: transformedRoadmap.phases?.length || 0
+            });
+            this.emitter.emit('roadmap-complete', projectId, transformedRoadmap);
           } catch (err) {
-            debugError('[Roadmap] Unexpected error in roadmap completion:', err);
+            debugError('[Roadmap] Failed to load roadmap:', err);
             this.emitter.emit('roadmap-error', projectId,
-              `Unexpected error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+              `Failed to load roadmap: ${err instanceof Error ? err.message : 'Unknown error'}`);
           }
         } else {
-          debugError('[Roadmap] No project path available for roadmap completion');
-          this.emitter.emit('roadmap-error', projectId, 'Roadmap completed but project path not found.');
+          debugError('[Roadmap] roadmap.json not found');
+          this.emitter.emit('roadmap-error', projectId, 'Roadmap completed but file not found.');
         }
       } else {
-        debugError('[Agent Queue] Roadmap generation failed:', { projectId, code });
-        // Clear progress file on error
+        debugError('[Agent Queue] Roadmap generation failed:', { projectId, error: result.error });
         this.clearRoadmapProgress(projectPath);
-        this.emitter.emit('roadmap-error', projectId, `Roadmap generation failed with exit code ${code}`);
-      }
-    });
 
-    // Handle process error
-    childProcess.on('error', (err: Error) => {
-      console.error('[Roadmap] Process error:', err.message);
+        // Check for rate limit
+        if (result.error) {
+          const rateLimitDetection = detectRateLimit(result.error);
+          if (rateLimitDetection.isRateLimited) {
+            const rateLimitInfo = createSDKRateLimitInfo('roadmap', rateLimitDetection, { projectId });
+            this.emitter.emit('sdk-rate-limit', rateLimitInfo);
+          }
+        }
+
+        this.emitter.emit('roadmap-error', projectId,
+          result.error || 'Roadmap generation failed');
+      }
+    } catch (err) {
+      this.abortControllers.delete(`roadmap:${projectId}`);
       this.state.deleteProcess(projectId);
-      // Clear progress file on process error
       this.clearRoadmapProgress(projectPath);
-      this.emitter.emit('roadmap-error', projectId, err.message);
-    });
+
+      if (abortController.signal.aborted) {
+        this.emitter.emit('roadmap-stopped', projectId);
+        return;
+      }
+
+      debugError('[Agent Queue] Roadmap runner error:', err);
+      this.emitter.emit('roadmap-error', projectId,
+        `Roadmap generation error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   }
 
   /**
@@ -972,16 +528,26 @@ export class AgentQueueManager {
   stopIdeation(projectId: string): boolean {
     debugLog('[Agent Queue] Stop ideation requested:', { projectId });
 
+    // Try TS runner abort first
+    const controller = this.abortControllers.get(`ideation:${projectId}`);
+    if (controller) {
+      debugLog('[Agent Queue] Aborting ideation TS runner:', projectId);
+      controller.abort();
+      this.abortControllers.delete(`ideation:${projectId}`);
+      // Note: the runner's async loop will handle cleanup and emit ideation-stopped
+      return true;
+    }
+
+    // Fallback: check for legacy process
     const processInfo = this.state.getProcess(projectId);
     const isIdeation = processInfo?.queueProcessType === 'ideation';
-    debugLog('[Agent Queue] Process running?', { projectId, isIdeation, processType: processInfo?.queueProcessType });
-
     if (isIdeation) {
-      debugLog('[Agent Queue] Killing ideation process:', projectId);
+      debugLog('[Agent Queue] Killing legacy ideation process:', projectId);
       this.processManager.killProcess(projectId);
       this.emitter.emit('ideation-stopped', projectId);
       return true;
     }
+
     debugLog('[Agent Queue] No running ideation process found for:', projectId);
     return false;
   }
@@ -990,6 +556,7 @@ export class AgentQueueManager {
    * Check if ideation is running for a project
    */
   isIdeationRunning(projectId: string): boolean {
+    if (this.abortControllers.has(`ideation:${projectId}`)) return true;
     const processInfo = this.state.getProcess(projectId);
     return processInfo?.queueProcessType === 'ideation';
   }
@@ -1000,16 +567,26 @@ export class AgentQueueManager {
   stopRoadmap(projectId: string): boolean {
     debugLog('[Agent Queue] Stop roadmap requested:', { projectId });
 
+    // Try TS runner abort first
+    const controller = this.abortControllers.get(`roadmap:${projectId}`);
+    if (controller) {
+      debugLog('[Agent Queue] Aborting roadmap TS runner:', projectId);
+      controller.abort();
+      this.abortControllers.delete(`roadmap:${projectId}`);
+      // Note: the runner's async method will handle cleanup and emit roadmap-stopped
+      return true;
+    }
+
+    // Fallback: check for legacy process
     const processInfo = this.state.getProcess(projectId);
     const isRoadmap = processInfo?.queueProcessType === 'roadmap';
-    debugLog('[Agent Queue] Roadmap process running?', { projectId, isRoadmap, processType: processInfo?.queueProcessType });
-
     if (isRoadmap) {
-      debugLog('[Agent Queue] Killing roadmap process:', projectId);
+      debugLog('[Agent Queue] Killing legacy roadmap process:', projectId);
       this.processManager.killProcess(projectId);
       this.emitter.emit('roadmap-stopped', projectId);
       return true;
     }
+
     debugLog('[Agent Queue] No running roadmap process found for:', projectId);
     return false;
   }
@@ -1018,6 +595,7 @@ export class AgentQueueManager {
    * Check if roadmap is running for a project
    */
   isRoadmapRunning(projectId: string): boolean {
+    if (this.abortControllers.has(`roadmap:${projectId}`)) return true;
     const processInfo = this.state.getProcess(projectId);
     return processInfo?.queueProcessType === 'roadmap';
   }
