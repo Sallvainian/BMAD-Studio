@@ -1,0 +1,225 @@
+/**
+ * Error Classifier
+ * ================
+ *
+ * Classifies errors from AI SDK streaming into structured SessionError objects.
+ * Ported from apps/backend/core/error_utils.py.
+ *
+ * Classification categories:
+ * - rate_limit: HTTP 429 or rate limit keywords
+ * - auth_failure: HTTP 401 or authentication keywords
+ * - concurrency: HTTP 400 + tool concurrency keywords
+ * - tool_error: Tool execution failures
+ * - generic: Everything else
+ */
+
+import type { SessionError, SessionOutcome } from './types';
+
+// =============================================================================
+// Error Code Constants
+// =============================================================================
+
+export const ErrorCode = {
+  RATE_LIMITED: 'rate_limited',
+  AUTH_FAILURE: 'auth_failure',
+  CONCURRENCY: 'concurrency_error',
+  TOOL_ERROR: 'tool_execution_error',
+  ABORTED: 'aborted',
+  MAX_STEPS: 'max_steps_reached',
+  GENERIC: 'generic_error',
+} as const;
+
+export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
+
+// =============================================================================
+// Classification Functions
+// =============================================================================
+
+const WORD_BOUNDARY_429 = /\b429\b/;
+const WORD_BOUNDARY_401 = /\b401\b/;
+
+const RATE_LIMIT_PATTERNS = [
+  'limit reached',
+  'rate limit',
+  'too many requests',
+  'usage limit',
+  'quota exceeded',
+] as const;
+
+const AUTH_PATTERNS = [
+  'authentication failed',
+  'authentication error',
+  'unauthorized',
+  'invalid token',
+  'token expired',
+  'authentication_error',
+  'invalid_token',
+  'token_expired',
+  'not authenticated',
+  'http 401',
+  'does not have access to claude',
+  'please login again',
+] as const;
+
+/**
+ * Check if an error is a rate limit error (429 or similar).
+ */
+export function isRateLimitError(error: unknown): boolean {
+  const errorStr = errorToString(error);
+  if (WORD_BOUNDARY_429.test(errorStr)) return true;
+  return RATE_LIMIT_PATTERNS.some((p) => errorStr.includes(p));
+}
+
+/**
+ * Check if an error is an authentication error (401 or similar).
+ */
+export function isAuthenticationError(error: unknown): boolean {
+  const errorStr = errorToString(error);
+  if (WORD_BOUNDARY_401.test(errorStr)) return true;
+  return AUTH_PATTERNS.some((p) => errorStr.includes(p));
+}
+
+/**
+ * Check if an error is a 400 tool concurrency error from Claude API.
+ */
+export function isToolConcurrencyError(error: unknown): boolean {
+  const errorStr = errorToString(error);
+  return (
+    errorStr.includes('400') &&
+    ((errorStr.includes('tool') && errorStr.includes('concurrency')) ||
+      errorStr.includes('too many tools') ||
+      errorStr.includes('concurrent tool'))
+  );
+}
+
+/**
+ * Check if an error is from an aborted request.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true;
+  const errorStr = errorToString(error);
+  return errorStr.includes('aborted') || errorStr.includes('abort');
+}
+
+// =============================================================================
+// Main Classifier
+// =============================================================================
+
+export interface ClassifiedError {
+  /** The structured session error */
+  sessionError: SessionError;
+  /** The session outcome to use */
+  outcome: SessionOutcome;
+}
+
+/**
+ * Classify an error into a structured SessionError with the appropriate outcome.
+ *
+ * Priority order:
+ * 1. Abort (not retryable)
+ * 2. Rate limit (retryable after backoff)
+ * 3. Auth failure (not retryable without re-auth)
+ * 4. Concurrency (retryable)
+ * 5. Tool error (retryable)
+ * 6. Generic (not retryable)
+ */
+export function classifyError(error: unknown): ClassifiedError {
+  const message = sanitizeErrorMessage(errorToString(error));
+
+  if (isAbortError(error)) {
+    return {
+      sessionError: {
+        code: ErrorCode.ABORTED,
+        message: 'Session was cancelled',
+        retryable: false,
+        cause: error,
+      },
+      outcome: 'cancelled',
+    };
+  }
+
+  if (isRateLimitError(error)) {
+    return {
+      sessionError: {
+        code: ErrorCode.RATE_LIMITED,
+        message: `Rate limit exceeded: ${message}`,
+        retryable: true,
+        cause: error,
+      },
+      outcome: 'rate_limited',
+    };
+  }
+
+  if (isAuthenticationError(error)) {
+    return {
+      sessionError: {
+        code: ErrorCode.AUTH_FAILURE,
+        message: `Authentication failed: ${message}`,
+        retryable: false,
+        cause: error,
+      },
+      outcome: 'auth_failure',
+    };
+  }
+
+  if (isToolConcurrencyError(error)) {
+    return {
+      sessionError: {
+        code: ErrorCode.CONCURRENCY,
+        message: `Tool concurrency limit: ${message}`,
+        retryable: true,
+        cause: error,
+      },
+      outcome: 'error',
+    };
+  }
+
+  return {
+    sessionError: {
+      code: ErrorCode.GENERIC,
+      message,
+      retryable: false,
+      cause: error,
+    },
+    outcome: 'error',
+  };
+}
+
+/**
+ * Classify a tool execution error specifically.
+ */
+export function classifyToolError(
+  toolName: string,
+  toolCallId: string,
+  error: unknown,
+): SessionError {
+  return {
+    code: ErrorCode.TOOL_ERROR,
+    message: `Tool '${toolName}' (${toolCallId}) failed: ${sanitizeErrorMessage(errorToString(error))}`,
+    retryable: true,
+    cause: error,
+  };
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Convert any error to a lowercase string for pattern matching.
+ */
+function errorToString(error: unknown): string {
+  if (error instanceof Error) return error.message.toLowerCase();
+  if (typeof error === 'string') return error.toLowerCase();
+  return String(error).toLowerCase();
+}
+
+/**
+ * Remove sensitive data from error messages (API keys, tokens).
+ */
+function sanitizeErrorMessage(message: string): string {
+  return message
+    .replace(/sk-[a-zA-Z0-9-_]{20,}/g, 'sk-***')
+    .replace(/Bearer [a-zA-Z0-9-_.]+/gi, 'Bearer ***')
+    .replace(/token[=:]\s*[a-zA-Z0-9-_.]+/gi, 'token=***');
+}
