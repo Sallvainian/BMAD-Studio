@@ -369,7 +369,7 @@ from ai_analyzer.claude_client import CLAUDE_SDK_AVAILABLE
 
 # Check SDK availability
 if not CLAUDE_SDK_AVAILABLE:
-    print("Please install: pip install claude-agent-sdk")
+    print("Claude agent SDK is no longer available. Use the TypeScript AI SDK layer.")
     exit(1)
 
 # Handle missing OAuth token

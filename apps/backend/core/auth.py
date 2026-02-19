@@ -945,7 +945,7 @@ def get_sdk_env_vars() -> dict[str, str]:
     Get environment variables to pass to SDK.
 
     Collects relevant env vars (ANTHROPIC_BASE_URL, etc.) that should
-    be passed through to the claude-agent-sdk subprocess.
+    be passed through to the agent subprocess.
 
     On Windows, auto-detects CLAUDE_CODE_GIT_BASH_PATH if not already set.
 

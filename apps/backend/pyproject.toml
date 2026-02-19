@@ -6,7 +6,6 @@ version = "2.7.6"
 description = "Auto-Claude autonomous coding framework - Python backend"
 requires-python = ">=3.12"
 dependencies = [
-    "claude-agent-sdk>=0.1.25",
     "python-dotenv>=1.0.0",
     "graphiti-core>=0.5.0",
     "pandas>=2.2.0",

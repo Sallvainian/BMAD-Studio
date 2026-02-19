@@ -25,8 +25,6 @@ import pytest
 _POTENTIALLY_MOCKED_MODULES = [
     "claude_code_sdk",
     "claude_code_sdk.types",
-    "claude_agent_sdk",
-    "claude_agent_sdk.types",
 ]
 
 # Store original module references at import time (BEFORE pre-mocking)
@@ -51,11 +49,6 @@ def _create_sdk_mock():
     mock.HookMatcher = MagicMock
     return mock
 
-
-# Pre-mock claude_agent_sdk if not installed
-if "claude_agent_sdk" not in sys.modules:
-    sys.modules["claude_agent_sdk"] = _create_sdk_mock()
-    sys.modules["claude_agent_sdk.types"] = MagicMock()
 
 # Pre-mock claude_code_sdk if not installed
 if "claude_code_sdk" not in sys.modules:

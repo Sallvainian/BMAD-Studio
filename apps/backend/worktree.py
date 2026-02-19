@@ -5,7 +5,7 @@ This file exists to maintain backward compatibility for code that imports
 from 'worktree' instead of 'core.worktree'.
 
 IMPLEMENTATION: To avoid triggering core/__init__.py (which imports modules
-with heavy dependencies like claude_agent_sdk), we:
+with heavy dependencies), we:
 1. Create a minimal fake 'core' module to satisfy Python's import system
 2. Load core.worktree directly using importlib
 3. Register it in sys.modules
