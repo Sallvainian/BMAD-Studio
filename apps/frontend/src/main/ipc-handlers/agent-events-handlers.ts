@@ -94,7 +94,12 @@ export function registerAgenteventsHandlers(
     const { task: exitTask, project: exitProject } = findTaskAndProject(taskId, projectId);
     const exitProjectId = exitProject?.id || projectId;
 
-    taskStateManager.handleProcessExited(taskId, code, exitTask, exitProject);
+    // Skip handleProcessExited for successful spec-creation exits — the spec → build
+    // transition (line 132+) will start a new agent, and calling handleProcessExited
+    // here would mark the task as stuck (no terminal event seen for spec creation).
+    if (!(processType === 'spec-creation' && code === 0)) {
+      taskStateManager.handleProcessExited(taskId, code, exitTask, exitProject);
+    }
 
     // Send final plan state to renderer BEFORE unwatching
     // This ensures the renderer has the final subtask data (fixes 0/0 subtask bug)

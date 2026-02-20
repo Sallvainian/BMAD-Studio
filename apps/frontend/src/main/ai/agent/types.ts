@@ -80,7 +80,8 @@ export type WorkerMessage =
   | WorkerErrorMessage
   | WorkerProgressMessage
   | WorkerStreamEventMessage
-  | WorkerResultMessage;
+  | WorkerResultMessage
+  | WorkerTaskEventMessage;
 
 export interface WorkerLogMessage {
   type: 'log';
@@ -114,6 +115,13 @@ export interface WorkerResultMessage {
   type: 'result';
   taskId: string;
   data: SessionResult;
+  projectId?: string;
+}
+
+export interface WorkerTaskEventMessage {
+  type: 'task-event';
+  taskId: string;
+  data: Record<string, unknown>;
   projectId?: string;
 }
 

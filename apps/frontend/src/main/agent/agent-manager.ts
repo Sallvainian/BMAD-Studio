@@ -309,7 +309,7 @@ export class AgentManager extends EventEmitter {
     const executorConfig: AgentExecutorConfig = {
       taskId,
       projectId,
-      processType: 'task-execution',
+      processType: 'spec-creation',
       session: sessionConfig,
     };
 
@@ -319,7 +319,7 @@ export class AgentManager extends EventEmitter {
     // Register with unified OperationRegistry for proactive swap support
     this.registerTaskWithOperationRegistry(taskId, 'spec-creation', { projectPath, taskDescription, specDir });
 
-    await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'task-execution', projectId);
+    await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'spec-creation', projectId);
 
     // Note (Python fallback preserved for reference):
     // const combinedEnv = this.processManager.getCombinedEnv(projectPath);

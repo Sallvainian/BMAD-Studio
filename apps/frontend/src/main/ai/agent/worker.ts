@@ -13,7 +13,7 @@
 
 import { parentPort, workerData } from 'worker_threads';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 
 import { runAgentSession } from '../session/runner';
 import { createProviderFromModelId } from '../providers/factory';
@@ -35,6 +35,7 @@ import type {
   WorkerMessage,
   MainToWorkerMessage,
   SerializableSessionConfig,
+  WorkerTaskEventMessage,
 } from './types';
 import type { SessionConfig, StreamEvent, SessionResult } from '../session/types';
 import { BuildOrchestrator } from '../orchestration/build-orchestrator';
@@ -42,6 +43,7 @@ import { QALoop } from '../orchestration/qa-loop';
 import type { AgentType } from '../config/agent-configs';
 import type { Phase } from '../config/types';
 import { getPhaseModel, getPhaseThinking } from '../config/phase-config';
+import { TaskLogWriter } from '../logging/task-log-writer';
 
 // =============================================================================
 // Validation
@@ -57,6 +59,16 @@ if (!config?.taskId || !config?.session) {
 }
 
 // =============================================================================
+// Task Log Writer
+// =============================================================================
+
+// Single writer instance for this worker's spec, shared across all sessions
+// so that planning/coding/QA phases accumulate into one task_logs.json file.
+const logWriter = config.session.specDir
+  ? new TaskLogWriter(config.session.specDir, basename(config.session.specDir))
+  : null;
+
+// =============================================================================
 // Messaging Helpers
 // =============================================================================
 
@@ -70,6 +82,24 @@ function postLog(data: string): void {
 
 function postError(data: string): void {
   postMessage({ type: 'error', taskId: config.taskId, data, projectId: config.projectId });
+}
+
+function postTaskEvent(eventType: string, extra?: Record<string, unknown>): void {
+  parentPort?.postMessage({
+    type: 'task-event',
+    taskId: config.taskId,
+    projectId: config.projectId,
+    data: {
+      type: eventType,
+      taskId: config.taskId,
+      specId: config.session.specDir ? basename(config.session.specDir) : config.taskId,
+      projectId: config.projectId ?? '',
+      timestamp: new Date().toISOString(),
+      eventId: `${config.taskId}-${eventType}-${Date.now()}`,
+      sequence: Date.now(),
+      ...extra,
+    },
+  } satisfies WorkerTaskEventMessage);
 }
 
 // =============================================================================
@@ -222,26 +252,51 @@ async function runSingleSession(
     subtaskId,
   };
 
-  return runAgentSession(sessionConfig, {
-    tools,
-    onEvent: (event: StreamEvent) => {
-      postMessage({
-        type: 'stream-event',
-        taskId: config.taskId,
-        data: event,
-        projectId: config.projectId,
-      });
-    },
-    onAuthRefresh: baseSession.configDir
-      ? () => refreshOAuthTokenReactive(baseSession.configDir as string)
-      : undefined,
-    onModelRefresh: baseSession.configDir
-      ? (newToken: string) => createProviderFromModelId(phaseModelId, {
-          apiKey: newToken,
-          baseURL: baseSession.baseURL,
-        })
-      : undefined,
-  });
+  // Start phase logging for this session
+  if (logWriter) {
+    logWriter.startPhase(phase);
+    if (subtaskId) {
+      logWriter.setSubtask(subtaskId);
+    }
+  }
+
+  let sessionResult: SessionResult | undefined;
+  try {
+    sessionResult = await runAgentSession(sessionConfig, {
+      tools,
+      onEvent: (event: StreamEvent) => {
+        // Write stream events to task_logs.json for UI log display
+        if (logWriter) {
+          logWriter.processEvent(event, phase);
+        }
+        // Also relay to main thread for real-time progress updates
+        postMessage({
+          type: 'stream-event',
+          taskId: config.taskId,
+          data: event,
+          projectId: config.projectId,
+        });
+      },
+      onAuthRefresh: baseSession.configDir
+        ? () => refreshOAuthTokenReactive(baseSession.configDir as string)
+        : undefined,
+      onModelRefresh: baseSession.configDir
+        ? (newToken: string) => createProviderFromModelId(phaseModelId, {
+            apiKey: newToken,
+            baseURL: baseSession.baseURL,
+          })
+        : undefined,
+    });
+  } finally {
+    // End phase logging — mark as completed or failed based on outcome
+    if (logWriter) {
+      const success = sessionResult?.outcome === 'completed' || sessionResult?.outcome === 'max_steps';
+      logWriter.endPhase(phase, success ?? false);
+      logWriter.setSubtask(undefined);
+    }
+  }
+
+  return sessionResult as SessionResult;
 }
 
 // =============================================================================
@@ -310,31 +365,49 @@ async function runDefaultSession(
     subtaskId: session.subtaskId,
   };
 
-  const result: SessionResult = await runAgentSession(sessionConfig, {
-    tools,
-    onEvent: (event: StreamEvent) => {
-      postMessage({
-        type: 'stream-event',
-        taskId: config.taskId,
-        data: event,
-        projectId: config.projectId,
-      });
-    },
-    onAuthRefresh: session.configDir
-      ? () => refreshOAuthTokenReactive(session.configDir as string)
-      : undefined,
-    onModelRefresh: session.configDir
-      ? (newToken: string) => createProviderFromModelId(session.modelId, {
-          apiKey: newToken,
-          baseURL: session.baseURL,
-        })
-      : undefined,
-  });
+  // Start phase logging for default session
+  const defaultPhase: Phase = session.phase ?? 'coding';
+  if (logWriter) {
+    logWriter.startPhase(defaultPhase);
+  }
+
+  let result: SessionResult | undefined;
+  try {
+    result = await runAgentSession(sessionConfig, {
+      tools,
+      onEvent: (event: StreamEvent) => {
+        // Write stream events to task_logs.json for UI log display
+        if (logWriter) {
+          logWriter.processEvent(event, defaultPhase);
+        }
+        postMessage({
+          type: 'stream-event',
+          taskId: config.taskId,
+          data: event,
+          projectId: config.projectId,
+        });
+      },
+      onAuthRefresh: session.configDir
+        ? () => refreshOAuthTokenReactive(session.configDir as string)
+        : undefined,
+      onModelRefresh: session.configDir
+        ? (newToken: string) => createProviderFromModelId(session.modelId, {
+            apiKey: newToken,
+            baseURL: session.baseURL,
+          })
+        : undefined,
+    });
+  } finally {
+    if (logWriter) {
+      const success = result?.outcome === 'completed' || result?.outcome === 'max_steps';
+      logWriter.endPhase(defaultPhase, success ?? false);
+    }
+  }
 
   postMessage({
     type: 'result',
     taskId: config.taskId,
-    data: result,
+    data: result as SessionResult,
     projectId: config.projectId,
   });
 }
@@ -394,6 +467,20 @@ async function runBuildOrchestrator(
   });
 
   const outcome = await orchestrator.run();
+
+  // Flush any remaining accumulated log entries
+  if (logWriter) {
+    logWriter.flush();
+  }
+
+  // Emit task events based on orchestration outcome so XState machine
+  // can transition to the correct state (e.g., human_review on success).
+  if (outcome.success) {
+    postTaskEvent('QA_PASSED');
+    postTaskEvent('BUILD_COMPLETE');
+  } else {
+    postTaskEvent('CODING_FAILED', { error: outcome.error });
+  }
 
   // Map outcome to a SessionResult-compatible result for the bridge
   const result: SessionResult = {
@@ -460,6 +547,20 @@ async function runQALoop(
   });
 
   const outcome = await qaLoop.run();
+
+  // Flush any remaining accumulated log entries
+  if (logWriter) {
+    logWriter.flush();
+  }
+
+  // Emit task events so XState machine transitions correctly.
+  if (outcome.approved) {
+    postTaskEvent('QA_PASSED');
+  } else if (outcome.reason === 'max_iterations') {
+    postTaskEvent('QA_MAX_ITERATIONS');
+  } else {
+    postTaskEvent('QA_AGENT_ERROR', { error: outcome.error });
+  }
 
   const result: SessionResult = {
     outcome: outcome.approved ? 'completed' : 'error',

@@ -17,6 +17,7 @@ import { EventEmitter } from 'events';
 import { app } from 'electron';
 
 import type { AgentManagerEvents, ExecutionProgressData, ProcessType } from '../../agent/types';
+import type { TaskEventPayload } from '../../agent/task-event-schema';
 import type {
   WorkerConfig,
   WorkerMessage,
@@ -179,6 +180,10 @@ export class WorkerBridge extends EventEmitter {
         if (message.data.type === 'text-delta') {
           this.emitTyped('log', message.taskId, message.data.text, message.projectId);
         }
+        break;
+
+      case 'task-event':
+        this.emitTyped('task-event', message.taskId, message.data as TaskEventPayload, message.projectId);
         break;
 
       case 'result':
