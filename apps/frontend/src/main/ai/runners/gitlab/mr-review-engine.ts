@@ -251,7 +251,7 @@ ${diffContent}
 
     const prompt = `${MR_REVIEW_PROMPT}\n\n---\n\n${mrContext}`;
 
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: 'You are a senior code reviewer for GitLab Merge Requests.',
       modelShorthand: this.config.model ?? 'sonnet',
       thinkingLevel: this.config.thinkingLevel ?? 'medium',

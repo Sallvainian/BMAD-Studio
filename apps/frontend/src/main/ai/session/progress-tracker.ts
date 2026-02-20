@@ -286,8 +286,8 @@ export class ProgressTracker {
       return null;
     }
 
-    // Don't match on very short text fragments
-    if (text.length < 5) {
+    // Guard against undefined/null text (can happen with partial stream events)
+    if (!text || text.length < 5) {
       return null;
     }
 

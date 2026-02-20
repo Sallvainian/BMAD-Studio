@@ -544,7 +544,7 @@ ${diff}
   const modelShorthand = config.model ?? 'sonnet';
   const thinkingLevel = config.thinkingLevel ?? 'medium';
 
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: 'You are an expert code reviewer. Respond with structured JSON only.',
     modelShorthand,
     thinkingLevel,
@@ -573,7 +573,7 @@ async function runStructuralPass(
   const prContext = buildReviewContext(context);
   const fullPrompt = `${passPrompt}\n\n---\n\n${prContext}`;
 
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: 'You are an expert code reviewer. Respond with structured JSON only.',
     modelShorthand: config.model ?? 'sonnet',
     thinkingLevel: config.thinkingLevel ?? 'medium',
@@ -605,7 +605,7 @@ async function runAITriagePass(
   const prContext = buildReviewContext(context);
   const fullPrompt = `${passPrompt}\n\n---\n\n${aiContext}\n\n---\n\n${prContext}`;
 
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: 'You are an expert code reviewer. Respond with structured JSON only.',
     modelShorthand: config.model ?? 'sonnet',
     thinkingLevel: config.thinkingLevel ?? 'medium',

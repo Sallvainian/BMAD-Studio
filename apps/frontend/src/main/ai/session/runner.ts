@@ -54,6 +54,12 @@ export interface RunnerOptions {
   onEvent?: SessionEventCallback;
   /** Callback to refresh auth token on 401; returns new API key or null */
   onAuthRefresh?: () => Promise<string | null>;
+  /**
+   * Optional factory to recreate the model with a fresh token after auth refresh.
+   * If provided, called after a successful onAuthRefresh to replace the stale model.
+   * Without this, the retry uses the old model instance (which carries the revoked token).
+   */
+  onModelRefresh?: (newToken: string) => import('ai').LanguageModel;
   /** Tools resolved for this session (from client factory) */
   tools?: Record<string, AITool>;
 }
@@ -80,16 +86,17 @@ export async function runAgentSession(
   config: SessionConfig,
   options: RunnerOptions = {},
 ): Promise<SessionResult> {
-  const { onEvent, onAuthRefresh, tools } = options;
+  const { onEvent, onAuthRefresh, onModelRefresh, tools } = options;
   const startTime = Date.now();
 
   let authRetries = 0;
   let lastError: SessionError | undefined;
+  let activeConfig = config;
 
   // Retry loop for auth refresh
   while (authRetries <= MAX_AUTH_RETRIES) {
     try {
-      const result = await executeStream(config, tools, onEvent);
+      const result = await executeStream(activeConfig, tools, onEvent);
       return {
         ...result,
         durationMs: Date.now() - startTime,
@@ -112,7 +119,11 @@ export async function runAgentSession(
             startTime,
           );
         }
-        // Token refreshed — retry (model instance should pick up new creds)
+        // Recreate model with the fresh token if a factory is provided.
+        // Without this, the retry would use the old model with the revoked token.
+        if (onModelRefresh) {
+          activeConfig = { ...activeConfig, model: onModelRefresh(newToken) };
+        }
         continue;
       }
 
@@ -177,9 +188,9 @@ async function executeStream(
     tools: tools ?? {},
     stopWhen: stepCountIs(maxSteps),
     abortSignal: config.abortSignal,
-    onStepFinish: ({ toolResults }) => {
-      // onStepFinish is called after each agentic step
-      // toolResults are already handled by the stream handler
+    onStepFinish: (_stepResult) => {
+      // onStepFinish is called after each agentic step.
+      // Step results (tool calls, usage) are handled via the fullStream handler.
     },
   });
 

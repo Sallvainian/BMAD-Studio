@@ -170,7 +170,7 @@ export async function runIdeation(
   const tools = registry.getToolsForAgent('ideation', toolContext);
 
   // Create simple client
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: '',
     modelShorthand,
     thinkingLevel,

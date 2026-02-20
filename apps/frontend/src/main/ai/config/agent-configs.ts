@@ -117,6 +117,8 @@ export type AgentType =
   | 'spec_context'
   | 'spec_validation'
   | 'spec_compaction'
+  | 'spec_orchestrator'
+  | 'build_orchestrator'
   | 'planner'
   | 'coder'
   | 'qa_reviewer'
@@ -210,6 +212,36 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
     mcpServers: [],
     autoClaudeTools: [],
     thinkingDefault: 'medium',
+  },
+
+  /**
+   * Spec Orchestrator — entry point for the full spec creation pipeline.
+   * Drives spec_gatherer → spec_researcher → spec_writer → spec_critic pipeline.
+   * Needs full tool access to read/write spec files and research documentation.
+   */
+  spec_orchestrator: {
+    tools: [...BASE_READ_TOOLS, ...BASE_WRITE_TOOLS, ...WEB_TOOLS],
+    mcpServers: ['context7'],
+    autoClaudeTools: [],
+    thinkingDefault: 'high',
+  },
+
+  /**
+   * Build Orchestrator — entry point for the full build pipeline.
+   * Drives planner → coder → qa_reviewer → qa_fixer pipeline.
+   * Needs full tool access with MCP integrations.
+   */
+  build_orchestrator: {
+    tools: [...BASE_READ_TOOLS, ...BASE_WRITE_TOOLS, ...WEB_TOOLS],
+    mcpServers: ['context7', 'graphiti', 'auto-claude'],
+    mcpServersOptional: ['linear'],
+    autoClaudeTools: [
+      TOOL_GET_BUILD_PROGRESS,
+      TOOL_GET_SESSION_CONTEXT,
+      TOOL_RECORD_DISCOVERY,
+      TOOL_UPDATE_SUBTASK_STATUS,
+    ],
+    thinkingDefault: 'high',
   },
 
   // ═══════════════════════════════════════════════════════════════════════

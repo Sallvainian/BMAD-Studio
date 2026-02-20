@@ -131,7 +131,7 @@ export async function generateChangelog(
   const prompt = buildChangelogPrompt(config);
 
   try {
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: SYSTEM_PROMPT,
       modelShorthand,
       thinkingLevel,

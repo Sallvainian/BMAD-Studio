@@ -105,6 +105,8 @@ export type AgentType =
   | 'spec_context'
   | 'spec_validation'
   | 'spec_compaction'
+  | 'spec_orchestrator'
+  | 'build_orchestrator'
   | 'planner'
   | 'coder'
   | 'qa_reviewer'
@@ -202,6 +204,25 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
     mcpServers: [],
     autoClaudeTools: [],
     thinkingDefault: 'medium',
+  },
+  // ── Orchestrators — entry points for full pipelines ──
+  spec_orchestrator: {
+    tools: _readWriteWeb,
+    mcpServers: ['context7'],
+    autoClaudeTools: [],
+    thinkingDefault: 'high',
+  },
+  build_orchestrator: {
+    tools: _readWriteWeb,
+    mcpServers: ['context7', 'graphiti', 'auto-claude'],
+    mcpServersOptional: ['linear'],
+    autoClaudeTools: [
+      TOOL_GET_BUILD_PROGRESS,
+      TOOL_GET_SESSION_CONTEXT,
+      TOOL_RECORD_DISCOVERY,
+      TOOL_UPDATE_SUBTASK_STATUS,
+    ],
+    thinkingDefault: 'high',
   },
   // ── Build Phases ──
   planner: {

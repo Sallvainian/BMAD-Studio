@@ -6,12 +6,13 @@
  * Bridges the raw AI SDK stream into the session event system.
  *
  * AI SDK v6 fullStream parts handled:
- * - text-delta: Incremental text output
- * - reasoning: Extended thinking / reasoning output
- * - tool-call: Model initiates a tool call
- * - tool-result: Tool execution completed
- * - step-finish: An agentic step completed
- * - error: Stream-level error
+ * - text-delta: Incremental text output (field: `text`)
+ * - reasoning-delta: Extended thinking / reasoning output (field: `delta`)
+ * - tool-call: Model has assembled a complete tool call (fields: `toolCallId`, `toolName`, `input`)
+ * - tool-result: Tool execution completed (fields: `toolCallId`, `toolName`, `output`)
+ * - tool-error: Tool execution failed (fields: `toolCallId`, `toolName`, `error`)
+ * - finish-step: An agentic step completed (field: `usage` with `promptTokens`/`completionTokens`)
+ * - error: Stream-level error (field: `error`)
  */
 
 import type {
@@ -27,41 +28,56 @@ import { classifyError, classifyToolError } from './error-classifier';
 
 /**
  * AI SDK v6 fullStream part types we handle.
- * These match the shape emitted by `streamText().fullStream`.
+ * These match the actual shape emitted by `streamText().fullStream` in AI SDK v6.
+ *
+ * Verified against AI SDK v6 docs:
+ * - text-delta uses `text` field
+ * - reasoning-delta uses `delta` field
+ * - tool-call has `toolCallId`, `toolName`, `input`
+ * - tool-result has `toolCallId`, `toolName`, `input`, `output`
+ * - tool-error has `toolCallId`, `toolName`, `error`
+ * - finish-step usage uses `promptTokens`/`completionTokens`
+ * - error uses `error` field (not `errorText`)
  */
 export interface TextDeltaPart {
   type: 'text-delta';
-  textDelta: string;
+  text: string;
 }
 
-export interface ReasoningPart {
-  type: 'reasoning';
-  textDelta: string;
+export interface ReasoningDeltaPart {
+  type: 'reasoning-delta';
+  delta: string;
 }
 
 export interface ToolCallPart {
   type: 'tool-call';
-  toolName: string;
   toolCallId: string;
-  args: Record<string, unknown>;
+  toolName: string;
+  input: unknown;
 }
 
 export interface ToolResultPart {
   type: 'tool-result';
-  toolName: string;
   toolCallId: string;
-  result: unknown;
-  isError?: boolean;
+  toolName: string;
+  input: unknown;
+  output: unknown;
 }
 
-export interface StepFinishPart {
-  type: 'step-finish';
-  usage: {
+export interface ToolErrorPart {
+  type: 'tool-error';
+  toolCallId: string;
+  toolName: string;
+  error: unknown;
+}
+
+export interface FinishStepPart {
+  type: 'finish-step';
+  finishReason?: string;
+  usage?: {
     promptTokens: number;
     completionTokens: number;
-    totalTokens: number;
   };
-  isContinued: boolean;
 }
 
 export interface ErrorPart {
@@ -71,11 +87,13 @@ export interface ErrorPart {
 
 export type FullStreamPart =
   | TextDeltaPart
-  | ReasoningPart
+  | ReasoningDeltaPart
   | ToolCallPart
   | ToolResultPart
-  | StepFinishPart
-  | ErrorPart;
+  | ToolErrorPart
+  | FinishStepPart
+  | ErrorPart
+  | { type: string; [key: string]: unknown };
 
 // =============================================================================
 // Stream Handler State
@@ -87,6 +105,8 @@ interface StreamHandlerState {
   cumulativeUsage: TokenUsage;
   /** Track tool call start times for duration calculation */
   toolCallTimestamps: Map<string, number>;
+  /** Track tool names by toolCallId (needed to emit tool-result with name from tool-output-available) */
+  toolCallNames: Map<string, string>;
 }
 
 function createInitialState(): StreamHandlerState {
@@ -99,6 +119,7 @@ function createInitialState(): StreamHandlerState {
       totalTokens: 0,
     },
     toolCallTimestamps: new Map(),
+    toolCallNames: new Map(),
   };
 }
 
@@ -129,42 +150,50 @@ export function createStreamHandler(onEvent: SessionEventCallback) {
   function processPart(part: FullStreamPart): void {
     switch (part.type) {
       case 'text-delta':
-        handleTextDelta(part);
+        handleTextDelta(part as TextDeltaPart);
         break;
-      case 'reasoning':
-        handleReasoning(part);
+      case 'reasoning-delta':
+        handleReasoningDelta(part as ReasoningDeltaPart);
         break;
       case 'tool-call':
-        handleToolCall(part);
+        handleToolCall(part as ToolCallPart);
         break;
       case 'tool-result':
-        handleToolResult(part);
+        handleToolResult(part as ToolResultPart);
         break;
-      case 'step-finish':
-        handleStepFinish(part);
+      case 'tool-error':
+        handleToolError(part as ToolErrorPart);
+        break;
+      case 'finish-step':
+        handleFinishStep(part as FinishStepPart);
         break;
       case 'error':
-        handleError(part);
+        handleError(part as ErrorPart);
         break;
+      // Ignore other part types (text-start, text-end, tool-input-start,
+      // tool-input-delta, start-step, start, finish, reasoning-start,
+      // reasoning-end, source, file, raw, etc.)
     }
   }
 
   function handleTextDelta(part: TextDeltaPart): void {
-    emit({ type: 'text-delta', text: part.textDelta });
+    emit({ type: 'text-delta', text: part.text ?? '' });
   }
 
-  function handleReasoning(part: ReasoningPart): void {
-    emit({ type: 'thinking-delta', text: part.textDelta });
+  function handleReasoningDelta(part: ReasoningDeltaPart): void {
+    emit({ type: 'thinking-delta', text: part.delta });
   }
 
   function handleToolCall(part: ToolCallPart): void {
     state.toolCallCount++;
     state.toolCallTimestamps.set(part.toolCallId, Date.now());
+    // Store the tool name so we can include it in tool-result/tool-error events
+    state.toolCallNames.set(part.toolCallId, part.toolName);
     emit({
       type: 'tool-call',
       toolName: part.toolName,
       toolCallId: part.toolCallId,
-      args: part.args,
+      args: (part.input as Record<string, unknown>) ?? {},
     });
   }
 
@@ -172,41 +201,56 @@ export function createStreamHandler(onEvent: SessionEventCallback) {
     const startTime = state.toolCallTimestamps.get(part.toolCallId);
     const durationMs = startTime ? Date.now() - startTime : 0;
     state.toolCallTimestamps.delete(part.toolCallId);
-
-    const isError = part.isError ?? false;
+    state.toolCallNames.delete(part.toolCallId);
 
     emit({
       type: 'tool-result',
       toolName: part.toolName,
       toolCallId: part.toolCallId,
-      result: part.result,
+      result: part.output,
       durationMs,
-      isError,
+      isError: false,
     });
-
-    // Also emit a classified error event for tool failures
-    if (isError) {
-      const toolError = classifyToolError(
-        part.toolName,
-        part.toolCallId,
-        part.result,
-      );
-      emit({ type: 'error', error: toolError });
-    }
   }
 
-  function handleStepFinish(part: StepFinishPart): void {
+  function handleToolError(part: ToolErrorPart): void {
+    const startTime = state.toolCallTimestamps.get(part.toolCallId);
+    const durationMs = startTime ? Date.now() - startTime : 0;
+    state.toolCallTimestamps.delete(part.toolCallId);
+    state.toolCallNames.delete(part.toolCallId);
+
+    const errorMessage = part.error instanceof Error ? part.error.message : String(part.error ?? 'Tool execution failed');
+
+    emit({
+      type: 'tool-result',
+      toolName: part.toolName,
+      toolCallId: part.toolCallId,
+      result: errorMessage,
+      durationMs,
+      isError: true,
+    });
+
+    const toolError = classifyToolError(part.toolName, part.toolCallId, errorMessage);
+    emit({ type: 'error', error: toolError });
+  }
+
+  function handleFinishStep(part: FinishStepPart): void {
     state.stepNumber++;
 
+    // AI SDK v6 finish-step usage: promptTokens/completionTokens
+    const promptTokens = part.usage?.promptTokens ?? 0;
+    const completionTokens = part.usage?.completionTokens ?? 0;
+    const totalTokens = promptTokens + completionTokens;
+
     // Accumulate usage
-    state.cumulativeUsage.promptTokens += part.usage.promptTokens;
-    state.cumulativeUsage.completionTokens += part.usage.completionTokens;
-    state.cumulativeUsage.totalTokens += part.usage.totalTokens;
+    state.cumulativeUsage.promptTokens += promptTokens;
+    state.cumulativeUsage.completionTokens += completionTokens;
+    state.cumulativeUsage.totalTokens += totalTokens;
 
     const stepUsage: TokenUsage = {
-      promptTokens: part.usage.promptTokens,
-      completionTokens: part.usage.completionTokens,
-      totalTokens: part.usage.totalTokens,
+      promptTokens,
+      completionTokens,
+      totalTokens,
     };
 
     emit({
@@ -222,7 +266,8 @@ export function createStreamHandler(onEvent: SessionEventCallback) {
   }
 
   function handleError(part: ErrorPart): void {
-    const { sessionError } = classifyError(part.error);
+    const errorMessage = part.error instanceof Error ? part.error.message : String(part.error ?? 'Stream error');
+    const { sessionError } = classifyError(errorMessage);
     emit({ type: 'error', error: sessionError });
   }
 

@@ -14,7 +14,7 @@
  * existing claude-profile/ utilities.
  */
 
-import { getCredentialsFromKeychain } from '../../claude-profile/credential-utils';
+import { ensureValidToken, reactiveTokenRefresh } from '../../claude-profile/token-refresh';
 import type { SupportedProvider } from '../providers/types';
 import type { AuthResolverContext, ResolvedAuth } from './types';
 import {
@@ -52,19 +52,22 @@ export function registerSettingsAccessor(accessor: SettingsAccessor): void {
 /**
  * Attempt to resolve credentials from the profile's OAuth token store.
  * Only applicable for Anthropic provider (Claude profiles use OAuth).
+ * Calls ensureValidToken() for proactive token refresh before expiry.
  *
  * @param ctx - Auth resolution context
  * @returns Resolved auth or null if not available
  */
-function resolveFromProfileOAuth(ctx: AuthResolverContext): ResolvedAuth | null {
+async function resolveFromProfileOAuth(ctx: AuthResolverContext): Promise<ResolvedAuth | null> {
   if (ctx.provider !== 'anthropic') return null;
 
   try {
-    const credentials = getCredentialsFromKeychain(ctx.configDir);
-    if (credentials.token) {
+    const tokenResult = await ensureValidToken(ctx.configDir);
+    if (tokenResult.token) {
       const resolved: ResolvedAuth = {
-        apiKey: credentials.token,
+        apiKey: tokenResult.token,
         source: 'profile-oauth',
+        // OAuth tokens require the beta header for Anthropic API
+        headers: { 'anthropic-beta': 'oauth-2025-04-20' },
       };
 
       // Check for custom base URL from environment (profile may set ANTHROPIC_BASE_URL)
@@ -74,19 +77,29 @@ function resolveFromProfileOAuth(ctx: AuthResolverContext): ResolvedAuth | null 
         if (baseURL) resolved.baseURL = baseURL;
       }
 
-      // Check for auth token header (enterprise proxy setups)
-      const authToken = process.env.ANTHROPIC_AUTH_TOKEN;
-      if (authToken) {
-        resolved.headers = { 'X-Auth-Token': authToken };
-      }
-
       return resolved;
     }
   } catch {
-    // Keychain access failed (locked, permission denied, etc.) — fall through
+    // Token refresh failed (network, keychain locked, etc.) — fall through
   }
 
   return null;
+}
+
+/**
+ * Perform a reactive OAuth token refresh (called on 401 errors).
+ * Forces a refresh regardless of apparent token state.
+ *
+ * @param configDir - Config directory for the profile
+ * @returns New token or null if refresh failed
+ */
+export async function refreshOAuthTokenReactive(configDir: string | undefined): Promise<string | null> {
+  try {
+    const result = await reactiveTokenRefresh(configDir);
+    return result.token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================
@@ -185,7 +198,7 @@ function resolveDefaultCredentials(ctx: AuthResolverContext): ResolvedAuth | nul
  * Resolve authentication credentials for a given provider and profile.
  *
  * Walks the multi-stage fallback chain in priority order:
- * 1. Profile OAuth token (Anthropic only, from system keychain)
+ * 1. Profile OAuth token (Anthropic only, from system keychain, with proactive refresh)
  * 2. Profile API key (from app settings)
  * 3. Environment variable
  * 4. Default provider credentials (no-auth providers like Ollama)
@@ -193,9 +206,9 @@ function resolveDefaultCredentials(ctx: AuthResolverContext): ResolvedAuth | nul
  * @param ctx - Auth resolution context (provider, profileId, configDir)
  * @returns Resolved auth credentials, or null if no credentials found
  */
-export function resolveAuth(ctx: AuthResolverContext): ResolvedAuth | null {
+export async function resolveAuth(ctx: AuthResolverContext): Promise<ResolvedAuth | null> {
   return (
-    resolveFromProfileOAuth(ctx) ??
+    (await resolveFromProfileOAuth(ctx)) ??
     resolveFromProfileApiKey(ctx) ??
     resolveFromEnvironment(ctx) ??
     resolveDefaultCredentials(ctx) ??
@@ -210,6 +223,6 @@ export function resolveAuth(ctx: AuthResolverContext): ResolvedAuth | null {
  * @param ctx - Auth resolution context
  * @returns True if credentials can be resolved
  */
-export function hasCredentials(ctx: AuthResolverContext): boolean {
-  return resolveAuth(ctx) !== null;
+export async function hasCredentials(ctx: AuthResolverContext): Promise<boolean> {
+  return (await resolveAuth(ctx)) !== null;
 }

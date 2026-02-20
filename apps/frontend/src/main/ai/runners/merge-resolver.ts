@@ -66,7 +66,7 @@ export async function resolveMergeConflict(
   } = config;
 
   try {
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt,
       modelShorthand,
       thinkingLevel,

@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { createSimpleClient } from '../client/factory';
+import type { SimpleClientResult } from '../client/types';
 import { ToolRegistry } from '../tools/registry';
 import type { ToolContext } from '../tools/types';
 import type { ModelShorthand, ThinkingLevel } from '../config/types';
@@ -97,7 +98,7 @@ async function runDiscoveryPhase(
   projectDir: string,
   outputDir: string,
   refresh: boolean,
-  client: ReturnType<typeof createSimpleClient>,
+  client: SimpleClientResult,
   abortSignal?: AbortSignal,
   onStream?: RoadmapStreamCallback,
 ): Promise<RoadmapPhaseResult> {
@@ -189,7 +190,7 @@ async function runFeaturesPhase(
   projectDir: string,
   outputDir: string,
   refresh: boolean,
-  client: ReturnType<typeof createSimpleClient>,
+  client: SimpleClientResult,
   abortSignal?: AbortSignal,
   onStream?: RoadmapStreamCallback,
 ): Promise<RoadmapPhaseResult> {
@@ -409,7 +410,7 @@ export async function runRoadmapGeneration(
   const registry = new ToolRegistry();
   const tools = registry.getToolsForAgent('roadmap_discovery', toolContext);
 
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: '',
     modelShorthand,
     thinkingLevel,

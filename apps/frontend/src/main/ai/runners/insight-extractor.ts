@@ -279,7 +279,7 @@ export async function extractSessionInsights(
   try {
     const prompt = buildExtractionPrompt(config);
 
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: SYSTEM_PROMPT,
       modelShorthand,
       thinkingLevel,

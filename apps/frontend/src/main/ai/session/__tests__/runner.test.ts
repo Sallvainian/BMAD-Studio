@@ -72,11 +72,10 @@ describe('runAgentSession', () => {
     mockStreamText.mockReturnValue(
       createMockStreamResult(
         [
-          { type: 'text-delta', textDelta: 'Hello world' },
+          { type: 'text-delta', id: 'text-1', delta: 'Hello world' },
           {
-            type: 'step-finish',
-            usage: { promptTokens: 50, completionTokens: 25, totalTokens: 75 },
-            isContinued: false,
+            type: 'finish-step',
+            usage: { inputTokens: 50, outputTokens: 25 },
           },
         ],
         { text: 'Hello world', totalUsage: { inputTokens: 50, outputTokens: 25 } },
@@ -98,10 +97,9 @@ describe('runAgentSession', () => {
   // ===========================================================================
 
   it('should return max_steps when steps reach maxSteps', async () => {
-    const steps = Array.from({ length: 10 }, (_, i) => ({
-      type: 'step-finish',
-      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-      isContinued: i < 9,
+    const steps = Array.from({ length: 10 }, (_) => ({
+      type: 'finish-step',
+      usage: { inputTokens: 10, outputTokens: 5 },
     }));
 
     mockStreamText.mockReturnValue(
@@ -124,19 +122,17 @@ describe('runAgentSession', () => {
     mockStreamText.mockReturnValue(
       createMockStreamResult(
         [
-          { type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', args: { command: 'ls' } },
-          { type: 'tool-result', toolName: 'Bash', toolCallId: 'c1', result: 'file.ts' },
+          { type: 'tool-input-available', toolName: 'Bash', toolCallId: 'c1', input: { command: 'ls' } },
+          { type: 'tool-output-available', toolCallId: 'c1', output: 'file.ts' },
           {
-            type: 'step-finish',
-            usage: { promptTokens: 50, completionTokens: 25, totalTokens: 75 },
-            isContinued: true,
+            type: 'finish-step',
+            usage: { inputTokens: 50, outputTokens: 25 },
           },
-          { type: 'tool-call', toolName: 'Read', toolCallId: 'c2', args: { file_path: 'file.ts' } },
-          { type: 'tool-result', toolName: 'Read', toolCallId: 'c2', result: 'content' },
+          { type: 'tool-input-available', toolName: 'Read', toolCallId: 'c2', input: { file_path: 'file.ts' } },
+          { type: 'tool-output-available', toolCallId: 'c2', output: 'content' },
           {
-            type: 'step-finish',
-            usage: { promptTokens: 50, completionTokens: 25, totalTokens: 75 },
-            isContinued: false,
+            type: 'finish-step',
+            usage: { inputTokens: 50, outputTokens: 25 },
           },
         ],
         { text: 'Done', totalUsage: { inputTokens: 100, outputTokens: 50 } },
@@ -160,11 +156,10 @@ describe('runAgentSession', () => {
     mockStreamText.mockReturnValue(
       createMockStreamResult(
         [
-          { type: 'text-delta', textDelta: 'hi' },
+          { type: 'text-delta', id: 'text-1', delta: 'hi' },
           {
-            type: 'step-finish',
-            usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-            isContinued: false,
+            type: 'finish-step',
+            usage: { inputTokens: 10, outputTokens: 5 },
           },
         ],
         { text: 'hi', totalUsage: { inputTokens: 10, outputTokens: 5 } },
@@ -221,11 +216,10 @@ describe('runAgentSession', () => {
       }
       return createMockStreamResult(
         [
-          { type: 'text-delta', textDelta: 'ok' },
+          { type: 'text-delta', id: 'text-1', delta: 'ok' },
           {
-            type: 'step-finish',
-            usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-            isContinued: false,
+            type: 'finish-step',
+            usage: { inputTokens: 10, outputTokens: 5 },
           },
         ],
         { text: 'ok', totalUsage: { inputTokens: 10, outputTokens: 5 } },
@@ -271,7 +265,7 @@ describe('runAgentSession', () => {
 
     mockStreamText.mockReturnValue({
       fullStream: (async function* () {
-        yield { type: 'text-delta', textDelta: 'start' };
+        yield { type: 'text-delta', id: 'text-1', delta: 'start' };
         controller.abort();
         throw new DOMException('aborted', 'AbortError');
       })(),

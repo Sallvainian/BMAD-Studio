@@ -55,6 +55,8 @@ export interface SerializableSessionConfig {
   apiKey?: string;
   /** Base URL override for the provider */
   baseURL?: string;
+  /** Config directory for OAuth profile (used for reactive token refresh on 401) */
+  configDir?: string;
   /** Tool context serialized fields */
   toolContext: {
     cwd: string;

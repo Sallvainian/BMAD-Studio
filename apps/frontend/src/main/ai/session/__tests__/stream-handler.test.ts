@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createStreamHandler } from '../stream-handler';
-import type { FullStreamPart } from '../stream-handler';
 import type { StreamEvent } from '../types';
 
 describe('createStreamHandler', () => {
@@ -14,13 +13,13 @@ describe('createStreamHandler', () => {
   });
 
   // ===========================================================================
-  // Text Delta
+  // Text Delta (AI SDK v6: type='text-delta', field='text')
   // ===========================================================================
 
   describe('text-delta', () => {
     it('should emit text-delta events', () => {
       const handler = createStreamHandler(onEvent);
-      handler.processPart({ type: 'text-delta', textDelta: 'Hello' });
+      handler.processPart({ type: 'text-delta', text: 'Hello' });
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({ type: 'text-delta', text: 'Hello' });
@@ -28,8 +27,8 @@ describe('createStreamHandler', () => {
 
     it('should emit multiple text-delta events', () => {
       const handler = createStreamHandler(onEvent);
-      handler.processPart({ type: 'text-delta', textDelta: 'Hello' });
-      handler.processPart({ type: 'text-delta', textDelta: ' world' });
+      handler.processPart({ type: 'text-delta', text: 'Hello' });
+      handler.processPart({ type: 'text-delta', text: ' world' });
 
       expect(events).toHaveLength(2);
       expect(events[1]).toEqual({ type: 'text-delta', text: ' world' });
@@ -37,13 +36,13 @@ describe('createStreamHandler', () => {
   });
 
   // ===========================================================================
-  // Reasoning
+  // Reasoning (AI SDK v6: type='reasoning-delta', field='delta')
   // ===========================================================================
 
-  describe('reasoning', () => {
-    it('should emit thinking-delta events for reasoning parts', () => {
+  describe('reasoning-delta', () => {
+    it('should emit thinking-delta events for reasoning-delta parts', () => {
       const handler = createStreamHandler(onEvent);
-      handler.processPart({ type: 'reasoning', textDelta: 'Let me think...' });
+      handler.processPart({ type: 'reasoning-delta', delta: 'Let me think...' });
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({ type: 'thinking-delta', text: 'Let me think...' });
@@ -51,7 +50,7 @@ describe('createStreamHandler', () => {
   });
 
   // ===========================================================================
-  // Tool Call
+  // Tool Call (AI SDK v6: type='tool-call', fields: toolCallId, toolName, input)
   // ===========================================================================
 
   describe('tool-call', () => {
@@ -61,7 +60,7 @@ describe('createStreamHandler', () => {
         type: 'tool-call',
         toolName: 'Bash',
         toolCallId: 'call-1',
-        args: { command: 'ls' },
+        input: { command: 'ls' },
       });
 
       expect(events).toHaveLength(1);
@@ -76,16 +75,16 @@ describe('createStreamHandler', () => {
 
     it('should track multiple tool calls', () => {
       const handler = createStreamHandler(onEvent);
-      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', args: {} });
-      handler.processPart({ type: 'tool-call', toolName: 'Read', toolCallId: 'c2', args: {} });
-      handler.processPart({ type: 'tool-call', toolName: 'Write', toolCallId: 'c3', args: {} });
+      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', input: {} });
+      handler.processPart({ type: 'tool-call', toolName: 'Read', toolCallId: 'c2', input: {} });
+      handler.processPart({ type: 'tool-call', toolName: 'Write', toolCallId: 'c3', input: {} });
 
       expect(handler.getSummary().toolCallCount).toBe(3);
     });
   });
 
   // ===========================================================================
-  // Tool Result
+  // Tool Result (AI SDK v6: type='tool-result', fields: toolCallId, toolName, output)
   // ===========================================================================
 
   describe('tool-result', () => {
@@ -94,14 +93,15 @@ describe('createStreamHandler', () => {
       const now = Date.now();
       vi.spyOn(Date, 'now').mockReturnValueOnce(now).mockReturnValueOnce(now + 150);
 
-      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', args: {} });
+      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', input: {} });
       events.length = 0; // clear tool-call event
 
       handler.processPart({
         type: 'tool-result',
-        toolName: 'Bash',
         toolCallId: 'c1',
-        result: 'output',
+        toolName: 'Bash',
+        input: {},
+        output: 'output',
       });
 
       expect(events).toHaveLength(1);
@@ -117,17 +117,35 @@ describe('createStreamHandler', () => {
       vi.restoreAllMocks();
     });
 
+    it('should handle tool-result without matching tool-call (durationMs = 0)', () => {
+      const handler = createStreamHandler(onEvent);
+      handler.processPart({
+        type: 'tool-result',
+        toolCallId: 'unknown',
+        toolName: 'Bash',
+        input: {},
+        output: 'ok',
+      });
+
+      expect(events[0]).toMatchObject({ type: 'tool-result', durationMs: 0 });
+    });
+  });
+
+  // ===========================================================================
+  // Tool Error (AI SDK v6: type='tool-error', fields: toolCallId, toolName, error)
+  // ===========================================================================
+
+  describe('tool-error', () => {
     it('should emit error event for tool failures', () => {
       const handler = createStreamHandler(onEvent);
-      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', args: {} });
+      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', input: {} });
       events.length = 0;
 
       handler.processPart({
-        type: 'tool-result',
-        toolName: 'Bash',
+        type: 'tool-error',
         toolCallId: 'c1',
-        result: 'command not found',
-        isError: true,
+        toolName: 'Bash',
+        error: new Error('command not found'),
       });
 
       // tool-result + error event
@@ -136,32 +154,19 @@ describe('createStreamHandler', () => {
       expect(events[1]).toMatchObject({ type: 'error' });
       expect((events[1] as { type: 'error'; error: { code: string } }).error.code).toBe('tool_execution_error');
     });
-
-    it('should handle tool-result without matching tool-call (durationMs = 0)', () => {
-      const handler = createStreamHandler(onEvent);
-      handler.processPart({
-        type: 'tool-result',
-        toolName: 'Bash',
-        toolCallId: 'unknown',
-        result: 'ok',
-      });
-
-      expect(events[0]).toMatchObject({ type: 'tool-result', durationMs: 0 });
-    });
   });
 
   // ===========================================================================
-  // Step Finish
+  // Step Finish (AI SDK v6: type='finish-step', usage.promptTokens/completionTokens)
   // ===========================================================================
 
-  describe('step-finish', () => {
+  describe('finish-step', () => {
     it('should increment step count and accumulate usage', () => {
       const handler = createStreamHandler(onEvent);
 
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
-        isContinued: false,
+        type: 'finish-step',
+        usage: { promptTokens: 100, completionTokens: 50 },
       });
 
       // step-finish + usage-update
@@ -178,14 +183,12 @@ describe('createStreamHandler', () => {
       const handler = createStreamHandler(onEvent);
 
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
-        isContinued: false,
+        type: 'finish-step',
+        usage: { promptTokens: 100, completionTokens: 50 },
       });
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 200, completionTokens: 80, totalTokens: 280 },
-        isContinued: false,
+        type: 'finish-step',
+        usage: { promptTokens: 200, completionTokens: 80 },
       });
 
       const summary = handler.getSummary();
@@ -196,10 +199,22 @@ describe('createStreamHandler', () => {
         totalTokens: 430,
       });
     });
+
+    it('should handle missing usage gracefully', () => {
+      const handler = createStreamHandler(onEvent);
+      handler.processPart({ type: 'finish-step' });
+
+      expect(handler.getSummary().stepsExecuted).toBe(1);
+      expect(handler.getSummary().usage).toEqual({
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      });
+    });
   });
 
   // ===========================================================================
-  // Error
+  // Error (AI SDK v6: type='error', field='error')
   // ===========================================================================
 
   describe('error', () => {
@@ -210,6 +225,27 @@ describe('createStreamHandler', () => {
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ type: 'error' });
       expect((events[0] as { type: 'error'; error: { code: string } }).error.code).toBe('rate_limited');
+    });
+  });
+
+  // ===========================================================================
+  // Ignored parts
+  // ===========================================================================
+
+  describe('ignored part types', () => {
+    it('should ignore unknown/lifecycle part types without crashing', () => {
+      const handler = createStreamHandler(onEvent);
+      handler.processPart({ type: 'text-start', id: 'text-1' });
+      handler.processPart({ type: 'text-end', id: 'text-1' });
+      handler.processPart({ type: 'start-step' });
+      handler.processPart({ type: 'start', messageId: 'msg-1' });
+      handler.processPart({ type: 'finish' });
+      handler.processPart({ type: 'reasoning-start', id: 'r-1' });
+      handler.processPart({ type: 'reasoning-end', id: 'r-1' });
+      handler.processPart({ type: 'tool-input-start', toolCallId: 'c1', toolName: 'Bash' });
+      handler.processPart({ type: 'tool-input-delta', toolCallId: 'c1', inputTextDelta: '{}' });
+
+      expect(events).toHaveLength(0);
     });
   });
 
@@ -237,30 +273,27 @@ describe('createStreamHandler', () => {
       const handler = createStreamHandler(onEvent);
 
       // Step 1: text + tool call + tool result + step finish
-      handler.processPart({ type: 'text-delta', textDelta: 'Let me check...' });
-      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', args: { command: 'ls' } });
-      handler.processPart({ type: 'tool-result', toolName: 'Bash', toolCallId: 'c1', result: 'file.ts' });
+      handler.processPart({ type: 'text-delta', text: 'Let me check...' });
+      handler.processPart({ type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', input: { command: 'ls' } });
+      handler.processPart({ type: 'tool-result', toolCallId: 'c1', toolName: 'Bash', input: { command: 'ls' }, output: 'file.ts' });
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
-        isContinued: true,
+        type: 'finish-step',
+        usage: { promptTokens: 100, completionTokens: 50 },
       });
 
       // Step 2: another tool call
-      handler.processPart({ type: 'tool-call', toolName: 'Read', toolCallId: 'c2', args: { file_path: 'file.ts' } });
-      handler.processPart({ type: 'tool-result', toolName: 'Read', toolCallId: 'c2', result: 'content' });
+      handler.processPart({ type: 'tool-call', toolName: 'Read', toolCallId: 'c2', input: { file_path: 'file.ts' } });
+      handler.processPart({ type: 'tool-result', toolCallId: 'c2', toolName: 'Read', input: { file_path: 'file.ts' }, output: 'content' });
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 200, completionTokens: 100, totalTokens: 300 },
-        isContinued: false,
+        type: 'finish-step',
+        usage: { promptTokens: 200, completionTokens: 100 },
       });
 
       // Step 3: text only
-      handler.processPart({ type: 'text-delta', textDelta: 'Here is the result.' });
+      handler.processPart({ type: 'text-delta', text: 'Here is the result.' });
       handler.processPart({
-        type: 'step-finish',
-        usage: { promptTokens: 150, completionTokens: 60, totalTokens: 210 },
-        isContinued: false,
+        type: 'finish-step',
+        usage: { promptTokens: 150, completionTokens: 60 },
       });
 
       const summary = handler.getSummary();

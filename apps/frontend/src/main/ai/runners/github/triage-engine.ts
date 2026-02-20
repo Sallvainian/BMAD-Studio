@@ -220,7 +220,7 @@ export async function triageSingleIssue(
   const context = buildTriageContext(issue, allIssues);
   const fullPrompt = `${TRIAGE_PROMPT}\n\n---\n\n${context}`;
 
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt: TRIAGE_SYSTEM_PROMPT,
     modelShorthand: config.model ?? 'sonnet',
     thinkingLevel: config.thinkingLevel ?? 'low',

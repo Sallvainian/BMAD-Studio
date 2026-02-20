@@ -260,7 +260,7 @@ export async function runInsightsQuery(
   const tools = registry.getToolsForAgent('insights', toolContext);
 
   // Create simple client with tools
-  const client = createSimpleClient({
+  const client = await createSimpleClient({
     systemPrompt,
     modelShorthand,
     thinkingLevel,

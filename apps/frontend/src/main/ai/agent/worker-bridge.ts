@@ -42,8 +42,10 @@ function resolveWorkerPath(): string {
     // Production: worker is bundled alongside other main-process code
     return path.join(process.resourcesPath, 'app', 'main', 'ai', 'agent', 'worker.js');
   }
-  // Dev: use the compiled output from electron-vite (not the .ts source)
-  return path.join(__dirname, 'worker.js');
+  // Dev: electron-vite outputs worker at out/main/ai/agent/worker.js
+  // because the Rollup input key is 'ai/agent/worker'.
+  // __dirname resolves to out/main/ at runtime, so we need the subdirectory.
+  return path.join(__dirname, 'ai', 'agent', 'worker.js');
 }
 
 // =============================================================================

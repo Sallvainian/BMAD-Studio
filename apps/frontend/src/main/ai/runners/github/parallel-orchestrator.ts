@@ -438,7 +438,7 @@ export class ParallelOrchestratorReviewer {
   ): Promise<{ name: string; findings: PRReviewFinding[] }> {
     const prompt = buildSpecialistPrompt(config, context);
 
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: `You are a ${config.name} specialist for PR code review.`,
       modelShorthand,
       thinkingLevel,
@@ -489,7 +489,7 @@ export class ParallelOrchestratorReviewer {
 
     const prompt = buildSynthesisPrompt(context, specialistResults);
 
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: 'You are a senior code review orchestrator.',
       modelShorthand,
       thinkingLevel,

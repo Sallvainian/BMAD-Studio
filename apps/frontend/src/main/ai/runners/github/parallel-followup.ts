@@ -601,7 +601,7 @@ export class ParallelFollowupReviewer {
     thinkingLevel: ThinkingLevel,
     abortSignal?: AbortSignal,
   ): Promise<{ type: string; result: string }> {
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: `You are a ${type} specialist for PR follow-up review.`,
       modelShorthand,
       thinkingLevel,

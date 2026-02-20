@@ -88,8 +88,8 @@ export async function createAgentClient(
   // 1. Resolve model ID from shorthand (or use phase default)
   const modelId = resolveModelId(modelShorthand ?? phase);
 
-  // 2. Resolve auth credentials (sync — reads from keychain/env)
-  const auth = resolveAuth({
+  // 2. Resolve auth credentials (async — proactively refreshes OAuth token)
+  const auth = await resolveAuth({
     provider: 'anthropic',
     profileId,
   });
@@ -160,9 +160,9 @@ export async function createAgentClient(
  * });
  * ```
  */
-export function createSimpleClient(
+export async function createSimpleClient(
   config: SimpleClientConfig,
-): SimpleClientResult {
+): Promise<SimpleClientResult> {
   const {
     systemPrompt,
     modelShorthand = 'haiku',
@@ -174,7 +174,7 @@ export function createSimpleClient(
 
   // Resolve model
   const modelId = resolveModelId(modelShorthand);
-  const auth = resolveAuth({
+  const auth = await resolveAuth({
     provider: 'anthropic',
     profileId,
   });

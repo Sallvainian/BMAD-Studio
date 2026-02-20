@@ -49,13 +49,29 @@ export default defineConfig({
         // Minimatch for glob pattern matching in worktree handlers
         'minimatch',
         // XState for task state machine
-        'xstate'
+        'xstate',
+        // Vercel AI SDK packages (needed by worker thread + main process)
+        'ai',
+        '@ai-sdk/anthropic',
+        '@ai-sdk/openai',
+        '@ai-sdk/google',
+        '@ai-sdk/amazon-bedrock',
+        '@ai-sdk/azure',
+        '@ai-sdk/mistral',
+        '@ai-sdk/groq',
+        '@ai-sdk/xai',
+        '@ai-sdk/openai-compatible',
+        '@ai-sdk/provider',
+        '@ai-sdk/provider-utils',
       ]
     })],
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // Worker thread entry point — must be a separate chunk so it can be
+          // spawned via `new Worker(path)` from WorkerBridge
+          'ai/agent/worker': resolve(__dirname, 'src/main/ai/agent/worker.ts'),
         },
         // Only node-pty needs to be external (native module rebuilt by electron-builder)
         external: ['@lydell/node-pty']

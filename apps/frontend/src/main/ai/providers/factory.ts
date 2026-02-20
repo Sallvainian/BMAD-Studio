@@ -23,6 +23,20 @@ import { MODEL_PROVIDER_MAP } from '../config/types';
 import { type ProviderConfig, SupportedProvider } from './types';
 
 // =============================================================================
+// OAuth Token Detection
+// =============================================================================
+
+/**
+ * Detects if a credential is an Anthropic OAuth token vs an API key.
+ * OAuth access tokens start with 'sk-ant-oa' prefix.
+ * API keys start with 'sk-ant-api' prefix.
+ */
+function isOAuthToken(token: string | undefined): boolean {
+  if (!token) return false;
+  return token.startsWith('sk-ant-oa') || token.startsWith('sk-ant-ort');
+}
+
+// =============================================================================
 // Provider Instance Creators
 // =============================================================================
 
@@ -34,12 +48,25 @@ function createProviderInstance(config: ProviderConfig) {
   const { provider, apiKey, baseURL, headers } = config;
 
   switch (provider) {
-    case SupportedProvider.Anthropic:
+    case SupportedProvider.Anthropic: {
+      // OAuth tokens use authToken (Authorization: Bearer) + required beta header
+      // API keys use apiKey (x-api-key header)
+      if (isOAuthToken(apiKey)) {
+        return createAnthropic({
+          authToken: apiKey,
+          baseURL,
+          headers: {
+            ...headers,
+            'anthropic-beta': 'oauth-2025-04-20',
+          },
+        });
+      }
       return createAnthropic({
         apiKey,
         baseURL,
         headers,
       });
+    }
 
     case SupportedProvider.OpenAI:
       return createOpenAI({

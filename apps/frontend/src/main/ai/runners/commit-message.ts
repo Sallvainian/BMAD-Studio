@@ -262,7 +262,7 @@ export async function generateCommitMessage(
 
   // Call AI
   try {
-    const client = createSimpleClient({
+    const client = await createSimpleClient({
       systemPrompt: SYSTEM_PROMPT,
       modelShorthand,
       thinkingLevel,

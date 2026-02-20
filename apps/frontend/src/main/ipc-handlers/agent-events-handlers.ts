@@ -131,6 +131,38 @@ export function registerAgenteventsHandlers(
 
     if (processType === "spec-creation") {
       console.warn(`[Task ${taskId}] Spec creation completed with code ${code}`);
+      // When spec creation succeeds, automatically transition to task execution (build phase)
+      if (code === 0) {
+        const { task: specTask, project: specProject } = findTaskAndProject(taskId, projectId);
+        if (specTask && specProject) {
+          const specsBaseDir = getSpecsDir(specProject.autoBuildPath);
+          const specDir = path.join(specProject.path, specsBaseDir, specTask.specId);
+          const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+          if (existsSync(specFilePath)) {
+            console.warn(`[Task ${taskId}] Spec created successfully — starting task execution`);
+            // Re-watch the spec directory for the build phase
+            fileWatcher.watch(taskId, specDir).catch((err) => {
+              console.error(`[agent-events-handlers] Failed to re-watch spec dir for ${taskId}:`, err);
+            });
+            const baseBranch = specTask.metadata?.baseBranch || specProject.settings?.mainBranch;
+            agentManager.startTaskExecution(
+              taskId,
+              specProject.path,
+              specTask.specId,
+              {
+                parallel: false,
+                workers: 1,
+                baseBranch,
+                useWorktree: specTask.metadata?.useWorktree,
+                useLocalBranch: specTask.metadata?.useLocalBranch,
+              },
+              specProject.id
+            );
+          } else {
+            console.warn(`[Task ${taskId}] Spec creation succeeded but spec.md not found — not starting execution`);
+          }
+        }
+      }
       return;
     }
 

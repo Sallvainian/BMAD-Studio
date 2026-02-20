@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import path from 'path';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { AgentState } from './agent-state';
 import { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
@@ -15,8 +15,12 @@ import {
 } from './types';
 import type { IdeationConfig } from '../../shared/types';
 import { resetStuckSubtasks } from '../ipc-handlers/task/plan-file-utils';
-import { AUTO_BUILD_PATHS, getSpecsDir, sanitizeThinkingLevel } from '../../shared/constants';
+import { AUTO_BUILD_PATHS, getSpecsDir } from '../../shared/constants';
 import { projectStore } from '../project-store';
+import { resolveAuth } from '../ai/auth/resolver';
+import { resolveModelId } from '../ai/config/phase-config';
+import { detectProviderFromModel } from '../ai/providers/factory';
+import type { AgentExecutorConfig, SerializableSessionConfig } from '../ai/agent/types';
 
 /**
  * Main AgentManager - orchestrates agent process lifecycle
@@ -245,27 +249,6 @@ export class AgentManager extends EventEmitter {
       return;
     }
 
-    // Ensure Python environment is ready before spawning process (prevents exit code 127 race condition)
-    const pythonStatus = await this.processManager.ensurePythonEnvReady('AgentManager');
-    if (!pythonStatus.ready) {
-      this.emit('error', taskId, `Python environment not ready: ${pythonStatus.error || 'initialization failed'}`);
-      return;
-    }
-
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
-
-    if (!autoBuildSource) {
-      this.emit('error', taskId, 'Auto-build source path not found. Please configure it in App Settings.');
-      return;
-    }
-
-    const specRunnerPath = path.join(autoBuildSource, 'runners', 'spec_runner.py');
-
-    if (!existsSync(specRunnerPath)) {
-      this.emit('error', taskId, `Spec runner not found at: ${specRunnerPath}`);
-      return;
-    }
-
     // Reset stuck subtasks if restarting an existing spec creation task
     if (specDir) {
       const planPath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
@@ -280,47 +263,55 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Get combined environment variables
-    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // Resolve model and thinking level for the spec phase
+    const specModelShorthand = (metadata?.isAutoProfile && metadata.phaseModels)
+      ? metadata.phaseModels.spec
+      : (metadata?.model ?? 'sonnet');
+    const specModelId = resolveModelId(specModelShorthand);
 
-    // spec_runner.py will auto-start run.py after spec creation completes
-    const args = [specRunnerPath, '--task', taskDescription, '--project-dir', projectPath];
+    // Load system prompt from prompts directory
+    const systemPrompt = this.loadPrompt('spec_orchestrator') ?? this.buildDefaultSpecPrompt(taskDescription, specDir);
 
-    // Pass spec directory if provided (for UI-created tasks that already have a directory)
-    if (specDir) {
-      args.push('--spec-dir', specDir);
-    }
+    // Resolve auth credentials from active profile (async — proactively refreshes OAuth token)
+    const activeProfile = profileManager.getActiveProfile();
+    const configDir = activeProfile?.configDir;
+    const auth = await resolveAuth({ provider: 'anthropic', configDir });
 
-    // Pass base branch if specified (ensures worktrees are created from the correct branch)
-    if (baseBranch) {
-      args.push('--base-branch', baseBranch);
-    }
+    // Detect provider from model ID
+    const provider = detectProviderFromModel(specModelId) ?? 'anthropic';
 
-    // Check if user requires review before coding
-    if (!metadata?.requireReviewBeforeCoding) {
-      // Auto-approve: When user starts a task from the UI without requiring review
-      args.push('--auto-approve');
-    }
+    // Build the serializable session config for the worker
+    const resolvedSpecDir = specDir ?? path.join(projectPath, '.auto-claude', 'specs', taskId);
+    const sessionConfig: SerializableSessionConfig = {
+      agentType: 'spec_orchestrator' as const,
+      systemPrompt,
+      initialMessages: [
+        {
+          role: 'user',
+          content: `Task: ${taskDescription}\n\nProject directory: ${projectPath}${specDir ? `\nSpec directory: ${specDir}` : ''}${baseBranch ? `\nBase branch: ${baseBranch}` : ''}${metadata?.requireReviewBeforeCoding ? '\nRequire review before coding: true' : '\nAuto-approve: true'}`,
+        },
+      ],
+      maxSteps: 1000,
+      specDir: resolvedSpecDir,
+      projectDir: projectPath,
+      provider,
+      modelId: specModelId,
+      apiKey: auth?.apiKey,
+      baseURL: auth?.baseURL,
+      configDir,
+      toolContext: {
+        cwd: projectPath,
+        projectDir: projectPath,
+        specDir: resolvedSpecDir,
+      },
+    };
 
-    // Pass model and thinking level configuration
-    // For auto profile, use phase-specific config; otherwise use single model/thinking
-    // Validate thinking levels to prevent legacy values (e.g. 'ultrathink') from reaching the backend
-    if (metadata?.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
-      // Pass the spec phase model and thinking level to spec_runner
-      args.push('--model', metadata.phaseModels.spec);
-      args.push('--thinking-level', sanitizeThinkingLevel(metadata.phaseThinking.spec));
-    } else if (metadata?.model) {
-      // Non-auto profile: use single model and thinking level
-      args.push('--model', metadata.model);
-      if (metadata.thinkingLevel) {
-        args.push('--thinking-level', sanitizeThinkingLevel(metadata.thinkingLevel));
-      }
-    }
-
-    // Workspace mode: --direct skips worktree isolation (default is isolated for safety)
-    if (metadata?.useWorktree === false) {
-      args.push('--direct');
-    }
+    const executorConfig: AgentExecutorConfig = {
+      taskId,
+      projectId,
+      processType: 'task-execution',
+      session: sessionConfig,
+    };
 
     // Store context for potential restart
     this.storeTaskContext(taskId, projectPath, '', {}, true, taskDescription, specDir, metadata, baseBranch, projectId);
@@ -328,14 +319,16 @@ export class AgentManager extends EventEmitter {
     // Register with unified OperationRegistry for proactive swap support
     this.registerTaskWithOperationRegistry(taskId, 'spec-creation', { projectPath, taskDescription, specDir });
 
-    // Note: This is spec-creation but it chains to task-execution via run.py
-    // Use projectPath as cwd instead of autoBuildSource to avoid cross-drive file access
-    // issues on Windows. The script path is absolute so Python finds its modules via sys.path[0]. (#1661)
-    await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'task-execution', projectId);
+    await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'task-execution', projectId);
+
+    // Note (Python fallback preserved for reference):
+    // const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // const args = [specRunnerPath, '--task', taskDescription, '--project-dir', projectPath];
+    // await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'task-execution', projectId);
   }
 
   /**
-   * Start task execution (run.py)
+   * Start task execution (build orchestrator)
    */
   async startTaskExecution(
     taskId: string,
@@ -359,52 +352,54 @@ export class AgentManager extends EventEmitter {
       return;
     }
 
-    // Ensure Python environment is ready before spawning process (prevents exit code 127 race condition)
-    const pythonStatus = await this.processManager.ensurePythonEnvReady('AgentManager');
-    if (!pythonStatus.ready) {
-      this.emit('error', taskId, `Python environment not ready: ${pythonStatus.error || 'initialization failed'}`);
-      return;
-    }
+    // Resolve the spec directory from specId
+    const project = projectStore.getProjects().find((p) => p.id === projectId || p.path === projectPath);
+    const specsBaseDir = getSpecsDir(project?.autoBuildPath);
+    const specDir = path.join(projectPath, specsBaseDir, specId);
 
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+    // Load model configuration from task_metadata.json if available
+    const modelId = await this.resolveTaskModelId(specDir, 'planning');
 
-    if (!autoBuildSource) {
-      this.emit('error', taskId, 'Auto-build source path not found. Please configure it in App Settings.');
-      return;
-    }
+    // Load system prompt (planner prompt for build orchestrator entry point)
+    const systemPrompt = this.loadPrompt('planner') ?? this.buildDefaultPlannerPrompt(specId, projectPath);
 
-    const runPath = path.join(autoBuildSource, 'run.py');
+    // Resolve auth credentials from active profile (async — proactively refreshes OAuth token)
+    const activeProfile = profileManager.getActiveProfile();
+    const configDir = activeProfile?.configDir;
+    const auth = await resolveAuth({ provider: 'anthropic', configDir });
 
-    if (!existsSync(runPath)) {
-      this.emit('error', taskId, `Run script not found at: ${runPath}`);
-      return;
-    }
+    // Detect provider from model ID
+    const provider = detectProviderFromModel(modelId) ?? 'anthropic';
 
-    // Get combined environment variables
-    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // Load initial context from spec directory
+    const initialMessages = this.buildTaskExecutionMessages(specDir, specId, projectPath);
 
-    const args = [runPath, '--spec', specId, '--project-dir', projectPath];
+    // Build the serializable session config for the worker
+    const sessionConfig: SerializableSessionConfig = {
+      agentType: 'build_orchestrator' as const,
+      systemPrompt,
+      initialMessages,
+      maxSteps: 1000,
+      specDir,
+      projectDir: projectPath,
+      provider,
+      modelId,
+      apiKey: auth?.apiKey,
+      baseURL: auth?.baseURL,
+      configDir,
+      toolContext: {
+        cwd: projectPath,
+        projectDir: projectPath,
+        specDir,
+      },
+    };
 
-    // Always use auto-continue when running from UI (non-interactive)
-    args.push('--auto-continue');
-
-    // Force: When user starts a task from the UI, that IS their approval
-    args.push('--force');
-
-    // Workspace mode: --direct skips worktree isolation (default is isolated for safety)
-    if (options.useWorktree === false) {
-      args.push('--direct');
-    }
-
-    // Pass base branch if specified (ensures worktrees are created from the correct branch)
-    if (options.baseBranch) {
-      args.push('--base-branch', options.baseBranch);
-    }
-
-    // Note: --parallel was removed from run.py CLI - parallel execution is handled internally by the agent
-    // The options.parallel and options.workers are kept for future use or logging purposes
-    // Note: Model configuration is read from task_metadata.json by the Python scripts,
-    // which allows per-phase configuration for planner, coder, and QA phases
+    const executorConfig: AgentExecutorConfig = {
+      taskId,
+      projectId,
+      processType: 'task-execution',
+      session: sessionConfig,
+    };
 
     // Store context for potential restart
     this.storeTaskContext(taskId, projectPath, specId, options, false, undefined, undefined, undefined, undefined, projectId);
@@ -412,14 +407,16 @@ export class AgentManager extends EventEmitter {
     // Register with unified OperationRegistry for proactive swap support
     this.registerTaskWithOperationRegistry(taskId, 'task-execution', { projectPath, specId, options });
 
-    // Use projectPath as cwd instead of autoBuildSource to avoid cross-drive file access
-    // issues on Windows. The script path (runPath) is absolute so Python finds its modules
-    // via sys.path[0] which is set to the script's directory. (#1661)
-    await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'task-execution', projectId);
+    await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'task-execution', projectId);
+
+    // Note (Python fallback preserved for reference):
+    // const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // const args = [runPath, '--spec', specId, '--project-dir', projectPath, '--auto-continue', '--force'];
+    // await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'task-execution', projectId);
   }
 
   /**
-   * Start QA process
+   * Start QA process (qa_reviewer agent)
    */
   async startQAProcess(
     taskId: string,
@@ -427,34 +424,75 @@ export class AgentManager extends EventEmitter {
     specId: string,
     projectId?: string
   ): Promise<void> {
-    // Ensure Python environment is ready before spawning process (prevents exit code 127 race condition)
-    const pythonStatus = await this.processManager.ensurePythonEnvReady('AgentManager');
-    if (!pythonStatus.ready) {
-      this.emit('error', taskId, `Python environment not ready: ${pythonStatus.error || 'initialization failed'}`);
+    // Ensure profile manager is initialized for auth resolution
+    let profileManager: ClaudeProfileManager;
+    try {
+      profileManager = await initializeClaudeProfileManager();
+    } catch (error) {
+      console.error('[AgentManager] Failed to initialize profile manager:', error);
+      this.emit('error', taskId, 'Failed to initialize profile manager. Please check file permissions and disk space.');
+      return;
+    }
+    if (!profileManager.hasValidAuth()) {
+      this.emit('error', taskId, 'Claude authentication required. Please authenticate in Settings > Claude Profiles before starting tasks.');
       return;
     }
 
-    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+    // Resolve the spec directory from specId
+    const project = projectStore.getProjects().find((p) => p.id === projectId || p.path === projectPath);
+    const specsBaseDir = getSpecsDir(project?.autoBuildPath);
+    const specDir = path.join(projectPath, specsBaseDir, specId);
 
-    if (!autoBuildSource) {
-      this.emit('error', taskId, 'Auto-build source path not found. Please configure it in App Settings.');
-      return;
-    }
+    // Load model configuration from task_metadata.json if available
+    const modelId = await this.resolveTaskModelId(specDir, 'qa');
 
-    const runPath = path.join(autoBuildSource, 'run.py');
+    // Load system prompt for QA reviewer
+    const systemPrompt = this.loadPrompt('qa_reviewer') ?? this.buildDefaultQAPrompt(specId, projectPath);
 
-    if (!existsSync(runPath)) {
-      this.emit('error', taskId, `Run script not found at: ${runPath}`);
-      return;
-    }
+    // Resolve auth credentials from active profile (async — proactively refreshes OAuth token)
+    const activeProfile = profileManager.getActiveProfile();
+    const configDir = activeProfile?.configDir;
+    const auth = await resolveAuth({ provider: 'anthropic', configDir });
 
-    // Get combined environment variables
-    const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // Detect provider from model ID
+    const provider = detectProviderFromModel(modelId) ?? 'anthropic';
 
-    const args = [runPath, '--spec', specId, '--project-dir', projectPath, '--qa'];
+    // Load initial context from spec directory
+    const qaInitialMessages = this.buildQAInitialMessages(specDir, specId, projectPath);
 
-    // Use projectPath as cwd instead of autoBuildSource to avoid cross-drive issues on Windows (#1661)
-    await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'qa-process', projectId);
+    // Build the serializable session config for the worker
+    const sessionConfig: SerializableSessionConfig = {
+      agentType: 'qa_reviewer',
+      systemPrompt,
+      initialMessages: qaInitialMessages,
+      maxSteps: 1000,
+      specDir,
+      projectDir: projectPath,
+      provider,
+      modelId,
+      apiKey: auth?.apiKey,
+      baseURL: auth?.baseURL,
+      configDir,
+      toolContext: {
+        cwd: projectPath,
+        projectDir: projectPath,
+        specDir,
+      },
+    };
+
+    const executorConfig: AgentExecutorConfig = {
+      taskId,
+      projectId,
+      processType: 'qa-process',
+      session: sessionConfig,
+    };
+
+    await this.processManager.spawnWorkerProcess(taskId, executorConfig, {}, 'qa-process', projectId);
+
+    // Note (Python fallback preserved for reference):
+    // const combinedEnv = this.processManager.getCombinedEnv(projectPath);
+    // const args = [runPath, '--spec', specId, '--project-dir', projectPath, '--qa'];
+    // await this.processManager.spawnProcess(taskId, projectPath, args, combinedEnv, 'qa-process', projectId);
   }
 
   /**
@@ -716,5 +754,188 @@ export class AgentManager extends EventEmitter {
    */
   getTaskSessionId(taskId: string): string | undefined {
     return this.state.getTaskSessionId(taskId);
+  }
+
+  // ============================================
+  // Private helpers for TypeScript agent path
+  // ============================================
+
+  /**
+   * Resolve the model ID for a task by reading task_metadata.json.
+   * Falls back to the default sonnet model if metadata is not available.
+   *
+   * @param specDir - The spec directory path
+   * @param phase - The execution phase ('planning', 'coding', 'qa', 'spec')
+   */
+  private async resolveTaskModelId(specDir: string, phase: 'planning' | 'coding' | 'qa' | 'spec'): Promise<string> {
+    try {
+      const metadataPath = path.join(specDir, 'task_metadata.json');
+      if (existsSync(metadataPath)) {
+        const raw = readFileSync(metadataPath, 'utf-8');
+        const metadata = JSON.parse(raw) as {
+          isAutoProfile?: boolean;
+          phaseModels?: Record<string, string>;
+          model?: string;
+        };
+
+        if (metadata.isAutoProfile && metadata.phaseModels?.[phase]) {
+          return resolveModelId(metadata.phaseModels[phase]);
+        }
+        if (metadata.model) {
+          return resolveModelId(metadata.model);
+        }
+      }
+    } catch {
+      // Fall through to default
+    }
+    return resolveModelId('sonnet');
+  }
+
+  /**
+   * Load a system prompt from the prompts directory.
+   * Returns null if the prompt file is not found.
+   *
+   * @param promptName - The prompt filename without extension (e.g., 'planner', 'qa_reviewer')
+   */
+  private loadPrompt(promptName: string): string | null {
+    const autoBuildSource = this.processManager.getAutoBuildSourcePath();
+    if (!autoBuildSource) {
+      return null;
+    }
+
+    const promptPath = path.join(autoBuildSource, 'prompts', `${promptName}.md`);
+    try {
+      if (existsSync(promptPath)) {
+        return readFileSync(promptPath, 'utf-8');
+      }
+    } catch {
+      // Fall through
+    }
+    return null;
+  }
+
+  /**
+   * Build a minimal default system prompt for spec orchestration
+   * when the prompt file is not found.
+   */
+  private buildDefaultSpecPrompt(taskDescription: string, specDir?: string): string {
+    return `You are a spec creation agent. Your job is to create a detailed specification and implementation plan for the following task:\n\n${taskDescription}${specDir ? `\n\nSpec directory: ${specDir}` : ''}\n\nCreate a spec.md with requirements and an implementation_plan.json with phases and subtasks.`;
+  }
+
+  /**
+   * Build a minimal default system prompt for the planner/build orchestrator
+   * when the prompt file is not found.
+   */
+  private buildDefaultPlannerPrompt(specId: string, projectPath: string): string {
+    return `You are a planning agent. Your job is to review the spec and create an implementation plan for spec ${specId} in project ${projectPath}. Read the spec.md and create implementation_plan.json with phases and subtasks.`;
+  }
+
+  /**
+   * Build a minimal default system prompt for the QA reviewer
+   * when the prompt file is not found.
+   */
+  private buildDefaultQAPrompt(specId: string, projectPath: string): string {
+    return `You are a QA reviewer agent. Your job is to review the implementation of spec ${specId} in project ${projectPath}. Check that all requirements in spec.md are implemented correctly and write a qa_report.md with Status: PASSED or Status: FAILED.`;
+  }
+
+  /**
+   * Build initial messages for task execution (build_orchestrator).
+   * Includes the spec.md and implementation_plan.json content for agent context.
+   */
+  private buildTaskExecutionMessages(
+    specDir: string,
+    specId: string,
+    projectPath: string,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const parts: string[] = [];
+
+    parts.push(`You are implementing spec ${specId} in project: ${projectPath}`);
+    parts.push(`Spec directory: ${specDir}`);
+    parts.push('');
+
+    // Read spec.md
+    const specPath = path.join(specDir, 'spec.md');
+    try {
+      if (existsSync(specPath)) {
+        const specContent = readFileSync(specPath, 'utf-8');
+        parts.push('## Specification (spec.md)');
+        parts.push('');
+        parts.push(specContent);
+        parts.push('');
+      }
+    } catch {
+      // Not critical — agent can read spec itself
+    }
+
+    // Read implementation_plan.json if it exists (resume scenario)
+    const planPath = path.join(specDir, 'implementation_plan.json');
+    try {
+      if (existsSync(planPath)) {
+        const planContent = readFileSync(planPath, 'utf-8');
+        parts.push('## Implementation Plan (implementation_plan.json)');
+        parts.push('');
+        parts.push('```json');
+        parts.push(planContent);
+        parts.push('```');
+        parts.push('');
+        parts.push('Resume implementing the pending/in-progress subtasks. Do NOT redo completed subtasks. Update each subtask status to "completed" in implementation_plan.json after finishing it.');
+      } else {
+        parts.push('No implementation plan exists yet. Start by creating implementation_plan.json with phases and subtasks, then implement each subtask.');
+      }
+    } catch {
+      // Fall through
+    }
+
+    return [{ role: 'user', content: parts.join('\n') }];
+  }
+
+  /**
+   * Build initial messages for QA process.
+   * Includes spec.md and implementation plan to give QA agent full context.
+   */
+  private buildQAInitialMessages(
+    specDir: string,
+    specId: string,
+    projectPath: string,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const parts: string[] = [];
+
+    parts.push(`You are reviewing the implementation of spec ${specId} in project: ${projectPath}`);
+    parts.push(`Spec directory: ${specDir}`);
+    parts.push('');
+
+    // Read spec.md
+    const specPath = path.join(specDir, 'spec.md');
+    try {
+      if (existsSync(specPath)) {
+        const specContent = readFileSync(specPath, 'utf-8');
+        parts.push('## Specification (spec.md)');
+        parts.push('');
+        parts.push(specContent);
+        parts.push('');
+      }
+    } catch {
+      // Not critical
+    }
+
+    // Read implementation_plan.json to show what was planned/completed
+    const planPath = path.join(specDir, 'implementation_plan.json');
+    try {
+      if (existsSync(planPath)) {
+        const planContent = readFileSync(planPath, 'utf-8');
+        parts.push('## Implementation Plan (implementation_plan.json)');
+        parts.push('');
+        parts.push('```json');
+        parts.push(planContent);
+        parts.push('```');
+        parts.push('');
+      }
+    } catch {
+      // Fall through
+    }
+
+    parts.push('Review the implementation against the specification. Check that all requirements are met, the code is correct, and tests pass. Write your findings to qa_report.md with "Status: PASSED" or "Status: FAILED" and a list of any issues found.');
+
+    return [{ role: 'user', content: parts.join('\n') }];
   }
 }
