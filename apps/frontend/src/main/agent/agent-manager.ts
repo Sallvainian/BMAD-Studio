@@ -21,6 +21,8 @@ import { resolveAuth } from '../ai/auth/resolver';
 import { resolveModelId } from '../ai/config/phase-config';
 import { detectProviderFromModel } from '../ai/providers/factory';
 import type { AgentExecutorConfig, SerializableSessionConfig } from '../ai/agent/types';
+import { createOrGetWorktree } from '../ai/worktree';
+import { findTaskWorktree } from '../worktree-paths';
 
 /**
  * Main AgentManager - orchestrates agent process lifecycle
@@ -371,8 +373,37 @@ export class AgentManager extends EventEmitter {
     // Detect provider from model ID
     const provider = detectProviderFromModel(modelId) ?? 'anthropic';
 
+    // Create or get existing git worktree for task isolation
+    // This matches the Python backend's WorktreeManager.create_worktree() behavior
+    let worktreePath: string | null = null;
+    let worktreeSpecDir = specDir;
+    const useWorktree = options.useWorktree !== false; // Default to true (matching Python backend)
+    if (useWorktree) {
+      try {
+        const baseBranch = options.baseBranch ?? project?.settings?.mainBranch ?? 'main';
+        const result = await createOrGetWorktree(
+          projectPath,
+          specId,
+          baseBranch,
+          options.useLocalBranch ?? false,
+          project?.autoBuildPath,
+        );
+        worktreePath = result.worktreePath;
+        // Spec dir in the worktree (spec files were copied by createOrGetWorktree)
+        worktreeSpecDir = path.join(worktreePath, specsBaseDir, specId);
+        console.warn(`[AgentManager] Task ${taskId} will run in worktree: ${worktreePath}`);
+      } catch (err) {
+        console.error(`[AgentManager] Failed to create worktree for ${taskId}:`, err);
+        // Fall back to running in project root (non-fatal)
+        console.warn(`[AgentManager] Falling back to project root for ${taskId}`);
+      }
+    }
+
+    const effectiveCwd = worktreePath ?? projectPath;
+    const effectiveProjectDir = worktreePath ?? projectPath;
+
     // Load initial context from spec directory
-    const initialMessages = this.buildTaskExecutionMessages(specDir, specId, projectPath);
+    const initialMessages = this.buildTaskExecutionMessages(worktreeSpecDir, specId, effectiveProjectDir);
 
     // Build the serializable session config for the worker
     const sessionConfig: SerializableSessionConfig = {
@@ -380,17 +411,17 @@ export class AgentManager extends EventEmitter {
       systemPrompt,
       initialMessages,
       maxSteps: 1000,
-      specDir,
-      projectDir: projectPath,
+      specDir: worktreeSpecDir,
+      projectDir: effectiveProjectDir,
       provider,
       modelId,
       apiKey: auth?.apiKey,
       baseURL: auth?.baseURL,
       configDir,
       toolContext: {
-        cwd: projectPath,
-        projectDir: projectPath,
-        specDir,
+        cwd: effectiveCwd,
+        projectDir: effectiveProjectDir,
+        specDir: worktreeSpecDir,
       },
     };
 
@@ -457,8 +488,22 @@ export class AgentManager extends EventEmitter {
     // Detect provider from model ID
     const provider = detectProviderFromModel(modelId) ?? 'anthropic';
 
+    // Find existing worktree for QA (created during task execution)
+    const worktreePath = findTaskWorktree(projectPath, specId);
+    const effectiveCwd = worktreePath ?? projectPath;
+    const effectiveProjectDir = worktreePath ?? projectPath;
+    const effectiveSpecDir = worktreePath
+      ? path.join(worktreePath, specsBaseDir, specId)
+      : specDir;
+
+    if (worktreePath) {
+      console.warn(`[AgentManager] QA for ${taskId} will run in worktree: ${worktreePath}`);
+    } else {
+      console.warn(`[AgentManager] No worktree found for ${taskId}, QA running in project root`);
+    }
+
     // Load initial context from spec directory
-    const qaInitialMessages = this.buildQAInitialMessages(specDir, specId, projectPath);
+    const qaInitialMessages = this.buildQAInitialMessages(effectiveSpecDir, specId, effectiveProjectDir);
 
     // Build the serializable session config for the worker
     const sessionConfig: SerializableSessionConfig = {
@@ -466,17 +511,17 @@ export class AgentManager extends EventEmitter {
       systemPrompt,
       initialMessages: qaInitialMessages,
       maxSteps: 1000,
-      specDir,
-      projectDir: projectPath,
+      specDir: effectiveSpecDir,
+      projectDir: effectiveProjectDir,
       provider,
       modelId,
       apiKey: auth?.apiKey,
       baseURL: auth?.baseURL,
       configDir,
       toolContext: {
-        cwd: projectPath,
-        projectDir: projectPath,
-        specDir,
+        cwd: effectiveCwd,
+        projectDir: effectiveProjectDir,
+        specDir: effectiveSpecDir,
       },
     };
 
