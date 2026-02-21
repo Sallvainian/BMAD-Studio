@@ -20,6 +20,7 @@ import type {
 } from '../../shared/types';
 import { projectStore } from '../project-store';
 import { changelogService } from '../changelog-service';
+import { generateChangelog as generateChangelogTS } from '../ai/runners/changelog';
 
 // Store cleanup function to remove listeners on subsequent calls
 let cleanupListeners: (() => void) | null = null;
@@ -146,9 +147,19 @@ export function registerChangelogHandlers(
       }
 
       // Return immediately to allow renderer to register event listeners
-      // Start the actual generation asynchronously
+      // Start the actual generation asynchronously via TypeScript Vercel AI SDK runner
       setImmediate(async () => {
+        const mainWindow = getMainWindow();
         try {
+          // Emit starting progress
+          if (mainWindow) {
+            mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_PROGRESS, request.projectId, {
+              stage: 'loading_specs',
+              progress: 10,
+              message: 'Preparing changelog generation...'
+            });
+          }
+
           // Load specs for selected tasks (only in tasks mode)
           let specs: TaskSpecContent[] = [];
           if (request.sourceMode === 'tasks' && request.taskIds && request.taskIds.length > 0) {
@@ -157,11 +168,61 @@ export function registerChangelogHandlers(
             specs = await changelogService.loadTaskSpecs(project.path, request.taskIds, tasks, specsBaseDir);
           }
 
-          // Start generation (progress/completion/errors will be sent via event handlers)
-          changelogService.generateChangelog(request.projectId, project.path, request, specs);
+          if (mainWindow) {
+            mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_PROGRESS, request.projectId, {
+              stage: 'generating',
+              progress: 30,
+              message: 'Generating changelog with AI...'
+            });
+          }
+
+          // Build commits string for git modes
+          let commitsText: string | undefined;
+          if (request.sourceMode === 'git-history' && request.gitHistory) {
+            const commits = changelogService.getCommits(project.path, request.gitHistory);
+            commitsText = commits.map(c => `${c.hash} ${c.subject}${c.body ? '\n' + c.body : ''}`).join('\n');
+          } else if (request.sourceMode === 'branch-diff' && request.branchDiff) {
+            const commits = changelogService.getBranchDiffCommits(project.path, request.branchDiff);
+            commitsText = commits.map(c => `${c.hash} ${c.subject}${c.body ? '\n' + c.body : ''}`).join('\n');
+          }
+
+          // Build tasks list for tasks mode
+          const changelogTasks = specs.map(spec => ({
+            title: spec.spec?.split('\n')[0]?.replace(/^#+ /, '') || spec.specId,
+            description: spec.spec?.substring(0, 500) || spec.specId,
+          }));
+
+          // Get project name
+          const projectName = project.name || path.basename(project.path);
+
+          // Run TypeScript Vercel AI SDK changelog generation
+          const result = await generateChangelogTS({
+            projectName,
+            version: request.version,
+            sourceMode: request.sourceMode,
+            tasks: changelogTasks.length > 0 ? changelogTasks : undefined,
+            commits: commitsText,
+          });
+
+          if (mainWindow) {
+            if (result.success) {
+              mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_PROGRESS, request.projectId, {
+                stage: 'complete',
+                progress: 100,
+                message: 'Changelog generated successfully'
+              });
+              mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_COMPLETE, request.projectId, {
+                success: true,
+                changelog: result.text,
+                version: request.version,
+                tasksIncluded: specs.length || 0,
+              });
+            } else {
+              mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_ERROR, request.projectId, result.error || 'Generation failed');
+            }
+          }
         } catch (error) {
           // Send error via event instead of return value since we already returned
-          const mainWindow = getMainWindow();
           if (mainWindow) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to start changelog generation';
             mainWindow.webContents.send(IPC_CHANNELS.CHANGELOG_GENERATION_ERROR, request.projectId, errorMessage);
