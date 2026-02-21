@@ -1,3 +1,9 @@
+## 2.7.11 - Fix Release Build
+
+### 🐛 Bug Fixes
+
+- **Release workflow** — Removed invalid `verifyUpdateCodeSignature` property from electron-builder mac config that caused ValidationError and broke packaging
+
 ## 2.7.10 - Auto-Update Fix (Runtime)
 
 ### 🐛 Bug Fixes
