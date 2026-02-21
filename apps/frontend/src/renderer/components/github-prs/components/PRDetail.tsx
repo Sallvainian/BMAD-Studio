@@ -20,6 +20,10 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
@@ -98,6 +102,29 @@ export function PRDetail({
   onMarkReviewPosted,
 }: PRDetailProps) {
   const { t } = useTranslation('common');
+
+  // Markdown rendering components with safe external links
+  const markdownComponents: Components = useMemo(
+    () => ({
+      a: function SafeLink({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+        const isValidUrl = href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('/') || href.startsWith('#'));
+        if (!isValidUrl) return <span className="text-muted-foreground">{children}</span>;
+        const isExternal = href?.startsWith('http://') || href?.startsWith('https://');
+        return (
+          <a
+            href={href}
+            {...props}
+            {...(isExternal && { target: '_blank', rel: 'noopener noreferrer' })}
+            className="text-primary hover:underline"
+          >
+            {children}
+          </a>
+        );
+      },
+    }),
+    []
+  );
+
   // Selection state for findings
   const [selectedFindingIds, setSelectedFindingIds] = useState<Set<string>>(new Set());
   const [postedFindingIds, setPostedFindingIds] = useState<Set<string>>(new Set());
@@ -1156,6 +1183,10 @@ ${t('prReview.blockedStatusMessageFooter')}`;
         {/* Action Bar (Legacy Actions that fit under the tree context) */}
         {reviewResult && reviewResult.success && !isReviewing && (
           <div className="flex flex-wrap items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+             <Button onClick={onRunReview} variant="outline" size="sm" className="gap-2 shrink-0">
+               <RefreshCw className="h-4 w-4" />
+               {t('prReview.rerunReview')}
+             </Button>
              {selectedCount > 0 && (
                 <Button onClick={handlePostReview} variant="secondary" disabled={isPostingFindings} className="flex-1 sm:flex-none">
                   {isPostingFindings ? (
@@ -1421,8 +1452,10 @@ ${t('prReview.blockedStatusMessageFooter')}`;
                 </div>
               )}
 
-              <div className="bg-muted/30 p-4 rounded-lg text-sm text-muted-foreground leading-relaxed">
-                {reviewResult.summary}
+              <div className="bg-muted/30 p-4 rounded-lg text-sm text-muted-foreground leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {reviewResult.summary}
+                </ReactMarkdown>
               </div>
 
               {/* Interactive Findings with Selection */}
@@ -1574,9 +1607,15 @@ ${t('prReview.blockedStatusMessageFooter')}`;
             <h3 className="text-sm font-medium text-muted-foreground mb-2">{t('prReview.description')}</h3>
              <ScrollArea className="h-[400px] w-full rounded-md border p-4 bg-muted/10">
               {pr.body ? (
-                <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-sans break-words">
-                  {pr.body}
-                </pre>
+                <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                    components={markdownComponents}
+                  >
+                    {pr.body}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground italic">{t('prReview.noDescription')}</p>
               )}
