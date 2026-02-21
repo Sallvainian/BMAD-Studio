@@ -149,7 +149,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "AndyMik90",
+        "owner": "Sallvainian",
         "repo": "Auto-Claude"
       }
     ],
