@@ -1,3 +1,10 @@
+## 2.7.13 - Code Signing
+
+### 🛠️ Improvements
+
+- **Code signing** — macOS builds are now signed with Developer ID Application certificate and notarized with Apple
+- **Auto-update** — Removed unsigned-app workarounds; auto-update installs cleanly on macOS
+
 ## 2.7.12 - Upstream Sync
 
 ### 🛠️ Improvements
