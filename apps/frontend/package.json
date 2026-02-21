@@ -143,7 +143,7 @@
   },
   "build": {
     "appId": "com.bmadstudio.app",
-    "productName": "BMAD Studio",
+    "productName": "BMAD-Studio",
     "npmRebuild": false,
     "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
     "publish": [
