@@ -1,3 +1,10 @@
+## 2.7.9 - Auto-Update Fix
+
+### 🐛 Bug Fixes
+
+- **Auto-update** — Fixed code signature validation error on macOS that prevented updates from installing
+- **Update checker** — Fixed GitHub API calls pointing at wrong repository
+
 ## 2.7.7 - Model Updates & PR Tab Fixes
 
 ### ✨ New Features
