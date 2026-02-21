@@ -29,8 +29,8 @@ import { compareVersions } from './updater/version-manager';
 import { isMacOS } from './platform';
 
 // GitHub repo info for API calls
-const GITHUB_OWNER = 'AndyMik90';
-const GITHUB_REPO = 'Auto-Claude';
+const GITHUB_OWNER = 'Sallvainian';
+const GITHUB_REPO = 'BMAD-Studio';
 
 // Debug mode - DEBUG_UPDATER=true or development mode
 const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_ENV === 'development';
