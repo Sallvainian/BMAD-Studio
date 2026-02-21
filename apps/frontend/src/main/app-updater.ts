@@ -38,6 +38,9 @@ const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_E
 // Configure electron-updater
 autoUpdater.autoDownload = false;  // We control downloads manually to prevent downgrades
 autoUpdater.autoInstallOnAppQuit = true;  // Automatically install on app quit
+// Builds are not code-signed with Apple certificates, so skip signature validation
+// The mac build config also sets verifyUpdateCodeSignature: false in latest-mac.yml
+(autoUpdater as unknown as { verifyUpdateCodeSignature: boolean }).verifyUpdateCodeSignature = false;
 
 // Update channels: 'latest' for stable, 'beta' for pre-release
 type UpdateChannel = 'latest' | 'beta';
