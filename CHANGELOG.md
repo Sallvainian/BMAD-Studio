@@ -1,3 +1,9 @@
+## 2.7.10 - Auto-Update Fix (Runtime)
+
+### 🐛 Bug Fixes
+
+- **Auto-update** — Set verifyUpdateCodeSignature=false at runtime so the running app skips macOS code signature validation on install
+
 ## 2.7.9 - Auto-Update Fix
 
 ### 🐛 Bug Fixes
