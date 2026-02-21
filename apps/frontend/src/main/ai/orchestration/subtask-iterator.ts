@@ -7,11 +7,19 @@
  * the coder agent session, and tracks completion/retry/stuck state.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { ExtractedInsights, InsightExtractionConfig } from '../runners/insight-extractor';
+import { extractSessionInsights } from '../runners/insight-extractor';
 import type { SessionResult } from '../session/types';
 import type { SubtaskInfo } from './build-orchestrator';
+import {
+  writeAuthPauseFile,
+  writeRateLimitPauseFile,
+  waitForAuthResume,
+  waitForRateLimitResume,
+} from './pause-handler';
 
 // =============================================================================
 // Types
@@ -29,6 +37,11 @@ export interface SubtaskIteratorConfig {
   autoContinueDelayMs: number;
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
+  /**
+   * Optional fallback spec dir in the main project (worktree mode).
+   * Used to check for a RESUME file when the frontend can't find the worktree.
+   */
+  sourceSpecDir?: string;
   /** Called when a subtask starts */
   onSubtaskStart?: (subtask: SubtaskInfo, attempt: number) => void;
   /** Run the coder session for a subtask; returns the session result */
@@ -37,6 +50,13 @@ export interface SubtaskIteratorConfig {
   onSubtaskComplete?: (subtask: SubtaskInfo, result: SessionResult) => void;
   /** Called when a subtask is marked stuck */
   onSubtaskStuck?: (subtask: SubtaskInfo, reason: string) => void;
+  /** Called when insight extraction completes for a subtask (optional). */
+  onInsightsExtracted?: (subtaskId: string, insights: ExtractedInsights) => void;
+  /**
+   * Whether to extract insights after each successful coder session.
+   * Defaults to false (opt-in to avoid extra AI calls in test scenarios).
+   */
+  extractInsights?: boolean;
 }
 
 /** Result of the full subtask iteration */
@@ -169,12 +189,56 @@ export async function iterateSubtasks(
     }
 
     if (result.outcome === 'rate_limited') {
-      // Caller (build orchestrator) handles rate limit pausing
-      return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: false };
+      // Write pause file so the frontend can show a countdown
+      const errorMessage = result.error?.message ?? 'Rate limit reached';
+      writeRateLimitPauseFile(config.specDir, errorMessage, null);
+
+      // Wait for the rate limit to reset (or user to resume early)
+      await waitForRateLimitResume(
+        config.specDir,
+        MAX_RATE_LIMIT_WAIT_MS_DEFAULT,
+        config.sourceSpecDir,
+        config.abortSignal,
+      );
+
+      // Re-check abort after waiting
+      if (config.abortSignal?.aborted) {
+        return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: true };
+      }
+
+      // Continue the loop — subtask will be retried
+      continue;
     }
 
     if (result.outcome === 'auth_failure') {
-      return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: false };
+      // Write pause file so the frontend can show a re-auth prompt
+      const errorMessage = result.error?.message ?? 'Authentication failed';
+      writeAuthPauseFile(config.specDir, errorMessage);
+
+      // Wait for user to re-authenticate
+      await waitForAuthResume(config.specDir, config.sourceSpecDir, config.abortSignal);
+
+      // Re-check abort after waiting
+      if (config.abortSignal?.aborted) {
+        return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: true };
+      }
+
+      // Continue — subtask will be retried with fresh auth
+      continue;
+    }
+
+    // Post-session: if the session completed or hit max_steps (not error), ensure the
+    // subtask is marked as completed. The coder agent is instructed to update
+    // implementation_plan.json itself, but it doesn't always do so reliably.
+    if (result.outcome === 'completed' || result.outcome === 'max_steps') {
+      await ensureSubtaskMarkedCompleted(config.specDir, subtask.id);
+
+      // Extract insights from the session (opt-in, never blocks the build)
+      if (config.extractInsights) {
+        extractInsightsAfterSession(config, subtask, result).then((insights) => {
+          if (insights) config.onInsightsExtracted?.(subtask.id, insights);
+        }).catch(() => { /* insight extraction is non-blocking */ });
+      }
     }
 
     // For errors, the subtask will be retried on next loop iteration
@@ -187,6 +251,57 @@ export async function iterateSubtasks(
   }
 
   return { totalSubtasks, completedSubtasks, stuckSubtasks, cancelled: false };
+}
+
+// =============================================================================
+// Post-Session Processing
+// =============================================================================
+
+/**
+ * Ensure a subtask is marked as completed in implementation_plan.json.
+ *
+ * The coder agent is instructed to update the subtask status itself, but it
+ * doesn't always do so reliably. This function is called after each successful
+ * coder session as a fallback: if the subtask is still pending or in_progress,
+ * it is marked completed with a timestamp.
+ *
+ * Only ADD/UPDATE fields — never removes existing data.
+ */
+async function ensureSubtaskMarkedCompleted(
+  specDir: string,
+  subtaskId: string,
+): Promise<void> {
+  const planPath = join(specDir, 'implementation_plan.json');
+  try {
+    const raw = await readFile(planPath, 'utf-8');
+    const plan = JSON.parse(raw) as ImplementationPlan;
+    let updated = false;
+
+    for (const phase of plan.phases) {
+      for (const subtask of phase.subtasks) {
+        // Normalize subtask_id → id (Fix 2: planner sometimes writes subtask_id)
+        const withLegacyId = subtask as PlanSubtask & { subtask_id?: string };
+        if (withLegacyId.subtask_id && !subtask.id) {
+          subtask.id = withLegacyId.subtask_id;
+          updated = true;
+        }
+
+        // Mark this specific subtask as completed if it isn't already
+        if (subtask.id === subtaskId && subtask.status !== 'completed') {
+          subtask.status = 'completed';
+          (subtask as PlanSubtask & { completed_at?: string }).completed_at =
+            new Date().toISOString();
+          updated = true;
+        }
+      }
+    }
+
+    if (updated) {
+      await writeFile(planPath, JSON.stringify(plan, null, 2));
+    }
+  } catch {
+    // Non-fatal: if we can't update the plan the loop will retry or mark stuck
+  }
 }
 
 // =============================================================================
@@ -261,6 +376,42 @@ function countCompletedSubtasks(plan: ImplementationPlan): number {
     }
   }
   return count;
+}
+
+// =============================================================================
+// Post-session Insight Extraction
+// =============================================================================
+
+/** Default max wait for a rate-limit reset (2 hours), matching Python constant. */
+const MAX_RATE_LIMIT_WAIT_MS_DEFAULT = 7_200_000;
+
+/**
+ * Run insight extraction for a completed subtask session.
+ *
+ * This is fire-and-forget — it never blocks the build loop.
+ * Returns null on any error so the caller can safely ignore failures.
+ */
+async function extractInsightsAfterSession(
+  config: SubtaskIteratorConfig,
+  subtask: PlanSubtask,
+  result: SessionResult,
+): Promise<ExtractedInsights | null> {
+  try {
+    const insightConfig: InsightExtractionConfig = {
+      subtaskId: subtask.id,
+      subtaskDescription: subtask.description,
+      sessionNum: 1,
+      success: result.outcome === 'completed' || result.outcome === 'max_steps',
+      diff: '',           // Diff gathering requires git; left empty for now
+      changedFiles: [],   // Populated by future git integration
+      commitMessages: '',
+      attemptHistory: [],
+    };
+
+    return await extractSessionInsights(insightConfig);
+  } catch {
+    return null;
+  }
 }
 
 // =============================================================================

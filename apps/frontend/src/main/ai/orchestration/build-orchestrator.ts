@@ -11,7 +11,7 @@
  * defined in phase-protocol.ts.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'events';
 
@@ -309,6 +309,9 @@ export class BuildOrchestrator extends EventEmitter {
         return { success: false, error: result.error?.message ?? 'Planning session failed' };
       }
 
+      // Normalize subtask IDs before validation: some LLMs write "subtask_id" not "id"
+      await this.normalizeSubtaskIds();
+
       // Validate the implementation plan
       const validation = await this.validateImplementationPlan();
       if (validation.valid) {
@@ -534,6 +537,68 @@ export class BuildOrchestrator extends EventEmitter {
   // ===========================================================================
   // Plan Validation
   // ===========================================================================
+
+  /**
+   * Normalize subtask ID fields written by the planner.
+   *
+   * Some LLMs write "subtask_id" instead of "id". This step runs after each
+   * planner session and before validation so the subtask iterator can reliably
+   * look up subtasks by their "id" field.
+   *
+   * Only ADD/UPDATE fields — never removes existing data.
+   */
+  private async normalizeSubtaskIds(): Promise<void> {
+    const planPath = join(this.config.specDir, 'implementation_plan.json');
+    try {
+      const raw = await readFile(planPath, 'utf-8');
+      const plan = JSON.parse(raw) as ImplementationPlan;
+      let updated = false;
+
+      for (const phase of plan.phases) {
+        // Normalize phase_id → id
+        const phaseAny = phase as PlanPhase & { phase_id?: string };
+        if (phaseAny.phase_id && !phase.id && phase.phase === undefined) {
+          phase.id = phaseAny.phase_id;
+          updated = true;
+        }
+        // Ensure phase has a name (fall back to title or id)
+        if (!phase.name) {
+          const anyPhase = phase as PlanPhase & { title?: string };
+          phase.name = anyPhase.title ?? phase.id ?? 'Phase';
+          updated = true;
+        }
+
+        if (!Array.isArray(phase.subtasks)) continue;
+
+        for (const subtask of phase.subtasks) {
+          // Normalize subtask_id → id
+          const withLegacyId = subtask as PlanSubtask & { subtask_id?: string };
+          if (withLegacyId.subtask_id && !subtask.id) {
+            subtask.id = withLegacyId.subtask_id;
+            updated = true;
+          }
+          // Add default status if missing (critical for subtask iterator)
+          if (!subtask.status) {
+            subtask.status = 'pending';
+            updated = true;
+          }
+          // Normalize file_paths → files_to_modify for iterator compatibility
+          const withFilePaths = subtask as PlanSubtask & { file_paths?: string[] };
+          if (withFilePaths.file_paths && !subtask.files_to_modify) {
+            subtask.files_to_modify = withFilePaths.file_paths;
+            updated = true;
+          }
+        }
+      }
+
+      if (updated) {
+        await writeFile(planPath, JSON.stringify(plan, null, 2));
+        console.warn('[BuildOrchestrator] Normalized implementation plan schema');
+      }
+    } catch {
+      // Non-fatal: if the plan doesn't exist yet validation will catch it
+    }
+  }
 
   /**
    * Validate the implementation plan exists and has correct structure.
