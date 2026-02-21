@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, promises as fsPromises } from 'fs';
 import type { TerminalWorktreeConfig } from '../shared/types';
+import { debugLog } from '../shared/utils/debug-logger';
 
 /**
  * Persisted terminal session data
@@ -139,7 +140,7 @@ export class TerminalSessionStore {
         console.warn('[TerminalSessionStore] Successfully recovered from backup!');
         // Immediately save the recovered data to main file
         try {
-          writeFileSync(this.storePath, JSON.stringify(backupResult.data, null, 2));
+          writeFileSync(this.storePath, JSON.stringify(backupResult.data, null, 2), 'utf-8');
           console.warn('[TerminalSessionStore] Restored main file from backup');
         } catch (writeError) {
           console.error('[TerminalSessionStore] Failed to restore main file:', writeError);
@@ -194,13 +195,25 @@ export class TerminalSessionStore {
    * 1. Write to temp file
    * 2. Rotate current file to backup
    * 3. Rename temp to target (atomic on most filesystems)
+   *
+   * If an async write is in progress, defers to the async writer to avoid
+   * both operations competing for the same temp file (ENOENT race condition).
    */
   private save(): void {
+    // If an async write is in progress, don't write synchronously — the async
+    // writer shares the same temp file path. Instead, mark a pending write so
+    // saveAsync() will re-save with the latest in-memory data when it finishes.
+    if (this.writeInProgress) {
+      this.writePending = true;
+      debugLog('[TerminalSessionStore] Deferring sync save — async write in progress');
+      return;
+    }
+
     try {
       const content = JSON.stringify(this.data, null, 2);
 
       // Step 1: Write to temp file
-      writeFileSync(this.tempPath, content);
+      writeFileSync(this.tempPath, content, 'utf-8');
 
       // Step 2: Rotate current file to backup (if it exists and is valid)
       if (existsSync(this.storePath)) {
@@ -266,7 +279,7 @@ export class TerminalSessionStore {
       const content = JSON.stringify(this.data, null, 2);
 
       // Step 1: Write to temp file
-      await fsPromises.writeFile(this.tempPath, content);
+      await fsPromises.writeFile(this.tempPath, content, 'utf-8');
 
       // Step 2: Rotate current file to backup (if it exists and is valid)
       if (await this.fileExists(this.storePath)) {
@@ -365,7 +378,9 @@ export class TerminalSessionStore {
   private updateSessionInMemory(session: TerminalSession): boolean {
     // Check if session was deleted - skip if pending deletion
     if (this.pendingDelete.has(session.id)) {
-      console.warn('[TerminalSessionStore] Skipping save for deleted session:', session.id);
+      debugLog('[TerminalSessionStore] Skipping save for deleted session:', session.id,
+        'pendingDelete size:', this.pendingDelete.size,
+        'all pending IDs:', [...this.pendingDelete].join(', '));
       return false;
     }
 
@@ -376,12 +391,24 @@ export class TerminalSessionStore {
       todaySessions[projectPath] = [];
     }
 
+    // Debug: Log incoming outputBuffer info
+    const incomingBufferLen = session.outputBuffer?.length ?? 0;
+    debugLog('[TerminalSessionStore] Updating session in memory:', session.id,
+      'incoming outputBuffer:', incomingBufferLen, 'bytes',
+      'isClaudeMode:', session.isClaudeMode);
+
     // Update existing or add new
     const existingIndex = todaySessions[projectPath].findIndex(s => s.id === session.id);
     if (existingIndex >= 0) {
       // Preserve displayOrder from existing session if not provided in incoming session
       // This prevents periodic saves (which don't include displayOrder) from losing tab order
       const existingSession = todaySessions[projectPath][existingIndex];
+      const existingBufferLen = existingSession.outputBuffer?.length ?? 0;
+      const truncatedLen = session.outputBuffer.slice(-MAX_OUTPUT_BUFFER).length;
+      debugLog('[TerminalSessionStore] Updating existing session:', session.id,
+        'existing outputBuffer:', existingBufferLen, 'bytes',
+        'new outputBuffer (after truncation):', truncatedLen, 'bytes');
+
       todaySessions[projectPath][existingIndex] = {
         ...session,
         // Limit output buffer size
@@ -391,6 +418,10 @@ export class TerminalSessionStore {
         displayOrder: session.displayOrder ?? existingSession.displayOrder,
       };
     } else {
+      const truncatedLen = session.outputBuffer.slice(-MAX_OUTPUT_BUFFER).length;
+      debugLog('[TerminalSessionStore] Creating new session:', session.id,
+        'outputBuffer (after truncation):', truncatedLen, 'bytes');
+
       todaySessions[projectPath].push({
         ...session,
         outputBuffer: session.outputBuffer.slice(-MAX_OUTPUT_BUFFER),
@@ -437,9 +468,18 @@ export class TerminalSessionStore {
   getSessions(projectPath: string): TerminalSession[] {
     const today = getDateString();
 
+    debugLog('[TerminalSessionStore] Getting sessions for project:', projectPath, 'date:', today);
+
     // First check today
     const todaySessions = this.getTodaysSessions();
     if (todaySessions[projectPath]?.length > 0) {
+      // Debug: Log outputBuffer info for each session
+      for (const session of todaySessions[projectPath]) {
+        const bufferLen = session.outputBuffer?.length ?? 0;
+        debugLog('[TerminalSessionStore] Session', session.id, 'outputBuffer:', bufferLen, 'bytes',
+          'isClaudeMode:', session.isClaudeMode,
+          'hasBuffer:', bufferLen > 0);
+      }
       // Validate worktree configs before returning
       return todaySessions[projectPath].map(session => ({
         ...session,
@@ -461,6 +501,15 @@ export class TerminalSessionStore {
       const mostRecentDate = dates[0];
       console.warn(`[TerminalSessionStore] No sessions today, migrating sessions from ${mostRecentDate} to today`);
       const sessions = this.data.sessionsByDate[mostRecentDate][projectPath] || [];
+
+      // Debug: Log outputBuffer info for sessions being migrated
+      for (const session of sessions) {
+        const bufferLen = session.outputBuffer?.length ?? 0;
+        debugLog('[TerminalSessionStore] Migrating session', session.id, 'from', mostRecentDate,
+          'outputBuffer:', bufferLen, 'bytes',
+          'isClaudeMode:', session.isClaudeMode,
+          'hasBuffer:', bufferLen > 0);
+      }
 
       // MIGRATE: Copy sessions to today's bucket with validated worktree configs
       const migratedSessions = sessions.map(session => ({
@@ -562,6 +611,27 @@ export class TerminalSessionStore {
   }
 
   /**
+   * Clear a session ID from pendingDelete, allowing saves to proceed.
+   *
+   * Called when a terminal is legitimately re-created with the same ID
+   * (e.g., worktree switching, terminal restart after exit). Without this,
+   * the 5-second pendingDelete window blocks session persistence for the
+   * new terminal.
+   */
+  clearPendingDelete(sessionId: string): void {
+    if (this.pendingDelete.has(sessionId)) {
+      this.pendingDelete.delete(sessionId);
+      // Also clear the cleanup timer since we're explicitly clearing
+      const timer = this.pendingDeleteTimers.get(sessionId);
+      if (timer) {
+        clearTimeout(timer);
+        this.pendingDeleteTimers.delete(sessionId);
+      }
+      debugLog('[TerminalSessionStore] Cleared pendingDelete for re-created terminal:', sessionId);
+    }
+  }
+
+  /**
    * Remove a session (from today's sessions)
    *
    * Adds the session ID to pendingDelete to prevent async writes from
@@ -571,6 +641,9 @@ export class TerminalSessionStore {
     // Mark as pending delete BEFORE modifying data to prevent race condition
     // with in-flight saveSessionAsync() calls
     this.pendingDelete.add(sessionId);
+    debugLog('[TerminalSessionStore] removeSession: added to pendingDelete:', sessionId,
+      'pendingDelete size:', this.pendingDelete.size,
+      'all pending IDs:', [...this.pendingDelete].join(', '));
 
     const todaySessions = this.getTodaysSessions();
     if (todaySessions[projectPath]) {
@@ -592,6 +665,8 @@ export class TerminalSessionStore {
     const timer = setTimeout(() => {
       this.pendingDelete.delete(sessionId);
       this.pendingDeleteTimers.delete(sessionId);
+      debugLog('[TerminalSessionStore] Cleanup timer fired for:', sessionId,
+        'removing from pendingDelete. Remaining:', this.pendingDelete.size);
     }, 5000);
     this.pendingDeleteTimers.set(sessionId, timer);
   }
@@ -629,8 +704,16 @@ export class TerminalSessionStore {
 
     const session = sessions.find(s => s.id === sessionId);
     if (session) {
+      const prevLen = session.outputBuffer?.length ?? 0;
       session.outputBuffer = (session.outputBuffer + output).slice(-MAX_OUTPUT_BUFFER);
+      const newLen = session.outputBuffer.length;
       session.lastActiveAt = new Date().toISOString();
+
+      // Debug: Log buffer update (throttled to avoid spam - only log when significant changes)
+      if (newLen - prevLen > 1000 || prevLen === 0) {
+        debugLog('[TerminalSessionStore] updateOutputBuffer:', sessionId,
+          'prev:', prevLen, 'bytes, added:', output.length, 'bytes, new total:', newLen, 'bytes');
+      }
       // Note: We don't save immediately here to avoid excessive disk writes
       // Call saveAllPending() periodically or on app quit
     }

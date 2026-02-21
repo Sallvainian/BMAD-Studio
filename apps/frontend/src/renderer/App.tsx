@@ -38,6 +38,7 @@ import { Roadmap } from './components/Roadmap';
 import { Context } from './components/Context';
 import { Ideation } from './components/Ideation';
 import { Insights } from './components/Insights';
+import { ErrorBoundary } from './components/ui/error-boundary';
 import { GitHubIssues } from './components/GitHubIssues';
 import { GitLabIssues } from './components/GitLabIssues';
 import { GitHubPRs } from './components/github-prs';
@@ -45,6 +46,7 @@ import { GitLabMergeRequests } from './components/gitlab-merge-requests';
 import { Changelog } from './components/Changelog';
 import { Worktrees } from './components/Worktrees';
 import { AgentTools } from './components/AgentTools';
+import { BMADWorkflows } from './components/BMADWorkflows';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RateLimitModal } from './components/RateLimitModal';
 import { SDKRateLimitModal } from './components/SDKRateLimitModal';
@@ -57,9 +59,9 @@ import { GitHubSetupModal } from './components/GitHubSetupModal';
 import { useProjectStore, loadProjects, addProject, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings, loadProfiles, saveSettings } from './stores/settings-store';
-import { useClaudeProfileStore } from './stores/claude-profile-store';
+import { useClaudeProfileStore, loadClaudeProfiles } from './stores/claude-profile-store';
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
-import { initializeGitHubListeners } from './stores/github';
+import { initializeGitHubListeners, cleanupGitHubListeners } from './stores/github';
 import { initDownloadProgressListener } from './stores/download-store';
 import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
@@ -184,6 +186,7 @@ export function App() {
     loadProjects();
     loadSettings();
     loadProfiles();
+    loadClaudeProfiles();
     // Initialize global GitHub listeners (PR reviews, etc.) so they persist across navigation
     initializeGitHubListeners();
     // Initialize global download progress listener for Ollama model downloads
@@ -191,6 +194,7 @@ export function App() {
 
     return () => {
       cleanupDownloadListener();
+      cleanupGitHubListeners();
     };
   }, []);
 
@@ -242,7 +246,7 @@ export function App() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- projectTabs is intentionally omitted to avoid infinite re-render (computed array creates new reference each render)
-  }, [projects, activeProjectId, selectedProjectId, openProjectIds, openProjectTab, setActiveProject]);
+  }, [projects, activeProjectId, selectedProjectId, openProjectIds, openProjectTab, setActiveProject, projectTabs.length, projectTabs.map]);
 
   // Track if settings have been loaded at least once
   const [settingsHaveLoaded, setSettingsHaveLoaded] = useState(false);
@@ -312,7 +316,24 @@ export function App() {
     if (settings.language && settings.language !== i18n.language) {
       i18n.changeLanguage(settings.language);
     }
-  }, [settings.language, i18n]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run when settings.language changes, not on every i18n object change
+  }, [settings.language, i18n.language, i18n.changeLanguage]);
+
+  // Sync spell check language with i18n language
+  useEffect(() => {
+    const syncSpellCheck = async () => {
+      try {
+        const result = await window.electronAPI.setSpellCheckLanguages(i18n.language);
+        if (!result.success) {
+          console.warn('[App] Failed to set spell check language:', result.error);
+        }
+      } catch (error) {
+        console.warn('[App] Error syncing spell check language:', error);
+      }
+    };
+
+    syncSpellCheck();
+  }, [i18n.language]);
 
   // Listen for open-app-settings events (e.g., from project settings)
   useEffect(() => {
@@ -350,7 +371,7 @@ export function App() {
   useEffect(() => {
     setInitSuccess(false);
     setInitError(null);
-  }, [selectedProjectId]);
+  }, []);
 
   // Check if selected project needs initialization (e.g., .auto-claude folder was deleted)
   useEffect(() => {
@@ -427,7 +448,7 @@ export function App() {
         console.error('[App] Failed to restore sessions:', err);
       });
     }
-  }, [activeProjectId, selectedProjectId, selectedProject?.path, selectedProject?.name]);
+  }, [activeProjectId, selectedProjectId, selectedProject?.path]);
 
   // Apply theme on load
   useEffect(() => {
@@ -569,7 +590,7 @@ export function App() {
       setSelectedTask(updatedTask);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally omit selectedTask object to prevent infinite re-render loop
-  }, [tasks, selectedTask?.id, selectedTask?.specId]);
+  }, [tasks, selectedTask?.id, selectedTask?.specId, selectedTask]);
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
@@ -877,7 +898,9 @@ export function App() {
                   <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
                 )}
                 {activeView === 'context' && (activeProjectId || selectedProjectId) && (
-                  <Context projectId={activeProjectId || selectedProjectId!} />
+                  <ErrorBoundary>
+                    <Context projectId={activeProjectId || selectedProjectId!} />
+                  </ErrorBoundary>
                 )}
                 {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
                   <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
@@ -931,6 +954,7 @@ export function App() {
                   <Worktrees projectId={activeProjectId || selectedProjectId!} />
                 )}
                 {activeView === 'agent-tools' && <AgentTools />}
+                {activeView === 'bmad-workflows' && <BMADWorkflows />}
               </>
             ) : (
               <WelcomeScreen
@@ -1118,7 +1142,7 @@ export function App() {
 
         {/* Auth Failure Modal - shows when Claude CLI encounters 401/auth errors */}
         <AuthFailureModal onOpenSettings={() => {
-          setSettingsInitialSection('integrations');
+          setSettingsInitialSection('accounts');
           setIsSettingsDialogOpen(true);
         }} />
 
@@ -1128,7 +1152,7 @@ export function App() {
           onClose={handleVersionWarningClose}
           onOpenSettings={() => {
             handleVersionWarningClose();
-            setSettingsInitialSection('integrations');
+            setSettingsInitialSection('accounts');
             setIsSettingsDialogOpen(true);
           }}
         />

@@ -156,14 +156,33 @@ def gather_requirements_interactively(ui_module) -> dict:
     }
 
 
-def create_requirements_from_task(task_description: str) -> dict:
-    """Create minimal requirements dictionary from task description."""
-    return {
+def create_requirements_from_task(
+    task_description: str, use_bmad: bool = False,
+) -> dict:
+    """Create minimal requirements dictionary from task description.
+
+    Args:
+        task_description: The task description string.
+        use_bmad: If True, add BMAD-compatible fields (user_stories format).
+    """
+    req = {
         "task_description": task_description,
         "workflow_type": "feature",  # Default, agent will refine
         "services_involved": [],  # AI will discover during planning and context fetching
         "created_at": datetime.now().isoformat(),
     }
+
+    if use_bmad:
+        req["bmad_enabled"] = True
+        req["user_stories"] = [
+            {
+                "as_a": "user",
+                "i_want": task_description,
+                "so_that": "the feature is available",
+            }
+        ]
+
+    return req
 
 
 def save_requirements(spec_dir: Path, requirements: dict) -> Path:
