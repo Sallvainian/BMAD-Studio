@@ -38,8 +38,8 @@ const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_E
 // Configure electron-updater
 autoUpdater.autoDownload = false;  // We control downloads manually to prevent downgrades
 autoUpdater.autoInstallOnAppQuit = true;  // Automatically install on app quit
-// Builds are not code-signed with Apple certificates, so skip signature validation at runtime
-(autoUpdater as unknown as { verifyUpdateCodeSignature: boolean }).verifyUpdateCodeSignature = false;
+// Note: verifyUpdateCodeSignature does not bypass Squirrel.Mac/ShipIt's native code-signature checks.
+// macOS auto-update installation still requires a valid, stable signing identity across releases.
 
 // Update channels: 'latest' for stable, 'beta' for pre-release
 type UpdateChannel = 'latest' | 'beta';

@@ -59,17 +59,37 @@ jobs:
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
+      - name: Configure macOS code signing (optional)
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$MACOS_CERTIFICATE_P12_BASE64" ] && [ -n "$MACOS_CERTIFICATE_PASSWORD" ]; then
+            CERT_PATH="$RUNNER_TEMP/macos-signing.p12"
+            echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+            echo "CSC_LINK=$CERT_PATH" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MACOS_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
+            echo "CSC_NAME=Developer ID Application: Frank Cottone (W778837A9L)" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "MACOS_SIGNING_AVAILABLE=true" >> "$GITHUB_ENV"
+            echo "macOS signing certificate configured for electron-builder."
+          else
+            echo "::warning::MACOS_CERTIFICATE_P12_BASE64 / MACOS_CERTIFICATE_PASSWORD not set; building unsigned macOS artifacts. Auto-update install will fail on macOS for unsigned apps."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "MACOS_SIGNING_AVAILABLE=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Package macOS (Intel)
         run: npm --workspace apps/frontend run package:mac -- --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
       - name: Submit notarization (async)
         id: notarize
+        if: env.MACOS_SIGNING_AVAILABLE == 'true'
         uses: ./.github/actions/submit-macos-notarization
         with:
           apple-id: ${{ secrets.APPLE_ID }}
@@ -128,17 +148,37 @@ jobs:
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
+      - name: Configure macOS code signing (optional)
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$MACOS_CERTIFICATE_P12_BASE64" ] && [ -n "$MACOS_CERTIFICATE_PASSWORD" ]; then
+            CERT_PATH="$RUNNER_TEMP/macos-signing.p12"
+            echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+            echo "CSC_LINK=$CERT_PATH" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MACOS_CERTIFICATE_PASSWORD" >> "$GITHUB_ENV"
+            echo "CSC_NAME=Developer ID Application: Frank Cottone (W778837A9L)" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "MACOS_SIGNING_AVAILABLE=true" >> "$GITHUB_ENV"
+            echo "macOS signing certificate configured for electron-builder."
+          else
+            echo "::warning::MACOS_CERTIFICATE_P12_BASE64 / MACOS_CERTIFICATE_PASSWORD not set; building unsigned macOS artifacts. Auto-update install will fail on macOS for unsigned apps."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "MACOS_SIGNING_AVAILABLE=false" >> "$GITHUB_ENV"
+          fi
+
       - name: Package macOS (Apple Silicon)
         run: npm --workspace apps/frontend run package:mac -- --arm64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
       - name: Submit notarization (async)
         id: notarize
+        if: env.MACOS_SIGNING_AVAILABLE == 'true'
         uses: ./.github/actions/submit-macos-notarization
         with:
           apple-id: ${{ secrets.APPLE_ID }}
