@@ -13,41 +13,19 @@ import type { BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { IPC_CHANNELS } from '../../../shared/constants';
-import type { AuthFailureInfo } from '../../../shared/types/terminal';
 import { getGitHubConfig, githubFetch } from './utils';
 import { createSpecForIssue, buildIssueContext, buildInvestigationTask, updateImplementationPlanStatus } from './spec-utils';
 import type { Project } from '../../../shared/types';
 import { createContextLogger } from './utils/logger';
 import { withProjectOrNull } from './utils/project-middleware';
 import { createIPCCommunicators } from './utils/ipc-communicator';
-import {
-  runPythonSubprocess,
-  getPythonPath,
-  getRunnerPath,
-  validateGitHubModule,
-  buildRunnerArgs,
-  parseJSONFromOutput,
-} from './utils/subprocess-runner';
 import { AgentManager } from '../../agent/agent-manager';
-import { getRunnerEnv } from './utils/runner-env';
+import { BatchProcessor } from '../../ai/runners/github/batch-processor';
+import type { GitHubIssue } from '../../ai/runners/github/duplicate-detector';
+import type { ModelShorthand, ThinkingLevel } from '../../ai/config/types';
 
 // Debug logging
 const { debug: debugLog } = createContextLogger('GitHub AutoFix');
-
-/**
- * Create an auth failure callback for subprocess runners.
- * This reduces duplication of the auth failure handling pattern.
- */
-function createAuthFailureCallback(
-  mainWindow: BrowserWindow | null,
-  context: string
-): ((authFailureInfo: AuthFailureInfo) => void) | undefined {
-  if (!mainWindow) return undefined;
-  return (authFailureInfo: AuthFailureInfo) => {
-    debugLog(`Auth failure detected in ${context}`, authFailureInfo);
-    mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-  };
-}
 
 /**
  * Auto-fix configuration stored in .auto-claude/github/config.json
@@ -278,45 +256,36 @@ async function checkAutoFixLabels(project: Project): Promise<number[]> {
 }
 
 /**
- * Check for NEW issues not yet in the auto-fix queue (no labels required)
+ * Check for NEW issues not yet in the auto-fix queue (no labels required).
+ * Uses GitHub API directly instead of Python subprocess.
  */
-async function checkNewIssues(
-  project: Project,
-  onAuthFailure?: (authFailureInfo: AuthFailureInfo) => void
-): Promise<Array<{number: number}>> {
+async function checkNewIssues(project: Project): Promise<Array<{ number: number }>> {
   const config = getAutoFixConfig(project);
   if (!config.enabled) {
     return [];
   }
 
-  // Validate GitHub module
-  const validation = await validateGitHubModule(project);
-  if (!validation.valid) {
-    throw new Error(validation.error);
+  const ghConfig = getGitHubConfig(project);
+  if (!ghConfig) {
+    throw new Error('No GitHub configuration found');
   }
 
-  const backendPath = validation.backendPath!;
-  const args = buildRunnerArgs(getRunnerPath(backendPath), project.path, 'check-new');
-  const subprocessEnv = await getRunnerEnv();
+  // Fetch open issues from GitHub API (no label filter - any new issue)
+  const issues = await githubFetch(
+    ghConfig.token,
+    `/repos/${ghConfig.repo}/issues?state=open&per_page=100`
+  ) as Array<{
+    number: number;
+    pull_request?: unknown;
+  }>;
 
-  const { promise } = runPythonSubprocess<Array<{number: number}>>({
-    pythonPath: getPythonPath(backendPath),
-    args,
-    cwd: backendPath,
-    env: subprocessEnv,
-    onAuthFailure,
-    onComplete: (stdout) => {
-      return parseJSONFromOutput<Array<{number: number}>>(stdout);
-    },
-  });
+  // Get current queue to exclude already-tracked issues
+  const queue = getAutoFixQueue(project);
+  const queuedIssueNumbers = new Set(queue.map(q => q.issueNumber));
 
-  const result = await promise;
-
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to check for new issues');
-  }
-
-  return result.data;
+  return issues
+    .filter(issue => !issue.pull_request && !queuedIssueNumbers.has(issue.number))
+    .map(issue => ({ number: issue.number }));
 }
 
 /**
@@ -428,10 +397,8 @@ async function startAutoFix(
 
   sendProgress({ phase: 'creating_spec', issueNumber, progress: 70, message: 'Starting spec creation...' });
 
-  // Automatically start spec creation using the robust spec_runner.py system
+  // Automatically start spec creation using the TypeScript agent system
   try {
-    // Start spec creation - spec_runner.py will create a proper detailed spec
-    // After spec creation completes, the normal flow will handle implementation
     agentManager.startSpecCreation(
       specData.specId,
       project.path,
@@ -441,7 +408,6 @@ async function startAutoFix(
     );
 
     // Immediately update the plan status to 'planning' so the frontend shows the task as "In Progress"
-    // This provides instant feedback to the user while spec_runner.py is starting up
     updateImplementationPlanStatus(specData.specDir, 'planning');
 
     sendProgress({ phase: 'complete', issueNumber, progress: 100, message: 'Auto-fix spec creation started!' });
@@ -451,40 +417,6 @@ async function startAutoFix(
     sendProgress({ phase: 'complete', issueNumber, progress: 100, message: 'Spec directory created. Click Start to begin.' });
     sendComplete(state);
   }
-}
-
-/**
- * Convert analyze-preview Python result to camelCase
- */
-function convertAnalyzePreviewResult(result: Record<string, unknown>): AnalyzePreviewResult {
-  return {
-    success: result.success as boolean,
-    totalIssues: result.total_issues as number ?? 0,
-    analyzedIssues: result.analyzed_issues as number ?? 0,
-    alreadyBatched: result.already_batched as number ?? 0,
-    proposedBatches: (result.proposed_batches as Array<Record<string, unknown>> ?? []).map((b) => ({
-      primaryIssue: b.primary_issue as number,
-      issues: (b.issues as Array<Record<string, unknown>>).map((i) => ({
-        issueNumber: i.issue_number as number,
-        title: i.title as string,
-        labels: i.labels as string[] ?? [],
-        similarityToPrimary: i.similarity_to_primary as number ?? 0,
-      })),
-      issueCount: b.issue_count as number ?? 0,
-      commonThemes: b.common_themes as string[] ?? [],
-      validated: b.validated as boolean ?? false,
-      confidence: b.confidence as number ?? 0,
-      reasoning: b.reasoning as string ?? '',
-      theme: b.theme as string ?? '',
-    })),
-    singleIssues: (result.single_issues as Array<Record<string, unknown>> ?? []).map((i) => ({
-      issueNumber: i.issue_number as number,
-      title: i.title as string,
-      labels: i.labels as string[] ?? [],
-    })),
-    message: result.message as string ?? '',
-    error: result.error as string,
-  };
 }
 
 /**
@@ -554,14 +486,10 @@ export function registerAutoFixHandlers(
   // Check for NEW issues not yet in auto-fix queue (no labels required)
   ipcMain.handle(
     IPC_CHANNELS.GITHUB_AUTOFIX_CHECK_NEW,
-    async (_, projectId: string): Promise<Array<{number: number}>> => {
+    async (_, projectId: string): Promise<Array<{ number: number }>> => {
       debugLog('checkNewIssues handler called', { projectId });
-      const mainWindow = getMainWindow();
       const result = await withProjectOrNull(projectId, async (project) => {
-        const issues = await checkNewIssues(
-          project,
-          createAuthFailureCallback(mainWindow, 'check-new')
-        );
+        const issues = await checkNewIssues(project);
         debugLog('New issues found', { count: issues.length, issues });
         return issues;
       });
@@ -602,7 +530,7 @@ export function registerAutoFixHandlers(
     }
   );
 
-  // Batch auto-fix for multiple issues
+  // Batch auto-fix for multiple issues using TypeScript BatchProcessor
   ipcMain.on(
     IPC_CHANNELS.GITHUB_AUTOFIX_BATCH,
     async (_, projectId: string, issueNumbers?: number[]) => {
@@ -634,57 +562,98 @@ export function registerAutoFixHandlers(
             batchCount: 0,
           });
 
-          // Comprehensive validation of GitHub module
-          const validation = await validateGitHubModule(project);
-          if (!validation.valid) {
-            throw new Error(validation.error);
+          const ghConfig = getGitHubConfig(project);
+          if (!ghConfig) {
+            throw new Error('No GitHub configuration found');
           }
 
-          const backendPath = validation.backendPath!;
-          const additionalArgs = issueNumbers && issueNumbers.length > 0 ? issueNumbers.map(n => n.toString()) : [];
-          const args = buildRunnerArgs(getRunnerPath(backendPath), project.path, 'batch-issues', additionalArgs);
-          const subprocessEnv = await getRunnerEnv();
+          // Fetch issues to batch from GitHub API
+          const rawIssues = await githubFetch(
+            ghConfig.token,
+            `/repos/${ghConfig.repo}/issues?state=open&per_page=100`
+          ) as Array<Record<string, unknown>>;
 
-          debugLog('Spawning batch process', { args });
+          const issuesToBatch: GitHubIssue[] = rawIssues
+            .filter(i => !i.pull_request)
+            .filter(i => !issueNumbers || issueNumbers.includes(i.number as number))
+            .map(i => ({
+              number: i.number as number,
+              title: (i.title as string) ?? '',
+              body: (i.body as string) ?? undefined,
+              author: { login: ((i.user as Record<string, unknown>)?.login as string) ?? 'unknown' },
+              createdAt: (i.created_at as string) ?? '',
+              labels: ((i.labels as Array<Record<string, unknown>>) ?? []).map(l => ({ name: l.name as string })),
+            }));
 
-          const { promise } = runPythonSubprocess<IssueBatch[]>({
-            pythonPath: getPythonPath(backendPath),
-            args,
-            cwd: backendPath,
-            env: subprocessEnv,
-            onProgress: (percent, message) => {
-              sendProgress({
-                phase: 'batching',
-                progress: percent,
-                message,
-                totalIssues: issueNumbers?.length ?? 0,
-                batchCount: 0,
-              });
-            },
-            onStdout: (line) => debugLog('STDOUT:', line),
-            onStderr: (line) => debugLog('STDERR:', line),
-            onAuthFailure: createAuthFailureCallback(mainWindow, 'batch auto-fix'),
-            onComplete: () => {
-              const batches = getBatches(project);
-              debugLog('Batch auto-fix completed', { batchCount: batches.length });
-              sendProgress({
-                phase: 'complete',
-                progress: 100,
-                message: `Created ${batches.length} batches`,
-                totalIssues: issueNumbers?.length ?? 0,
-                batchCount: batches.length,
-              });
-              return batches;
-            },
+          debugLog('Fetched issues for batching', { count: issuesToBatch.length });
+          sendProgress({
+            phase: 'batching',
+            progress: 30,
+            message: `Grouping ${issuesToBatch.length} issues into batches...`,
+            totalIssues: issuesToBatch.length,
+            batchCount: 0,
           });
 
-          const result = await promise;
+          // Use TypeScript BatchProcessor instead of Python subprocess
+          const batchProcessor = new BatchProcessor({
+            model: 'sonnet' as ModelShorthand,
+            thinkingLevel: 'low' as ThinkingLevel,
+          });
+          const suggestions = await batchProcessor.groupIssues(issuesToBatch);
+          const engineBatches = batchProcessor.buildBatches(issuesToBatch, suggestions);
 
-          if (!result.success) {
-            throw new Error(result.error ?? 'Failed to batch issues');
+          // Persist batches to disk in the format expected by getBatches()
+          const batchesDir = path.join(getGitHubDir(project), 'batches');
+          fs.mkdirSync(batchesDir, { recursive: true });
+
+          const savedBatches: IssueBatch[] = [];
+          for (const batch of engineBatches) {
+            const primaryIssue = batch.issues[0]?.number ?? 0;
+            const batchData = {
+              batch_id: batch.batchId,
+              repo: ghConfig.repo,
+              primary_issue: primaryIssue,
+              issues: batch.issues.map(i => ({
+                issue_number: i.number,
+                title: i.title ?? '',
+                similarity_to_primary: 1.0,
+              })),
+              common_themes: [batch.theme],
+              status: 'pending',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            fs.writeFileSync(
+              path.join(batchesDir, `batch_${batch.batchId}.json`),
+              JSON.stringify(batchData, null, 2),
+              'utf-8'
+            );
+            savedBatches.push({
+              batchId: batch.batchId,
+              repo: ghConfig.repo,
+              primaryIssue,
+              issues: batch.issues.map(i => ({
+                issueNumber: i.number,
+                title: i.title ?? '',
+                similarityToPrimary: 1.0,
+              })),
+              commonThemes: [batch.theme],
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            });
           }
 
-          sendComplete(result.data!);
+          debugLog('Batch auto-fix completed', { batchCount: savedBatches.length });
+          sendProgress({
+            phase: 'complete',
+            progress: 100,
+            message: `Created ${savedBatches.length} batches`,
+            totalIssues: issuesToBatch.length,
+            batchCount: savedBatches.length,
+          });
+
+          sendComplete(savedBatches);
         });
       } catch (error) {
         debugLog('Batch auto-fix failed', { error: error instanceof Error ? error.message : error });
@@ -751,51 +720,86 @@ export function registerAutoFixHandlers(
           debugLog('Starting analyze-preview');
           sendProgress({ phase: 'analyzing', progress: 10, message: 'Fetching issues for analysis...' });
 
-          // Comprehensive validation of GitHub module
-          const validation = await validateGitHubModule(project);
-          if (!validation.valid) {
-            throw new Error(validation.error);
+          const ghConfig = getGitHubConfig(project);
+          if (!ghConfig) {
+            throw new Error('No GitHub configuration found');
           }
 
-          const backendPath = validation.backendPath!;
-          const additionalArgs = ['--json'];
-          if (maxIssues) {
-            additionalArgs.push('--max-issues', maxIssues.toString());
-          }
-          if (issueNumbers && issueNumbers.length > 0) {
-            additionalArgs.push(...issueNumbers.map(n => n.toString()));
+          // Fetch issues from GitHub API
+          const rawIssues = await githubFetch(
+            ghConfig.token,
+            `/repos/${ghConfig.repo}/issues?state=open&per_page=100`
+          ) as Array<Record<string, unknown>>;
+
+          let issuesForAnalysis: GitHubIssue[] = rawIssues
+            .filter(i => !i.pull_request)
+            .filter(i => !issueNumbers || issueNumbers.includes(i.number as number))
+            .map(i => ({
+              number: i.number as number,
+              title: (i.title as string) ?? '',
+              body: (i.body as string) ?? undefined,
+              author: { login: ((i.user as Record<string, unknown>)?.login as string) ?? 'unknown' },
+              createdAt: (i.created_at as string) ?? '',
+              labels: ((i.labels as Array<Record<string, unknown>>) ?? []).map(l => ({ name: l.name as string })),
+            }));
+
+          if (maxIssues && maxIssues > 0) {
+            issuesForAnalysis = issuesForAnalysis.slice(0, maxIssues);
           }
 
-          const args = buildRunnerArgs(getRunnerPath(backendPath), project.path, 'analyze-preview', additionalArgs);
-          const subprocessEnv = await getRunnerEnv();
-          debugLog('Spawning analyze-preview process', { args });
+          // Already batched issues
+          const existingBatches = getBatches(project);
+          const batchedIssueNumbers = new Set(
+            existingBatches.flatMap(b => b.issues.map(i => i.issueNumber))
+          );
 
-          const { promise } = runPythonSubprocess<AnalyzePreviewResult>({
-            pythonPath: getPythonPath(backendPath),
-            args,
-            cwd: backendPath,
-            env: subprocessEnv,
-            onProgress: (percent, message) => {
-              sendProgress({ phase: 'analyzing', progress: percent, message });
-            },
-            onStdout: (line) => debugLog('STDOUT:', line),
-            onStderr: (line) => debugLog('STDERR:', line),
-            onAuthFailure: createAuthFailureCallback(mainWindow, 'analyze preview'),
-            onComplete: (stdout) => {
-              const rawResult = parseJSONFromOutput<Record<string, unknown>>(stdout);
-              const convertedResult = convertAnalyzePreviewResult(rawResult);
-              debugLog('Analyze preview completed', { batchCount: convertedResult.proposedBatches.length });
-              return convertedResult;
-            },
+          const alreadyBatched = issuesForAnalysis.filter(i => batchedIssueNumbers.has(i.number)).length;
+          const newIssues = issuesForAnalysis.filter(i => !batchedIssueNumbers.has(i.number));
+
+          sendProgress({ phase: 'analyzing', progress: 40, message: `Analyzing ${newIssues.length} issues...` });
+
+          // Use TypeScript BatchProcessor for AI-powered grouping analysis
+          const batchProcessor = new BatchProcessor({
+            model: 'sonnet' as ModelShorthand,
+            thinkingLevel: 'low' as ThinkingLevel,
           });
+          const suggestions = newIssues.length > 0 ? await batchProcessor.groupIssues(newIssues) : [];
 
-          const result = await promise;
+          // Transform to AnalyzePreviewResult format
+          const singleIssueSuggestions = suggestions.filter(s => s.issueNumbers.length === 1);
+          const batchSuggestions = suggestions.filter(s => s.issueNumbers.length > 1);
+          const issueMap = new Map(newIssues.map(i => [i.number, i]));
 
-          if (!result.success) {
-            throw new Error(result.error ?? 'Failed to analyze issues');
-          }
+          const analyzeResult: AnalyzePreviewResult = {
+            success: true,
+            totalIssues: issuesForAnalysis.length,
+            analyzedIssues: newIssues.length,
+            alreadyBatched,
+            proposedBatches: batchSuggestions.map(s => ({
+              primaryIssue: s.issueNumbers[0] ?? 0,
+              issues: s.issueNumbers.map(n => ({
+                issueNumber: n,
+                title: issueMap.get(n)?.title ?? '',
+                labels: (issueMap.get(n)?.labels ?? []).map(l => l.name),
+                similarityToPrimary: s.confidence,
+              })),
+              issueCount: s.issueNumbers.length,
+              commonThemes: [s.theme],
+              validated: false,
+              confidence: s.confidence,
+              reasoning: s.reasoning,
+              theme: s.theme,
+            })),
+            singleIssues: singleIssueSuggestions.map(s => ({
+              issueNumber: s.issueNumbers[0] ?? 0,
+              title: issueMap.get(s.issueNumbers[0] ?? 0)?.title ?? '',
+              labels: (issueMap.get(s.issueNumbers[0] ?? 0)?.labels ?? []).map(l => l.name),
+            })),
+            message: `Analyzed ${newIssues.length} issues, proposed ${batchSuggestions.length} batches`,
+          };
 
-          sendComplete(result.data!);
+          debugLog('Analyze preview completed', { batchCount: analyzeResult.proposedBatches.length });
+          sendComplete(analyzeResult);
         });
       } catch (error) {
         debugLog('Analyze preview failed', { error: error instanceof Error ? error.message : error });
@@ -809,16 +813,9 @@ export function registerAutoFixHandlers(
           projectId
         );
 
-        // Provide user-friendly error messages
         let userMessage = 'Failed to analyze issues';
         if (error instanceof Error) {
-          if (error.message.includes('JSON')) {
-            userMessage = 'Analysis completed, but there was an error processing the results. Please try again.';
-          } else if (error.message.includes('No JSON found')) {
-            userMessage = 'No analysis results returned. Please check your GitHub connection and try again.';
-          } else {
-            userMessage = error.message;
-          }
+          userMessage = error.message;
         }
 
         sendError(userMessage);
@@ -826,49 +823,50 @@ export function registerAutoFixHandlers(
     }
   );
 
-  // Approve and execute selected batches
+  // Approve and execute selected batches - save directly to disk (no Python subprocess)
   ipcMain.handle(
     IPC_CHANNELS.GITHUB_AUTOFIX_APPROVE_BATCHES,
     async (_, projectId: string, approvedBatches: Array<Record<string, unknown>>): Promise<{ success: boolean; batches?: IssueBatch[]; error?: string }> => {
       debugLog('approveBatches handler called', { projectId, batchCount: approvedBatches.length });
       const result = await withProjectOrNull(projectId, async (project) => {
         try {
-          const tempFile = path.join(getGitHubDir(project), 'temp_approved_batches.json');
-
-          // Convert camelCase to snake_case for Python
-          const pythonBatches = approvedBatches.map(b => ({
-            primary_issue: b.primaryIssue,
-            issues: (b.issues as Array<Record<string, unknown>>).map((i: Record<string, unknown>) => ({
-              issue_number: i.issueNumber,
-              title: i.title,
-              labels: i.labels ?? [],
-              similarity_to_primary: i.similarityToPrimary ?? 1.0,
-            })),
-            common_themes: b.commonThemes ?? [],
-            validated: b.validated ?? true,
-            confidence: b.confidence ?? 1.0,
-            reasoning: b.reasoning ?? 'User approved',
-            theme: b.theme ?? '',
-          }));
-
-          fs.writeFileSync(tempFile, JSON.stringify(pythonBatches, null, 2), 'utf-8');
-
-          // Comprehensive validation of GitHub module
-          const validation = await validateGitHubModule(project);
-          if (!validation.valid) {
-            throw new Error(validation.error);
+          const ghConfig = getGitHubConfig(project);
+          if (!ghConfig) {
+            throw new Error('No GitHub configuration found');
           }
 
-          const backendPath = validation.backendPath!;
-          const { execFileSync } = await import('child_process');
-          // Use execFileSync with arguments array to prevent command injection
-          execFileSync(
-            getPythonPath(backendPath),
-            [getRunnerPath(backendPath), '--project', project.path, 'approve-batches', tempFile],
-            { cwd: backendPath, encoding: 'utf-8' }
-          );
+          // Save approved batches directly to disk
+          const batchesDir = path.join(getGitHubDir(project), 'batches');
+          fs.mkdirSync(batchesDir, { recursive: true });
 
-          fs.unlinkSync(tempFile);
+          for (const b of approvedBatches) {
+            const primaryIssue = (b.primaryIssue as number) ?? 0;
+            const batchId = (b.batchId as string) ?? `batch-${String(primaryIssue).padStart(3, '0')}`;
+            const batchData = {
+              batch_id: batchId,
+              repo: ghConfig.repo,
+              primary_issue: primaryIssue,
+              issues: ((b.issues as Array<Record<string, unknown>>) ?? []).map((i: Record<string, unknown>) => ({
+                issue_number: i.issueNumber as number,
+                title: (i.title as string) ?? '',
+                labels: (i.labels as string[]) ?? [],
+                similarity_to_primary: (i.similarityToPrimary as number) ?? 1.0,
+              })),
+              common_themes: (b.commonThemes as string[]) ?? [],
+              validated: (b.validated as boolean) ?? true,
+              confidence: (b.confidence as number) ?? 1.0,
+              reasoning: (b.reasoning as string) ?? 'User approved',
+              theme: (b.theme as string) ?? '',
+              status: 'pending',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            fs.writeFileSync(
+              path.join(batchesDir, `batch_${batchId}.json`),
+              JSON.stringify(batchData, null, 2),
+              'utf-8'
+            );
+          }
 
           const batches = getBatches(project);
           debugLog('Batches approved and created', { count: batches.length });
@@ -885,8 +883,6 @@ export function registerAutoFixHandlers(
 
   debugLog('AutoFix handlers registered');
 }
-
-// getBackendPath function removed - using subprocess-runner utility instead
 
 /**
  * Preview result for analyze-preview command

@@ -16,7 +16,6 @@ import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
-import type { AuthFailureInfo } from '../../../shared/types/terminal';
 import { getGitLabConfig, gitlabFetch, encodeProjectPath } from './utils';
 import { readSettingsFile } from '../../settings-utils';
 import type { Project, AppSettings } from '../../../shared/types';
@@ -29,27 +28,20 @@ import { createContextLogger } from '../github/utils/logger';
 import { withProjectOrNull } from '../github/utils/project-middleware';
 import { createIPCCommunicators } from '../github/utils/ipc-communicator';
 import {
-  runPythonSubprocess,
-  getPythonPath,
-  buildRunnerArgs,
-} from '../github/utils/subprocess-runner';
-import { getRunnerEnv } from '../github/utils/runner-env';
-
-/**
- * Get the GitLab runner path
- */
-function getGitLabRunnerPath(backendPath: string): string {
-  return path.join(backendPath, 'runners', 'gitlab', 'runner.py');
-}
+  MRReviewEngine,
+  type MRContext,
+  type MRReviewEngineConfig,
+} from '../../ai/runners/gitlab/mr-review-engine';
+import type { ModelShorthand, ThinkingLevel } from '../../ai/config/types';
 
 // Debug logging
 const { debug: debugLog } = createContextLogger('GitLab MR');
 
 /**
- * Registry of running MR review processes
+ * Registry of running MR review abort controllers
  * Key format: `${projectId}:${mrIid}`
  */
-const runningReviews = new Map<string, import('child_process').ChildProcess>();
+const runningReviews = new Map<string, AbortController>();
 
 const REBASE_POLL_INTERVAL_MS = 1000;
 // Default rebase timeout (60 seconds). Can be overridden via GITLAB_REBASE_TIMEOUT_MS env var
@@ -162,40 +154,125 @@ function getGitLabMRSettings(): { model: string; thinkingLevel: string } {
 }
 
 /**
- * Validate GitLab module is properly set up
+ * Fetch MR context from GitLab API for TypeScript review engine.
  */
-async function validateGitLabModule(project: Project): Promise<{ valid: boolean; backendPath?: string; error?: string }> {
-  if (!project.autoBuildPath) {
-    return { valid: false, error: 'Auto Build path not configured for this project' };
+async function fetchMRContext(
+  config: { token: string; instanceUrl: string; project: string },
+  mrIid: number
+): Promise<MRContext> {
+  const encodedProject = encodeProjectPath(config.project);
+
+  // Fetch MR metadata
+  const mr = await gitlabFetch(
+    config.token,
+    config.instanceUrl,
+    `/projects/${encodedProject}/merge_requests/${mrIid}`
+  ) as {
+    iid: number;
+    title: string;
+    description?: string;
+    author: { username: string };
+    source_branch: string;
+    target_branch: string;
+    changes_count?: string;
+    diff_refs?: { head_sha?: string };
+    sha?: string;
+  };
+
+  // Fetch changed files
+  const changes = await gitlabFetch(
+    config.token,
+    config.instanceUrl,
+    `/projects/${encodedProject}/merge_requests/${mrIid}/changes`
+  ) as { changes: Array<{ new_path?: string; old_path?: string; diff: string; new_file?: boolean; deleted_file?: boolean }> };
+
+  // Build diff from changes
+  let diff = changes.changes
+    .map((c) => {
+      const filePath = c.new_path ?? c.old_path ?? 'unknown';
+      return `diff --git a/${filePath} b/${filePath}\n${c.diff}`;
+    })
+    .join('\n');
+
+  if (diff.length > 200000) {
+    diff = diff.slice(0, 200000);
   }
 
-  const backendPath = path.join(project.path, project.autoBuildPath);
-
-  // Check if the runners directory exists
-  const runnersPath = path.join(backendPath, 'runners', 'gitlab');
-  if (!fs.existsSync(runnersPath)) {
-    return { valid: false, error: 'GitLab runners not found. Please ensure the backend is properly installed.' };
+  // Count additions/deletions from diff
+  let totalAdditions = 0;
+  let totalDeletions = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) totalAdditions++;
+    else if (line.startsWith('-') && !line.startsWith('---')) totalDeletions++;
   }
 
-  return { valid: true, backendPath };
+  return {
+    mrIid: mr.iid,
+    title: mr.title,
+    description: mr.description,
+    author: mr.author.username,
+    sourceBranch: mr.source_branch,
+    targetBranch: mr.target_branch,
+    changedFiles: changes.changes,
+    diff,
+    totalAdditions,
+    totalDeletions,
+  };
 }
 
 /**
- * Run the Python MR reviewer
+ * Save MR review result to disk in the format expected by getReviewResult().
+ */
+function saveMRReviewResultToDisk(
+  project: Project,
+  mrIid: number,
+  result: MRReviewResult,
+  reviewedCommitSha?: string
+): void {
+  const mrDir = path.join(getGitLabDir(project), 'mr');
+  fs.mkdirSync(mrDir, { recursive: true });
+  const reviewPath = path.join(mrDir, `review_${mrIid}.json`);
+
+  const data = {
+    mr_iid: result.mrIid,
+    project: result.project,
+    success: result.success,
+    findings: result.findings.map((f) => ({
+      id: f.id,
+      severity: f.severity,
+      category: f.category,
+      title: f.title,
+      description: f.description,
+      file: f.file,
+      line: f.line,
+      end_line: f.endLine,
+      suggested_fix: f.suggestedFix,
+      fixable: f.fixable ?? false,
+    })),
+    summary: result.summary,
+    overall_status: result.overallStatus,
+    reviewed_at: result.reviewedAt,
+    reviewed_commit_sha: reviewedCommitSha ?? result.reviewedCommitSha,
+    is_followup_review: result.isFollowupReview ?? false,
+    previous_review_id: result.previousReviewId,
+    resolved_findings: result.resolvedFindings ?? [],
+    unresolved_findings: result.unresolvedFindings ?? [],
+    new_findings_since_last_review: result.newFindingsSinceLastReview ?? [],
+    has_posted_findings: result.hasPostedFindings ?? false,
+    posted_finding_ids: result.postedFindingIds ?? [],
+  };
+
+  fs.writeFileSync(reviewPath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/**
+ * Run the TypeScript MR reviewer using MRReviewEngine
  */
 async function runMRReview(
   project: Project,
   mrIid: number,
   mainWindow: BrowserWindow
 ): Promise<MRReviewResult> {
-  const validation = await validateGitLabModule(project);
-
-  if (!validation.valid) {
-    throw new Error(validation.error);
-  }
-
-  const backendPath = validation.backendPath!;
-
   const { sendProgress } = createIPCCommunicators<MRReviewProgress, MRReviewResult>(
     mainWindow,
     {
@@ -206,66 +283,71 @@ async function runMRReview(
     project.id
   );
 
+  const config = await getGitLabConfig(project);
+  if (!config) {
+    throw new Error('No GitLab configuration found for project');
+  }
+
   const { model, thinkingLevel } = getGitLabMRSettings();
-  const args = buildRunnerArgs(
-    getGitLabRunnerPath(backendPath),
-    project.path,
-    'review-mr',
-    [mrIid.toString()],
-    { model, thinkingLevel }
-  );
-
-  debugLog('Spawning MR review process', { args, model, thinkingLevel });
-
-  // Get runner environment with PYTHONPATH for bundled packages (fixes #139)
-  const subprocessEnv = await getRunnerEnv();
-
-  const { process: childProcess, promise } = runPythonSubprocess<MRReviewResult>({
-    pythonPath: getPythonPath(backendPath),
-    args,
-    cwd: backendPath,
-    env: subprocessEnv,
-    onProgress: (percent, message) => {
-      debugLog('Progress update', { percent, message });
-      sendProgress({
-        phase: 'analyzing',
-        mrIid,
-        progress: percent,
-        message,
-      });
-    },
-    onStdout: (line) => debugLog('STDOUT:', line),
-    onStderr: (line) => debugLog('STDERR:', line),
-    onAuthFailure: (authFailureInfo: AuthFailureInfo) => {
-      debugLog('Auth failure detected in MR review', authFailureInfo);
-      mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-    },
-    onComplete: () => {
-      const reviewResult = getReviewResult(project, mrIid);
-      if (!reviewResult) {
-        throw new Error('Review completed but result not found');
-      }
-      debugLog('Review result loaded', { findingsCount: reviewResult.findings.length });
-      return reviewResult;
-    },
-  });
-
-  // Register the running process
   const reviewKey = getReviewKey(project.id, mrIid);
-  runningReviews.set(reviewKey, childProcess);
-  debugLog('Registered review process', { reviewKey, pid: childProcess.pid });
+
+  debugLog('Starting TypeScript MR review', { model, thinkingLevel, mrIid });
+
+  sendProgress({ phase: 'fetching', mrIid, progress: 15, message: 'Fetching MR data from GitLab...' });
+
+  const context = await fetchMRContext(config, mrIid);
+
+  sendProgress({ phase: 'analyzing', mrIid, progress: 30, message: 'Starting AI review...' });
+
+  const reviewConfig: MRReviewEngineConfig = {
+    model: model as ModelShorthand,
+    thinkingLevel: thinkingLevel as ThinkingLevel,
+  };
+
+  // Create AbortController for cancellation
+  const abortController = new AbortController();
+  runningReviews.set(reviewKey, abortController);
+  debugLog('Registered review abort controller', { reviewKey });
 
   try {
-    const result = await promise;
+    const engine = new MRReviewEngine(reviewConfig, (update) => {
+      sendProgress({ phase: 'analyzing', mrIid, progress: update.progress, message: update.message });
+    });
 
-    if (!result.success) {
-      throw new Error(result.error ?? 'Review failed');
+    const reviewResult = await engine.runReview(context, abortController.signal);
+
+    // Map verdict to overallStatus
+    const verdictToStatus: Record<string, MRReviewResult['overallStatus']> = {
+      ready_to_merge: 'approve',
+      merge_with_changes: 'comment',
+      needs_revision: 'request_changes',
+      blocked: 'request_changes',
+    };
+    const overallStatus = verdictToStatus[reviewResult.verdict] ?? 'comment';
+
+    const result: MRReviewResult = {
+      mrIid,
+      project: config.project,
+      success: true,
+      findings: reviewResult.findings,
+      summary: reviewResult.summary,
+      overallStatus,
+      reviewedAt: new Date().toISOString(),
+    };
+
+    // Save to disk
+    saveMRReviewResultToDisk(project, mrIid, result);
+    debugLog('MR review result saved to disk', { findingsCount: result.findings.length });
+
+    return result;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Review cancelled');
     }
-
-    return result.data!;
+    throw err;
   } finally {
     runningReviews.delete(reviewKey);
-    debugLog('Unregistered review process', { reviewKey });
+    debugLog('Unregistered review abort controller', { reviewKey });
   }
 }
 
@@ -665,26 +747,18 @@ export function registerMRReviewHandlers(
     async (_, projectId: string, mrIid: number): Promise<boolean> => {
       debugLog('cancelMRReview handler called', { projectId, mrIid });
       const reviewKey = getReviewKey(projectId, mrIid);
-      const childProcess = runningReviews.get(reviewKey);
+      const abortController = runningReviews.get(reviewKey);
 
-      if (!childProcess) {
+      if (!abortController) {
         debugLog('No running review found to cancel', { reviewKey });
         return false;
       }
 
       try {
-        debugLog('Killing review process', { reviewKey, pid: childProcess.pid });
-        childProcess.kill('SIGTERM');
-
-        setTimeout(() => {
-          if (!childProcess.killed) {
-            debugLog('Force killing review process', { reviewKey, pid: childProcess.pid });
-            childProcess.kill('SIGKILL');
-          }
-        }, 1000);
-
+        debugLog('Aborting MR review', { reviewKey });
+        abortController.abort();
         runningReviews.delete(reviewKey);
-        debugLog('Review process cancelled', { reviewKey });
+        debugLog('Review aborted', { reviewKey });
         return true;
       } catch (error) {
         debugLog('Failed to cancel review', { reviewKey, error: error instanceof Error ? error.message : error });
@@ -797,13 +871,12 @@ export function registerMRReviewHandlers(
             projectId
           );
 
-          const validation = await validateGitLabModule(project);
-          if (!validation.valid) {
-            sendError({ mrIid, error: validation.error || 'GitLab module validation failed' });
+          const config = await getGitLabConfig(project);
+          if (!config) {
+            sendError({ mrIid, error: 'No GitLab configuration found for project' });
             return;
           }
 
-          const backendPath = validation.backendPath!;
           const reviewKey = getReviewKey(projectId, mrIid);
 
           if (runningReviews.has(reviewKey)) {
@@ -820,60 +893,55 @@ export function registerMRReviewHandlers(
           });
 
           const { model, thinkingLevel } = getGitLabMRSettings();
-          const args = buildRunnerArgs(
-            getGitLabRunnerPath(backendPath),
-            project.path,
-            'followup-review-mr',
-            [mrIid.toString()],
-            { model, thinkingLevel }
-          );
 
-          debugLog('Spawning follow-up review process', { args, model, thinkingLevel });
+          debugLog('Running TypeScript follow-up review', { model, thinkingLevel, mrIid });
 
-          // Get runner environment with PYTHONPATH for bundled packages (fixes #139)
-          const followupSubprocessEnv = await getRunnerEnv();
+          sendProgress({ phase: 'fetching', mrIid, progress: 15, message: 'Fetching MR data from GitLab...' });
 
-          const { process: childProcess, promise } = runPythonSubprocess<MRReviewResult>({
-            pythonPath: getPythonPath(backendPath),
-            args,
-            cwd: backendPath,
-            env: followupSubprocessEnv,
-            onProgress: (percent, message) => {
-              debugLog('Progress update', { percent, message });
-              sendProgress({
-                phase: 'analyzing',
-                mrIid,
-                progress: percent,
-                message,
-              });
-            },
-            onStdout: (line) => debugLog('STDOUT:', line),
-            onStderr: (line) => debugLog('STDERR:', line),
-            onAuthFailure: (authFailureInfo: AuthFailureInfo) => {
-              debugLog('Auth failure detected in follow-up MR review', authFailureInfo);
-              mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-            },
-            onComplete: () => {
-              const reviewResult = getReviewResult(project, mrIid);
-              if (!reviewResult) {
-                throw new Error('Follow-up review completed but result not found');
-              }
-              debugLog('Follow-up review result loaded', { findingsCount: reviewResult.findings.length });
-              return reviewResult;
-            },
-          });
+          const context = await fetchMRContext(config, mrIid);
 
-          runningReviews.set(reviewKey, childProcess);
-          debugLog('Registered follow-up review process', { reviewKey, pid: childProcess.pid });
+          sendProgress({ phase: 'analyzing', mrIid, progress: 30, message: 'Starting follow-up AI review...' });
+
+          const reviewConfig: MRReviewEngineConfig = {
+            model: model as ModelShorthand,
+            thinkingLevel: thinkingLevel as ThinkingLevel,
+          };
+
+          const abortController = new AbortController();
+          runningReviews.set(reviewKey, abortController);
+          debugLog('Registered follow-up review abort controller', { reviewKey });
 
           try {
-            const result = await promise;
+            const engine = new MRReviewEngine(reviewConfig, (update) => {
+              sendProgress({ phase: 'analyzing', mrIid, progress: update.progress, message: update.message });
+            });
 
-            if (!result.success) {
-              throw new Error(result.error ?? 'Follow-up review failed');
-            }
+            const reviewResult = await engine.runReview(context, abortController.signal);
 
-            debugLog('Follow-up review completed', { mrIid, findingsCount: result.data?.findings.length });
+            const verdictToStatus: Record<string, MRReviewResult['overallStatus']> = {
+              ready_to_merge: 'approve',
+              merge_with_changes: 'comment',
+              needs_revision: 'request_changes',
+              blocked: 'request_changes',
+            };
+            const overallStatus = verdictToStatus[reviewResult.verdict] ?? 'comment';
+
+            const result: MRReviewResult = {
+              mrIid,
+              project: config.project,
+              success: true,
+              findings: reviewResult.findings,
+              summary: reviewResult.summary,
+              overallStatus,
+              reviewedAt: new Date().toISOString(),
+              isFollowupReview: true,
+            };
+
+            // Save to disk
+            saveMRReviewResultToDisk(project, mrIid, result);
+            debugLog('Follow-up review result saved to disk', { findingsCount: result.findings.length });
+
+            debugLog('Follow-up review completed', { mrIid, findingsCount: result.findings.length });
             sendProgress({
               phase: 'complete',
               mrIid,
@@ -881,10 +949,10 @@ export function registerMRReviewHandlers(
               message: 'Follow-up review complete!',
             });
 
-            sendComplete(result.data!);
+            sendComplete(result);
           } finally {
             runningReviews.delete(reviewKey);
-            debugLog('Unregistered follow-up review process', { reviewKey });
+            debugLog('Unregistered follow-up review', { reviewKey });
           }
         });
       } catch (error) {

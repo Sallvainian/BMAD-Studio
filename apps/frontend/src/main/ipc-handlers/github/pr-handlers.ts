@@ -18,7 +18,6 @@ import {
   DEFAULT_FEATURE_MODELS,
   DEFAULT_FEATURE_THINKING,
 } from "../../../shared/constants";
-import type { AuthFailureInfo } from "../../../shared/types/terminal";
 import { getGitHubConfig, githubFetch, normalizeRepoReference } from "./utils";
 import { readSettingsFile } from "../../settings-utils";
 import { getAugmentedEnv } from "../../env-utils";
@@ -27,14 +26,19 @@ import type { Project, AppSettings } from "../../../shared/types";
 import { createContextLogger } from "./utils/logger";
 import { withProjectOrNull } from "./utils/project-middleware";
 import { createIPCCommunicators } from "./utils/ipc-communicator";
-import { getRunnerEnv } from "./utils/runner-env";
 import {
-  runPythonSubprocess,
-  getPythonPath,
-  getRunnerPath,
-  validateGitHubModule,
-  buildRunnerArgs,
-} from "./utils/subprocess-runner";
+  runMultiPassReview,
+  type PRContext,
+  type PRReviewEngineConfig,
+  type ChangedFile,
+  type AIBotComment,
+} from "../../ai/runners/github/pr-review-engine";
+import {
+  ParallelFollowupReviewer,
+  type FollowupReviewContext,
+  type PreviousReviewResult,
+} from "../../ai/runners/github/parallel-followup";
+import type { ModelShorthand, ThinkingLevel } from "../../ai/config/types";
 import { getPRStatusPoller } from "../../services/pr-status-poller";
 import { safeBreadcrumb, safeCaptureException } from "../../sentry";
 import { sanitizeForSentry } from "../../../shared/utils/sentry-privacy";
@@ -226,13 +230,13 @@ const CI_WAIT_PLACEHOLDER = Symbol("CI_WAIT_PLACEHOLDER");
 type CIWaitPlaceholder = typeof CI_WAIT_PLACEHOLDER;
 
 /**
- * Registry of running PR review processes
+ * Registry of running PR review abort controllers
  * Key format: `${projectId}:${prNumber}`
  * Value can be:
- * - ChildProcess: actual running review process
+ * - AbortController: actual running review (used to cancel)
  * - CI_WAIT_PLACEHOLDER: review is waiting for CI checks to complete
  */
-const runningReviews = new Map<string, import("child_process").ChildProcess | CIWaitPlaceholder>();
+const runningReviews = new Map<string, AbortController | CIWaitPlaceholder>();
 
 /**
  * Registry of abort controllers for CI wait cancellation
@@ -260,7 +264,7 @@ function getClaudeMdEnv(project: Project): Record<string, string> | undefined {
 export interface PRReviewFinding {
   id: string;
   severity: "critical" | "high" | "medium" | "low";
-  category: "security" | "quality" | "style" | "test" | "docs" | "pattern" | "performance";
+  category: "security" | "quality" | "style" | "test" | "docs" | "pattern" | "performance" | "verification_failed";
   title: string;
   description: string;
   file: string;
@@ -1437,25 +1441,203 @@ function getGitHubPRSettings(): { model: string; thinkingLevel: string } {
   return { model, thinkingLevel };
 }
 
-// getBackendPath function removed - using subprocess-runner utility instead
+/**
+ * Fetch complete PR context from GitHub API for TypeScript review engine.
+ */
+async function fetchPRContext(
+  config: { token: string; repo: string },
+  prNumber: number
+): Promise<PRContext> {
+  // Fetch PR metadata
+  const pr = (await githubFetch(
+    config.token,
+    `/repos/${config.repo}/pulls/${prNumber}`
+  )) as {
+    number: number;
+    title: string;
+    body?: string;
+    state: string;
+    user: { login: string };
+    head: { ref: string; sha: string };
+    base: { ref: string };
+    additions: number;
+    deletions: number;
+    labels?: Array<{ name: string }>;
+  };
+
+  // Fetch files with patches
+  const files = (await githubFetch(
+    config.token,
+    `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
+  )) as Array<{
+    filename: string;
+    additions: number;
+    deletions: number;
+    status: string;
+    patch?: string;
+  }>;
+
+  // Fetch commits
+  const commits = (await githubFetch(
+    config.token,
+    `/repos/${config.repo}/pulls/${prNumber}/commits?per_page=100`
+  )) as Array<{
+    sha: string;
+    commit: { message: string; committer?: { date?: string } };
+  }>;
+
+  // Fetch diff (for full diff context)
+  let diff = "";
+  let diffTruncated = false;
+  try {
+    const { execFileSync } = await import("child_process");
+    if (Number.isInteger(prNumber) && prNumber > 0) {
+      const rawDiff = execFileSync("gh", ["pr", "diff", String(prNumber)], {
+        cwd: config.repo.split("/")[1] ? undefined : undefined,
+        encoding: "utf-8",
+        env: getAugmentedEnv(),
+        timeout: 30000,
+      });
+      if (rawDiff.length > 200000) {
+        diff = rawDiff.slice(0, 200000);
+        diffTruncated = true;
+      } else {
+        diff = rawDiff;
+      }
+    }
+  } catch {
+    // If gh CLI fails, build diff from patches
+    diff = files
+      .filter((f) => f.patch)
+      .map((f) => `diff --git a/${f.filename} b/${f.filename}\n${f.patch}`)
+      .join("\n");
+  }
+
+  // Fetch AI bot comments (review comments from known AI tools)
+  let aiBotComments: AIBotComment[] = [];
+  try {
+    const reviewComments = (await githubFetch(
+      config.token,
+      `/repos/${config.repo}/pulls/${prNumber}/comments?per_page=100`
+    )) as Array<{
+      id: number;
+      user: { login: string };
+      body: string;
+      path?: string;
+      line?: number;
+      created_at: string;
+    }>;
+
+    const AI_BOTS = ["coderabbitai", "cursor-ai", "greptile", "sourcery-ai", "codeflash-ai"];
+    aiBotComments = reviewComments
+      .filter((c) => AI_BOTS.some((bot) => c.user.login.toLowerCase().includes(bot)))
+      .map((c) => ({
+        commentId: c.id,
+        author: c.user.login,
+        toolName: AI_BOTS.find((bot) => c.user.login.toLowerCase().includes(bot)) ?? c.user.login,
+        body: c.body,
+        file: c.path,
+        line: c.line,
+        createdAt: c.created_at,
+      }));
+  } catch {
+    // Non-critical — continue without bot comments
+  }
+
+  const changedFiles: ChangedFile[] = files.map((f) => ({
+    path: f.filename,
+    additions: f.additions,
+    deletions: f.deletions,
+    status: f.status,
+    patch: f.patch,
+  }));
+
+  return {
+    prNumber: pr.number,
+    title: pr.title,
+    description: pr.body ?? "",
+    author: pr.user.login,
+    baseBranch: pr.base.ref,
+    headBranch: pr.head.ref,
+    state: pr.state,
+    changedFiles,
+    diff,
+    diffTruncated,
+    repoStructure: "",
+    relatedFiles: [],
+    commits: commits.map((c) => ({
+      oid: c.sha,
+      messageHeadline: c.commit.message.split("\n")[0] ?? "",
+      committedDate: c.commit.committer?.date ?? "",
+    })),
+    labels: pr.labels?.map((l) => l.name) ?? [],
+    totalAdditions: pr.additions,
+    totalDeletions: pr.deletions,
+    aiBotComments,
+  };
+}
 
 /**
- * Run the Python PR reviewer
+ * Save PR review result to disk in the format expected by getReviewResult().
+ */
+function saveReviewResultToDisk(
+  project: Project,
+  prNumber: number,
+  result: PRReviewResult
+): void {
+  const prDir = path.join(getGitHubDir(project), "pr");
+  fs.mkdirSync(prDir, { recursive: true });
+  const reviewPath = path.join(prDir, `review_${prNumber}.json`);
+
+  const data = {
+    pr_number: result.prNumber,
+    repo: result.repo,
+    success: result.success,
+    findings: result.findings.map((f) => ({
+      id: f.id,
+      severity: f.severity,
+      category: f.category,
+      title: f.title,
+      description: f.description,
+      file: f.file,
+      line: f.line,
+      end_line: f.endLine,
+      suggested_fix: f.suggestedFix,
+      fixable: f.fixable,
+      validation_status: f.validationStatus ?? null,
+      validation_explanation: f.validationExplanation,
+      source_agents: f.sourceAgents ?? [],
+      cross_validated: f.crossValidated ?? false,
+    })),
+    summary: result.summary,
+    overall_status: result.overallStatus,
+    review_id: result.reviewId,
+    reviewed_at: result.reviewedAt,
+    error: result.error,
+    reviewed_commit_sha: result.reviewedCommitSha,
+    reviewed_file_blobs: result.reviewedFileBlobs,
+    is_followup_review: result.isFollowupReview ?? false,
+    previous_review_id: result.previousReviewId,
+    resolved_findings: result.resolvedFindings ?? [],
+    unresolved_findings: result.unresolvedFindings ?? [],
+    new_findings_since_last_review: result.newFindingsSinceLastReview ?? [],
+    has_posted_findings: result.hasPostedFindings ?? false,
+    posted_finding_ids: result.postedFindingIds ?? [],
+    posted_at: result.postedAt,
+    in_progress_since: result.inProgressSince,
+  };
+
+  fs.writeFileSync(reviewPath, JSON.stringify(data, null, 2), "utf-8");
+}
+
+/**
+ * Run the TypeScript PR reviewer
  */
 async function runPRReview(
   project: Project,
   prNumber: number,
   mainWindow: BrowserWindow
 ): Promise<PRReviewResult> {
-  // Comprehensive validation of GitHub module
-  const validation = await validateGitHubModule(project);
-
-  if (!validation.valid) {
-    throw new Error(validation.error);
-  }
-
-  const backendPath = validation.backendPath!;
-
   const { sendProgress } = createIPCCommunicators<PRReviewProgress, PRReviewResult>(
     mainWindow,
     {
@@ -1466,164 +1648,113 @@ async function runPRReview(
     project.id
   );
 
-  const { model, thinkingLevel } = getGitHubPRSettings();
-  const args = buildRunnerArgs(
-    getRunnerPath(backendPath),
-    project.path,
-    "review-pr",
-    [prNumber.toString()],
-    { model, thinkingLevel }
-  );
+  const config = getGitHubConfig(project);
+  if (!config) {
+    throw new Error("No GitHub configuration found for project");
+  }
 
-  debugLog("Spawning PR review process", { args, model, thinkingLevel });
+  const repo = config.repo;
+  const { model, thinkingLevel } = getGitHubPRSettings();
+  const reviewKey = getReviewKey(project.id, prNumber);
 
   safeBreadcrumb({
     category: 'pr-review',
-    message: 'Spawning PR review subprocess',
+    message: 'Starting TypeScript PR review',
     level: 'info',
-    data: {
-      pythonPath: getPythonPath(backendPath),
-      runnerPath: getRunnerPath(backendPath),
-      cwd: backendPath,
-      model,
-      thinkingLevel,
-      prNumber,
-    },
+    data: { model, thinkingLevel, prNumber, repo },
   });
 
   // Create log collector for this review
-  const config = getGitHubConfig(project);
-  const repo = config?.repo || project.name || "unknown";
   const logCollector = new PRLogCollector(project, prNumber, repo, false, mainWindow);
 
-  // Build environment with project settings
-  const subprocessEnv = await getRunnerEnv(getClaudeMdEnv(project));
-
-  safeBreadcrumb({
-    category: 'github.pr-review',
-    message: `Subprocess env for PR #${prNumber} review`,
-    level: 'info',
-    data: {
-      prNumber,
-      hasGITHUB_CLI_PATH: !!subprocessEnv.GITHUB_CLI_PATH,
-      GITHUB_CLI_PATH: subprocessEnv.GITHUB_CLI_PATH ?? 'NOT SET',
-      hasGITHUB_TOKEN: !!subprocessEnv.GITHUB_TOKEN,
-      hasPYTHONPATH: !!subprocessEnv.PYTHONPATH,
-    },
-  });
-
-  // Create operation ID for this review
-  const reviewKey = getReviewKey(project.id, prNumber);
-
-  const { process: childProcess, promise } = runPythonSubprocess<PRReviewResult>({
-    pythonPath: getPythonPath(backendPath),
-    args,
-    cwd: backendPath,
-    env: subprocessEnv,
-    onProgress: (percent, message) => {
-      debugLog("Progress update", { percent, message });
-      sendProgress({
-        phase: "analyzing",
-        prNumber,
-        progress: percent,
-        message,
-      });
-    },
-    onStdout: (line) => {
-      debugLog("STDOUT:", line);
-      // Collect log entries
-      logCollector.processLine(line);
-    },
-    onStderr: (line) => debugLog("STDERR:", line),
-    onAuthFailure: (authFailureInfo: AuthFailureInfo) => {
-      // Send auth failure to renderer to show modal
-      debugLog("Auth failure detected in PR review", authFailureInfo);
-      mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-    },
-    onComplete: (stdout: string) => {
-      // Check stdout for in_progress JSON marker (not saved to disk by backend)
-      const inProgressMarker = "__RESULT_JSON__:";
-      for (const line of stdout.split("\n")) {
-        if (line.startsWith(inProgressMarker)) {
-          try {
-            const data = JSON.parse(line.slice(inProgressMarker.length));
-            if (data.overall_status === "in_progress") {
-              debugLog("In-progress result parsed from stdout", { prNumber });
-              return {
-                prNumber: data.pr_number,
-                repo: data.repo,
-                success: data.success,
-                findings: [],
-                summary: data.summary ?? "",
-                overallStatus: "in_progress" as const,
-                reviewedAt: data.reviewed_at ?? new Date().toISOString(),
-                inProgressSince: data.in_progress_since,
-              };
-            }
-          } catch {
-            debugLog("Failed to parse __RESULT_JSON__ line", { line });
-          }
-        }
-      }
-
-      // Load the result from disk
-      const reviewResult = getReviewResult(project, prNumber);
-      if (!reviewResult) {
-        throw new Error("Review completed but result not found");
-      }
-      debugLog("Review result loaded", { findingsCount: reviewResult.findings.length });
-      return reviewResult;
-    },
-    // Register with OperationRegistry for proactive swap support
-    operationRegistration: {
-      operationId: `pr-review:${reviewKey}`,
-      operationType: 'pr-review',
-      metadata: { projectId: project.id, prNumber, repo },
-      // PR reviews don't support restart (would need to refetch PR data)
-      // The review will complete or fail, and user can retry manually
-    },
-  });
-
-  // Register the running process (keep legacy registry for cancel support)
-  runningReviews.set(reviewKey, childProcess);
-  debugLog("Registered review process", { reviewKey, pid: childProcess.pid });
+  // Create AbortController for cancellation
+  const abortController = new AbortController();
+  runningReviews.set(reviewKey, abortController);
+  debugLog("Registered review abort controller", { reviewKey });
 
   try {
-    // Wait for the process to complete
-    const result = await promise;
+    sendProgress({ phase: "fetching", prNumber, progress: 15, message: "Fetching PR data from GitHub..." });
+
+    const context = await fetchPRContext(config, prNumber);
+
+    sendProgress({ phase: "analyzing", prNumber, progress: 30, message: "Starting multi-pass review..." });
+
+    const reviewConfig: PRReviewEngineConfig = {
+      repo,
+      model: model as ModelShorthand,
+      thinkingLevel: thinkingLevel as ThinkingLevel,
+    };
+
+    const multiPassResult = await runMultiPassReview(
+      context,
+      reviewConfig,
+      (update) => {
+        const allowedPhases = new Set(["fetching", "analyzing", "generating", "posting", "complete"]);
+        const phase = (allowedPhases.has(update.phase) ? update.phase : "analyzing") as PRReviewProgress["phase"];
+        sendProgress({
+          phase,
+          prNumber,
+          progress: update.progress,
+          message: update.message,
+        });
+        logCollector.processLine(`[${update.phase}] ${update.message}`);
+      }
+    );
+
+    // Determine overall status
+    const hasCritical = multiPassResult.findings.some(
+      (f) => f.severity === "critical" || f.severity === "high"
+    );
+    const overallStatus = hasCritical ? "request_changes" : multiPassResult.findings.length > 0 ? "comment" : "approve";
+
+    // Build summary from scan result
+    const summary = `PR #${prNumber} reviewed: ${multiPassResult.findings.length} findings (${multiPassResult.structuralIssues.length} structural issues). Verdict: ${multiPassResult.scanResult.verdict ?? overallStatus}.`;
+
+    const result: PRReviewResult = {
+      prNumber,
+      repo,
+      success: true,
+      findings: multiPassResult.findings as PRReviewFinding[],
+      summary,
+      overallStatus,
+      reviewedAt: new Date().toISOString(),
+    };
+
+    // Save to disk
+    saveReviewResultToDisk(project, prNumber, result);
+    debugLog("Review result saved to disk", { findingsCount: result.findings.length });
+
+    // Finalize logs
+    logCollector.finalize(true);
 
     safeBreadcrumb({
       category: 'pr-review',
-      message: `PR review subprocess exited`,
-      level: result.success ? 'info' : 'error',
-      data: { exitCode: result.exitCode, success: result.success, prNumber },
+      message: 'PR review completed',
+      level: 'info',
+      data: { prNumber, findingsCount: result.findings.length, overallStatus },
     });
-
-    if (!result.success) {
-      // Finalize logs with failure
-      logCollector.finalize(false);
-
-      safeCaptureException(
-        new Error(`PR review subprocess failed: ${result.error ?? 'unknown error'}`),
-        { extra: { exitCode: result.exitCode, prNumber, stderr: sanitizeForSentry(result.stderr.slice(0, 500)) } }
-      );
-
-      throw new Error(result.error ?? "Review failed");
-    }
-
-    // Finalize logs with success
-    logCollector.finalize(true);
 
     // Save PR review insights to memory (async, non-blocking)
-    savePRReviewToMemory(result.data!, repo, false).catch((err) => {
-      debugLog("Failed to save PR review to memory", { error: err.message });
+    savePRReviewToMemory(result, repo, false).catch((err) => {
+      debugLog("Failed to save PR review to memory", { error: (err as Error).message });
     });
 
-    return result.data!;
+    return result;
+  } catch (err) {
+    logCollector.finalize(false);
+
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Review cancelled");
+    }
+
+    safeCaptureException(
+      err instanceof Error ? err : new Error(String(err)),
+      { extra: { prNumber, repo } }
+    );
+    throw err;
   } finally {
-    // Clean up the registry when done (success or error)
     runningReviews.delete(reviewKey);
-    debugLog("Unregistered review process", { reviewKey });
+    debugLog("Unregistered review abort controller", { reviewKey });
   }
 }
 
@@ -2519,23 +2650,15 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
         return true;
       }
 
-      // Handle actual child process
-      const childProcess = entry;
+      // Handle actual AbortController - abort the running TypeScript review
+      const reviewAbortController = entry;
       try {
-        debugLog("Killing review process", { reviewKey, pid: childProcess.pid });
-        childProcess.kill("SIGTERM");
-
-        // Give it a moment to terminate gracefully, then force kill if needed
-        setTimeout(() => {
-          if (!childProcess.killed) {
-            debugLog("Force killing review process", { reviewKey, pid: childProcess.pid });
-            childProcess.kill("SIGKILL");
-          }
-        }, 1000);
+        debugLog("Aborting review", { reviewKey });
+        reviewAbortController.abort();
 
         // Clean up the registry
         runningReviews.delete(reviewKey);
-        debugLog("Review process cancelled", { reviewKey });
+        debugLog("Review aborted", { reviewKey });
         return true;
       } catch (error) {
         debugLog("Failed to cancel review", {
@@ -2945,14 +3068,12 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             projectId
           );
 
-          // Comprehensive validation of GitHub module
-          const validation = await validateGitHubModule(project);
-          if (!validation.valid) {
-            sendError({ prNumber, error: validation.error || "GitHub module validation failed" });
+          const config = getGitHubConfig(project);
+          if (!config) {
+            sendError({ prNumber, error: "No GitHub configuration found for project" });
             return;
           }
 
-          const backendPath = validation.backendPath!;
           const reviewKey = getReviewKey(projectId, prNumber);
 
           // Check if already running
@@ -2978,149 +3099,175 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
             });
 
             // Wait for CI checks to complete before starting follow-up review
-            const config = getGitHubConfig(project);
-            if (config) {
-              const shouldProceed = await performCIWaitCheck(
-                config,
-                prNumber,
-                sendProgress,
-                "follow-up review",
-                abortController.signal
-              );
-              if (!shouldProceed) {
-                debugLog("Follow-up review cancelled during CI wait", { reviewKey });
-                return;
-              }
+            const shouldProceed = await performCIWaitCheck(
+              config,
+              prNumber,
+              sendProgress,
+              "follow-up review",
+              abortController.signal
+            );
+            if (!shouldProceed) {
+              debugLog("Follow-up review cancelled during CI wait", { reviewKey });
+              return;
             }
 
             // Clean up abort controller since CI wait is done
             ciWaitAbortControllers.delete(reviewKey);
 
+            const repo = config.repo;
             const { model, thinkingLevel } = getGitHubPRSettings();
-          const args = buildRunnerArgs(
-            getRunnerPath(backendPath),
-            project.path,
-            "followup-review-pr",
-            [prNumber.toString()],
-            { model, thinkingLevel }
-          );
-
-          debugLog("Spawning follow-up review process", { args, model, thinkingLevel });
-
-          safeBreadcrumb({
-            category: 'pr-review',
-            message: 'Spawning follow-up PR review subprocess',
-            level: 'info',
-            data: {
-              pythonPath: getPythonPath(backendPath),
-              runnerPath: getRunnerPath(backendPath),
-              cwd: backendPath,
-              model,
-              thinkingLevel,
-              prNumber,
-            },
-          });
-
-          // Create log collector for this follow-up review (config already declared above)
-          const repo = config?.repo || project.name || "unknown";
-          const logCollector = new PRLogCollector(project, prNumber, repo, true, mainWindow);
-
-          // Build environment with project settings
-          const followupEnv = await getRunnerEnv(getClaudeMdEnv(project));
-
-          safeBreadcrumb({
-            category: 'github.pr-review',
-            message: `Subprocess env for PR #${prNumber} follow-up review`,
-            level: 'info',
-            data: {
-              prNumber,
-              hasGITHUB_CLI_PATH: !!followupEnv.GITHUB_CLI_PATH,
-              GITHUB_CLI_PATH: followupEnv.GITHUB_CLI_PATH ?? 'NOT SET',
-              hasGITHUB_TOKEN: !!followupEnv.GITHUB_TOKEN,
-              hasPYTHONPATH: !!followupEnv.PYTHONPATH,
-            },
-          });
-
-          const { process: childProcess, promise } = runPythonSubprocess<PRReviewResult>({
-            pythonPath: getPythonPath(backendPath),
-            args,
-            cwd: backendPath,
-            env: followupEnv,
-            onProgress: (percent, message) => {
-              debugLog("Progress update", { percent, message });
-              sendProgress({
-                phase: "analyzing",
-                prNumber,
-                progress: percent,
-                message,
-              });
-            },
-            onStdout: (line) => {
-              debugLog("STDOUT:", line);
-              // Collect log entries
-              logCollector.processLine(line);
-            },
-            onStderr: (line) => debugLog("STDERR:", line),
-            onAuthFailure: (authFailureInfo: AuthFailureInfo) => {
-              // Send auth failure to renderer to show modal
-              debugLog("Auth failure detected in follow-up PR review", authFailureInfo);
-              mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-            },
-            onComplete: () => {
-              // Load the result from disk
-              const reviewResult = getReviewResult(project, prNumber);
-              if (!reviewResult) {
-                throw new Error("Follow-up review completed but result not found");
-              }
-              debugLog("Follow-up review result loaded", {
-                findingsCount: reviewResult.findings.length,
-              });
-              return reviewResult;
-            },
-            // Register with OperationRegistry for proactive swap support
-            operationRegistration: {
-              operationId: `pr-followup-review:${reviewKey}`,
-              operationType: 'pr-review',
-              metadata: { projectId: project.id, prNumber, repo, isFollowup: true },
-            },
-          });
-
-          // Update registry with actual process (replacing placeholder)
-          runningReviews.set(reviewKey, childProcess);
-          debugLog("Registered follow-up review process", { reviewKey, pid: childProcess.pid });
-
-            const result = await promise;
 
             safeBreadcrumb({
               category: 'pr-review',
-              message: 'Follow-up PR review subprocess exited',
-              level: result.success ? 'info' : 'error',
-              data: { exitCode: result.exitCode, success: result.success, prNumber },
+              message: 'Starting TypeScript follow-up PR review',
+              level: 'info',
+              data: { model, thinkingLevel, prNumber, repo },
             });
 
-            if (!result.success) {
-              // Finalize logs with failure
-              logCollector.finalize(false);
+            // Create log collector for this follow-up review
+            const logCollector = new PRLogCollector(project, prNumber, repo, true, mainWindow);
 
-              safeCaptureException(
-                new Error(`Follow-up PR review subprocess failed: ${result.error ?? 'unknown error'}`),
-                { extra: { exitCode: result.exitCode, prNumber, stderr: sanitizeForSentry(result.stderr.slice(0, 500)) } }
-              );
+            // Upgrade to real AbortController now that CI wait is done
+            const reviewAbortController = new AbortController();
+            runningReviews.set(reviewKey, reviewAbortController);
+            debugLog("Registered follow-up review abort controller", { reviewKey });
 
-              throw new Error(result.error ?? "Follow-up review failed");
+            // Fetch incremental PR data for follow-up
+            sendProgress({ phase: "fetching", prNumber, progress: 20, message: "Fetching PR changes since last review..." });
+
+            // Get the previous review result for context
+            const previousReviewResult = getReviewResult(project, prNumber);
+            const previousReview: PreviousReviewResult = {
+              reviewId: previousReviewResult?.reviewId,
+              prNumber,
+              findings: previousReviewResult?.findings ?? [],
+              summary: previousReviewResult?.summary,
+            };
+
+            // Fetch current PR commits
+            const currentCommits = (await githubFetch(
+              config.token,
+              `/repos/${config.repo}/pulls/${prNumber}/commits?per_page=100`
+            )) as Array<{ sha: string; commit: { message: string; committer?: { date?: string } } }>;
+
+            const currentSha = currentCommits[currentCommits.length - 1]?.sha ?? "";
+            const previousSha = previousReviewResult?.reviewedCommitSha ?? "";
+
+            // Get diff since last review
+            let diffSinceReview = "";
+            try {
+              const filesChanged = (await githubFetch(
+                config.token,
+                `/repos/${config.repo}/pulls/${prNumber}/files?per_page=100`
+              )) as Array<{ filename: string; patch?: string; status: string }>;
+              diffSinceReview = filesChanged
+                .filter((f) => f.patch)
+                .map((f) => `diff --git a/${f.filename} b/${f.filename}\n${f.patch}`)
+                .join("\n");
+            } catch {
+              // Non-critical
             }
 
-            // Finalize logs with success
+            // Fetch comments since last review
+            const contributorComments: Array<Record<string, unknown>> = [];
+            const aiBotComments: Array<Record<string, unknown>> = [];
+            try {
+              const allComments = (await githubFetch(
+                config.token,
+                `/repos/${config.repo}/issues/${prNumber}/comments?per_page=100`
+              )) as Array<{ id: number; user: { login: string }; body: string; created_at: string }>;
+              const AI_BOTS = ["coderabbitai", "cursor-ai", "greptile", "sourcery-ai", "codeflash-ai"];
+              for (const c of allComments) {
+                const isBot = AI_BOTS.some((bot) => c.user.login.toLowerCase().includes(bot));
+                if (isBot) {
+                  aiBotComments.push({ id: c.id, author: c.user.login, body: c.body, created_at: c.created_at });
+                } else {
+                  contributorComments.push({ id: c.id, author: c.user.login, body: c.body, created_at: c.created_at });
+                }
+              }
+            } catch {
+              // Non-critical
+            }
+
+            const followupContext: FollowupReviewContext = {
+              prNumber,
+              previousReview,
+              previousCommitSha: previousSha,
+              currentCommitSha: currentSha,
+              commitsSinceReview: currentCommits.map((c) => ({
+                sha: c.sha,
+                message: c.commit.message,
+                committedAt: c.commit.committer?.date ?? "",
+              })),
+              filesChangedSinceReview: [],
+              diffSinceReview,
+              contributorCommentsSinceReview: contributorComments,
+              aiBotCommentsSinceReview: aiBotComments,
+              prReviewsSinceReview: [],
+            };
+
+            sendProgress({ phase: "analyzing", prNumber, progress: 35, message: "Running follow-up analysis..." });
+
+            const followupReviewer = new ParallelFollowupReviewer(
+              {
+                repo,
+                model: model as ModelShorthand,
+                thinkingLevel: thinkingLevel as ThinkingLevel,
+              },
+              (update) => {
+                const allowedPhases = new Set(["fetching", "analyzing", "generating", "posting", "complete"]);
+                const phase = (allowedPhases.has(update.phase) ? update.phase : "analyzing") as PRReviewProgress["phase"];
+                sendProgress({
+                  phase,
+                  prNumber,
+                  progress: update.progress,
+                  message: update.message,
+                });
+                logCollector.processLine(`[${update.phase}] ${update.message}`);
+              }
+            );
+
+            const followupResult = await followupReviewer.review(followupContext, reviewAbortController.signal);
+
+            // Build PRReviewResult from FollowupReviewResult
+            const result: PRReviewResult = {
+              prNumber,
+              repo,
+              success: true,
+              findings: followupResult.findings as PRReviewFinding[],
+              summary: followupResult.summary,
+              overallStatus: followupResult.overallStatus as PRReviewResult["overallStatus"],
+              reviewedAt: new Date().toISOString(),
+              reviewedCommitSha: followupResult.reviewedCommitSha,
+              isFollowupReview: true,
+              previousReviewId: typeof followupResult.previousReviewId === "number" ? followupResult.previousReviewId : undefined,
+              resolvedFindings: followupResult.resolvedFindings,
+              unresolvedFindings: followupResult.unresolvedFindings,
+              newFindingsSinceLastReview: followupResult.newFindingsSinceLastReview,
+            };
+
+            // Save to disk
+            saveReviewResultToDisk(project, prNumber, result);
+            debugLog("Follow-up review result saved to disk", { findingsCount: result.findings.length });
+
+            // Finalize logs
             logCollector.finalize(true);
 
+            safeBreadcrumb({
+              category: 'pr-review',
+              message: 'Follow-up PR review completed',
+              level: 'info',
+              data: { prNumber, findingsCount: result.findings.length },
+            });
+
             // Save follow-up PR review insights to memory (async, non-blocking)
-            savePRReviewToMemory(result.data!, repo, true).catch((err) => {
-              debugLog("Failed to save follow-up PR review to memory", { error: err.message });
+            savePRReviewToMemory(result, repo, true).catch((err) => {
+              debugLog("Failed to save follow-up PR review to memory", { error: (err as Error).message });
             });
 
             debugLog("Follow-up review completed", {
               prNumber,
-              findingsCount: result.data?.findings.length,
+              findingsCount: result.findings.length,
             });
             sendProgress({
               phase: "complete",
@@ -3129,12 +3276,12 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
               message: "Follow-up review complete!",
             });
 
-            sendComplete(result.data!);
+            sendComplete(result);
           } finally {
             // Always clean up registry, whether we exit normally or via error
             runningReviews.delete(reviewKey);
             ciWaitAbortControllers.delete(reviewKey);
-            debugLog("Unregistered follow-up review process", { reviewKey });
+            debugLog("Unregistered follow-up review", { reviewKey });
           }
         });
       } catch (error) {
