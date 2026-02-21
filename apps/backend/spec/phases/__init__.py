@@ -10,6 +10,7 @@ This module is organized into several submodules for better maintainability:
 - requirements_phases: Requirements, historical context, and research
 - spec_phases: Spec writing and self-critique
 - planning_phases: Implementation planning and validation
+- bmad_phases: BMAD methodology phases (analysis, planning, solutioning)
 - utils: Helper utilities for phase execution
 """
 

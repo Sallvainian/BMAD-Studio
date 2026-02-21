@@ -44,11 +44,22 @@ class ComplexityAssessment:
     needs_research: bool = False
     needs_self_critique: bool = False
 
+    # BMAD integration flag - when True, use BMAD-enhanced phases
+    use_bmad: bool = True
+
     def phases_to_run(self) -> list[str]:
-        """Return list of phase names to run based on complexity."""
+        """Return list of phase names to run based on complexity.
+
+        When use_bmad is True, returns BMAD-enhanced phase sequences
+        that inject BMAD personas and workflows into the pipeline.
+        """
         # If AI provided recommended phases, use those
         if self.recommended_phases:
             return self.recommended_phases
+
+        # BMAD-enhanced phase sequences
+        if self.use_bmad:
+            return self._bmad_phases_to_run()
 
         # Otherwise fall back to default phase sets
         # Note: historical_context runs early (after discovery) if Graphiti is enabled
@@ -74,6 +85,60 @@ class ComplexityAssessment:
                 "planning",
                 "validation",
             ]
+
+    def _bmad_phases_to_run(self) -> list[str]:
+        """Return BMAD-enhanced phase sequences based on complexity track.
+
+        Maps Auto-Claude complexity tiers to BMAD methodology tracks:
+        - SIMPLE -> Quick Flow: lightweight bmad_quick_spec
+        - STANDARD -> Full BMAD: analysis, PRD writing, story planning
+        - COMPLEX -> Extended BMAD: full BMAD + research + architecture + self-critique
+        """
+        if self.complexity == Complexity.SIMPLE:
+            # Quick Flow track: use BMAD quick spec instead of standard quick_spec
+            return [
+                "discovery",
+                "historical_context",
+                "bmad_quick_spec",
+                "validation",
+            ]
+        elif self.complexity == Complexity.STANDARD:
+            # Full BMAD track: analysis -> PRD -> story planning
+            phases = [
+                "discovery",
+                "historical_context",
+                "requirements",
+                "bmad_analysis",
+                "context",
+                "bmad_prd_writing",
+                "planning",
+                "bmad_story_planning",
+                "validation",
+            ]
+            if self.needs_research:
+                phases.insert(phases.index("bmad_analysis") + 1, "research")
+            return phases
+        else:  # COMPLEX - Extended BMAD
+            return [
+                "discovery",
+                "historical_context",
+                "requirements",
+                "bmad_analysis",
+                "research",
+                "context",
+                "bmad_prd_writing",
+                "bmad_architecture",
+                "self_critique",
+                "bmad_story_planning",
+                "planning",
+                "validation",
+            ]
+
+    @property
+    def bmad_track(self) -> str:
+        """Return the BMAD track name for this complexity level."""
+        from bmad.config import get_bmad_track
+        return get_bmad_track(self.complexity.value).value
 
 
 class ComplexityAnalyzer:
