@@ -1,3 +1,20 @@
+## 2.7.7 - Model Updates & PR Tab Fixes
+
+### ✨ New Features
+
+- **Sonnet 4.6 models** — Added Claude Sonnet 4.6 and Sonnet 4.6 (1M) to model selection, with Sonnet 4.5 preserved as a legacy option
+
+### 🐛 Bug Fixes
+
+- **PR description rendering** — PR descriptions now render markdown and HTML properly instead of showing raw text
+- **AI Analysis Results** — Review summaries now display formatted headings, tables, and bullet lists instead of a single unformatted line
+- **Rerun Review button** — Added a visible "Rerun Review" button in the PR action bar so reviews can be easily re-triggered
+- **Horizontal scroll** — Fixed content clipping in resizable split panels by enabling horizontal scrolling
+
+### 🛠️ Improvements
+
+- **CI fixes** — Disabled CSC_IDENTITY_AUTO_DISCOVERY to prevent signing crashes, upgraded pip for Python dep bundling
+
 ## 2.7.6 - Stability & Feature Enhancements
 
 ### ✨ New Features
