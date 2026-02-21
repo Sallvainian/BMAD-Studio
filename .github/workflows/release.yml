@@ -20,7 +20,7 @@ jobs:
       notarization_id: ${{ steps.notarize.outputs.notarization-id }}
       dmg_file: ${{ steps.notarize.outputs.dmg-file }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -92,7 +92,7 @@ jobs:
       notarization_id: ${{ steps.notarize.outputs.notarization-id }}
       dmg_file: ${{ steps.notarize.outputs.dmg-file }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -159,7 +159,7 @@ jobs:
     needs: [build-macos-intel, build-macos-arm64]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download Intel DMG
         uses: actions/download-artifact@v7
@@ -202,7 +202,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
