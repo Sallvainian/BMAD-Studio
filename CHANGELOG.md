@@ -1,3 +1,9 @@
+## 2.7.12 - Upstream Sync
+
+### 🛠️ Improvements
+
+- **Upstream sync** — Merged upstream Auto-Claude v2.7.6 stable release (PR #1880)
+
 ## 2.7.11 - Fix Release Build
 
 ### 🐛 Bug Fixes
