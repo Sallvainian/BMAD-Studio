@@ -122,17 +122,17 @@ describe('runAgentSession', () => {
     mockStreamText.mockReturnValue(
       createMockStreamResult(
         [
-          { type: 'tool-input-available', toolName: 'Bash', toolCallId: 'c1', input: { command: 'ls' } },
-          { type: 'tool-output-available', toolCallId: 'c1', output: 'file.ts' },
+          { type: 'tool-call', toolName: 'Bash', toolCallId: 'c1', input: { command: 'ls' } },
+          { type: 'tool-result', toolCallId: 'c1', toolName: 'Bash', input: { command: 'ls' }, output: 'file.ts' },
           {
             type: 'finish-step',
-            usage: { inputTokens: 50, outputTokens: 25 },
+            usage: { promptTokens: 50, completionTokens: 25 },
           },
-          { type: 'tool-input-available', toolName: 'Read', toolCallId: 'c2', input: { file_path: 'file.ts' } },
-          { type: 'tool-output-available', toolCallId: 'c2', output: 'content' },
+          { type: 'tool-call', toolName: 'Read', toolCallId: 'c2', input: { file_path: 'file.ts' } },
+          { type: 'tool-result', toolCallId: 'c2', toolName: 'Read', input: { file_path: 'file.ts' }, output: 'content' },
           {
             type: 'finish-step',
-            usage: { inputTokens: 50, outputTokens: 25 },
+            usage: { promptTokens: 50, completionTokens: 25 },
           },
         ],
         { text: 'Done', totalUsage: { inputTokens: 100, outputTokens: 50 } },

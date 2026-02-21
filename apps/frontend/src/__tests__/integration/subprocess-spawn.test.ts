@@ -1,374 +1,359 @@
 /**
- * Integration tests for subprocess spawning
- * Tests AgentManager spawning Python processes correctly
+ * Integration tests for WorkerBridge-based agent spawning
+ * Tests AgentManager spawning worker threads correctly via WorkerBridge
  *
- * NOTE: Some pre-existing test failures in the full test suite (e.g., @testing-library/react
- * v16 missing exports) are NOT related to changes in this file. This test file focuses on
- * subprocess spawning and AgentManager functionality only.
+ * The project has migrated from Python subprocess spawning to TypeScript
+ * worker threads. This test file verifies the new WorkerBridge path.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
-import { mkdirSync, rmSync, existsSync, writeFileSync, mkdtempSync } from 'fs';
-import { tmpdir } from 'os';
-import path from 'path';
-import { findPythonCommand, parsePythonCommand } from '../../main/python-detector';
-import { isWindows } from '../../main/platform';
+import type { AgentExecutorConfig } from '../../main/ai/agent/types';
 
-// Test directories - use secure temp directory with random suffix
-let TEST_DIR: string;
-let TEST_PROJECT_PATH: string;
+// =============================================================================
+// Mock WorkerBridge
+// =============================================================================
 
-function initTestDirectories(): void {
-  TEST_DIR = mkdtempSync(path.join(tmpdir(), 'subprocess-spawn-test-'));
-  TEST_PROJECT_PATH = path.join(TEST_DIR, 'test-project');
+class MockBridge extends EventEmitter {
+  spawn = vi.fn();
+  terminate = vi.fn().mockResolvedValue(undefined);
+  isRunning = vi.fn().mockReturnValue(false);
+  workerInstance = null as null | { terminate: () => Promise<void> };
+  get isActive() {
+    return this.workerInstance !== null;
+  }
 }
 
-// Detect the Python command that will actually be used
-const DETECTED_PYTHON_CMD = findPythonCommand() || 'python';
-const [EXPECTED_PYTHON_COMMAND, EXPECTED_PYTHON_BASE_ARGS] = parsePythonCommand(DETECTED_PYTHON_CMD);
+// Track created bridge instances so tests can interact with them
+const createdBridges: MockBridge[] = [];
 
-// Mock child_process spawn
-const mockStdout = new EventEmitter();
-const mockStderr = new EventEmitter();
-const mockProcess = Object.assign(new EventEmitter(), {
-  stdout: mockStdout,
-  stderr: mockStderr,
-  pid: 12345,
-  killed: false,
-  kill: vi.fn(() => {
-    mockProcess.killed = true;
-    // Emit exit event synchronously to simulate process termination
-    // (needed for killAllProcesses wait - using nextTick for more predictable timing)
-    process.nextTick(() => mockProcess.emit('exit', 0, null));
-    return true;
-  })
-});
-
-vi.mock('child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('child_process')>();
+vi.mock('../../main/ai/agent/worker-bridge', () => {
+  class MockWorkerBridgeClass extends MockBridge {
+    constructor() {
+      super();
+      createdBridges.push(this);
+    }
+  }
   return {
-    ...actual,
-    spawn: vi.fn(() => mockProcess)
+    WorkerBridge: MockWorkerBridgeClass,
   };
 });
 
-// Mock claude-profile-manager to bypass auth checks in tests
-// Profile shape must match ClaudeProfile interface (id, name, isDefault, etc.)
+// =============================================================================
+// Mock electron
+// =============================================================================
+
+vi.mock('electron', () => ({
+  app: {
+    getAppPath: vi.fn(() => '/mock/app/path'),
+    isPackaged: false,
+  },
+  ipcMain: {
+    handle: vi.fn(),
+    on: vi.fn(),
+  },
+}));
+
+// =============================================================================
+// Mock auth / model / provider helpers
+// =============================================================================
+
+vi.mock('../../main/ai/auth/resolver', () => ({
+  resolveAuth: vi.fn().mockResolvedValue({ apiKey: 'mock-api-key', baseURL: undefined }),
+}));
+
+vi.mock('../../main/ai/config/phase-config', () => ({
+  resolveModelId: vi.fn((model: string) => `claude-${model}-20241022`),
+}));
+
+vi.mock('../../main/ai/providers/factory', () => ({
+  detectProviderFromModel: vi.fn(() => 'anthropic'),
+}));
+
+// =============================================================================
+// Mock worktree helpers
+// =============================================================================
+
+vi.mock('../../main/ai/worktree', () => ({
+  createOrGetWorktree: vi.fn().mockResolvedValue({ worktreePath: null }),
+}));
+
+vi.mock('../../main/worktree-paths', () => ({
+  findTaskWorktree: vi.fn().mockReturnValue(null),
+}));
+
+// =============================================================================
+// Mock project store (no projects = fast path)
+// =============================================================================
+
+vi.mock('../../main/project-store', () => ({
+  projectStore: {
+    getProjects: vi.fn(() => []),
+  },
+}));
+
+// =============================================================================
+// Mock claude-profile-manager
+// =============================================================================
+
 const mockProfile = {
   id: 'default',
   name: 'Default',
   isDefault: true,
-  oauthToken: 'mock-encrypted-token'
+  oauthToken: 'mock-encrypted-token',
+  configDir: undefined,
 };
 
 const mockProfileManager = {
-  hasValidAuth: () => true,
-  getActiveProfile: () => mockProfile,
-  getProfile: (_profileId: string) => mockProfile,
-  // Token decryption methods - return mock token for tests
-  getActiveProfileToken: () => 'mock-decrypted-token-for-testing',
-  getProfileToken: (_profileId: string) => 'mock-decrypted-token-for-testing',
-  // Environment methods for rate-limit-detector delegation
-  getActiveProfileEnv: () => ({}),
-  getProfileEnv: (_profileId: string) => ({})
+  hasValidAuth: vi.fn(() => true),
+  getActiveProfile: vi.fn(() => mockProfile),
+  getProfile: vi.fn((_id: string) => mockProfile),
+  getActiveProfileToken: vi.fn(() => 'mock-decrypted-token'),
+  getProfileToken: vi.fn((_id: string) => 'mock-decrypted-token'),
+  getActiveProfileEnv: vi.fn(() => ({})),
+  getProfileEnv: vi.fn((_id: string) => ({})),
+  setActiveProfile: vi.fn(),
+  getAutoSwitchSettings: vi.fn(() => ({ enabled: false, autoSwitchOnRateLimit: false, proactiveSwapEnabled: false, autoSwitchOnAuthFailure: false })),
+  getBestAvailableProfile: vi.fn(() => null),
 };
 
 vi.mock('../../main/claude-profile-manager', () => ({
-  getClaudeProfileManager: () => mockProfileManager,
-  initializeClaudeProfileManager: () => Promise.resolve(mockProfileManager)
+  getClaudeProfileManager: vi.fn(() => mockProfileManager),
+  initializeClaudeProfileManager: vi.fn(() => Promise.resolve(mockProfileManager)),
 }));
 
-// Mock validatePythonPath to allow test paths (security validation is tested separately)
-vi.mock('../../main/python-detector', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../main/python-detector')>();
-  return {
-    ...actual,
-    validatePythonPath: (path: string) => ({ valid: true, sanitizedPath: path })
-  };
-});
+// =============================================================================
+// Mock OperationRegistry
+// =============================================================================
 
-// Mock python-env-manager for ensurePythonEnvReady (ACS-254)
+vi.mock('../../main/claude-profile/operation-registry', () => ({
+  getOperationRegistry: vi.fn(() => ({
+    registerOperation: vi.fn(),
+    unregisterOperation: vi.fn(),
+  })),
+}));
+
+// =============================================================================
+// Mock misc dependencies
+// =============================================================================
+
+vi.mock('../../main/ipc-handlers/task/plan-file-utils', () => ({
+  resetStuckSubtasks: vi.fn().mockResolvedValue({ success: true, resetCount: 0 }),
+}));
+
+vi.mock('../../main/rate-limit-detector', () => ({
+  getBestAvailableProfileEnv: vi.fn(() => ({ env: {}, profileId: 'default', profileName: 'Default', wasSwapped: false })),
+  getProfileEnv: vi.fn(() => ({})),
+  detectRateLimit: vi.fn(() => ({ isRateLimited: false })),
+  detectAuthFailure: vi.fn(() => ({ isAuthFailure: false })),
+}));
+
+vi.mock('../../main/services/profile', () => ({
+  getAPIProfileEnv: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock('../../main/python-env-manager', () => ({
   pythonEnvManager: {
     isEnvReady: vi.fn(() => true),
     initialize: vi.fn(() => Promise.resolve({ ready: true })),
-    getPythonEnv: vi.fn(() => ({}))
+    getPythonEnv: vi.fn(() => ({})),
   },
-  getConfiguredPythonPath: vi.fn(() => DETECTED_PYTHON_CMD)
+  getConfiguredPythonPath: vi.fn(() => 'python3'),
 }));
 
-// Mock rate-limit-detector for getBestAvailableProfileEnv
-vi.mock('../../main/rate-limit-detector', () => ({
-  getBestAvailableProfileEnv: vi.fn(() => ({
-    env: {},
-    profileId: 'default',
-    profileName: 'Default',
-    wasSwapped: false
-  })),
-  getProfileEnv: vi.fn(() => ({})),
-  detectRateLimit: vi.fn(() => ({ isRateLimited: false })),
-  detectAuthFailure: vi.fn(() => ({ isAuthFailure: false }))
+vi.mock('../../main/python-detector', () => ({
+  findPythonCommand: vi.fn(() => 'python3'),
+  parsePythonCommand: vi.fn((cmd: string) => [cmd, []]),
+  validatePythonPath: vi.fn((p: string) => ({ valid: true, sanitizedPath: p })),
 }));
 
-// Auto-claude source path (for getAutoBuildSourcePath to find)
-let AUTO_CLAUDE_SOURCE: string;
+vi.mock('../../main/env-utils', () => ({
+  getAugmentedEnv: vi.fn(() => ({})),
+}));
 
-// Setup test directories
-function setupTestDirs(): void {
-  initTestDirectories();
-  AUTO_CLAUDE_SOURCE = path.join(TEST_DIR, 'auto-claude-source');
-  mkdirSync(TEST_PROJECT_PATH, { recursive: true });
+vi.mock('../../main/platform', () => ({
+  isWindows: vi.fn(() => false),
+  isMacOS: vi.fn(() => false),
+  isLinux: vi.fn(() => true),
+  getPathDelimiter: vi.fn(() => ':'),
+  killProcessGracefully: vi.fn(),
+  findExecutable: vi.fn(() => null),
+}));
 
-  // Create auto-claude source directory that getAutoBuildSourcePath looks for
-  mkdirSync(AUTO_CLAUDE_SOURCE, { recursive: true });
+vi.mock('../../main/cli-tool-manager', () => ({
+  getToolInfo: vi.fn(() => ({ found: false, path: null, source: null })),
+  getClaudeCliPathForSdk: vi.fn(() => null),
+}));
 
-  // Create runners subdirectory with spec_runner.py marker (used by getAutoBuildSourcePath)
-  mkdirSync(path.join(AUTO_CLAUDE_SOURCE, 'runners'), { recursive: true });
+vi.mock('../../main/settings-utils', () => ({
+  readSettingsFile: vi.fn(() => ({})),
+}));
 
-  // Create mock spec_runner.py in runners/ subdirectory (used as backend marker)
-  writeFileSync(
-    path.join(AUTO_CLAUDE_SOURCE, 'runners', 'spec_runner.py'),
-    '# Mock spec runner\nprint("Starting spec creation")'
-  );
-  // Create mock run.py
-  writeFileSync(
-    path.join(AUTO_CLAUDE_SOURCE, 'run.py'),
-    '# Mock run.py\nprint("Starting task execution")'
-  );
-}
+vi.mock('../../main/memory-env-builder', () => ({
+  buildMemoryEnvVars: vi.fn(() => ({})),
+}));
 
-// Cleanup test directories
-function cleanupTestDirs(): void {
-  if (TEST_DIR && existsSync(TEST_DIR)) {
-    rmSync(TEST_DIR, { recursive: true, force: true });
-  }
-}
+vi.mock('../../main/agent/env-utils', () => ({
+  getOAuthModeClearVars: vi.fn(() => ({})),
+  normalizeEnvPathKey: vi.fn((k: string) => k),
+  mergePythonEnvPath: vi.fn(),
+}));
 
-describe('Subprocess Spawn Integration', () => {
-  beforeEach(async () => {
-    cleanupTestDirs();
-    setupTestDirs();
+// =============================================================================
+// Tests
+// =============================================================================
+
+describe('WorkerBridge Spawn Integration', () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    // Reset mock process state
-    mockProcess.killed = false;
-    mockProcess.removeAllListeners();
-    mockStdout.removeAllListeners();
-    mockStderr.removeAllListeners();
+    // Clear bridge tracking array
+    createdBridges.length = 0;
   });
 
   afterEach(() => {
-    cleanupTestDirs();
     vi.clearAllMocks();
+    createdBridges.length = 0;
   });
 
   describe('AgentManager', () => {
-    it('should spawn Python process for spec creation', async () => {
-      const { spawn } = await import('child_process');
+    it('should create a WorkerBridge for spec creation', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
 
-      // Start the async operation
-      const promise = manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test task description');
+      const promise = manager.startSpecCreation('task-1', '/project', 'Test task description');
 
-      // Wait for spawn to complete (ensures listeners are attached), then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
+      // Resolve the promise — bridge.spawn() is called synchronously inside spawnWorkerProcess
       await promise;
 
-      expect(spawn).toHaveBeenCalledWith(
-        EXPECTED_PYTHON_COMMAND,
-        expect.arrayContaining([
-          ...EXPECTED_PYTHON_BASE_ARGS,
-          expect.stringContaining('spec_runner.py'),
-          '--task',
-          'Test task description'
-        ]),
-        expect.objectContaining({
-          cwd: TEST_PROJECT_PATH,  // Process runs from project directory to avoid cross-drive issues on Windows (#1661)
-          env: expect.objectContaining({
-            PYTHONUNBUFFERED: '1'
-          })
-        })
-      );
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+      expect(createdBridges).toHaveLength(1);
+      const bridge = createdBridges[0];
+      expect(bridge.spawn).toHaveBeenCalledTimes(1);
 
-    it('should spawn Python process for task execution', async () => {
-      const { spawn } = await import('child_process');
+      // Verify the executor config passed to bridge.spawn
+      const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
+      expect(config.taskId).toBe('task-1');
+      expect(config.processType).toBe('spec-creation');
+      expect(config.session.agentType).toBe('spec_orchestrator');
+    }, 15000);
+
+    it('should create a WorkerBridge for task execution', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
 
-      // Start the async operation
-      const promise = manager.startTaskExecution('task-1', TEST_PROJECT_PATH, 'spec-001');
+      await manager.startTaskExecution('task-1', '/project', 'spec-001');
 
-      // Wait for spawn to complete (ensures listeners are attached), then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise;
+      expect(createdBridges).toHaveLength(1);
+      const bridge = createdBridges[0];
+      expect(bridge.spawn).toHaveBeenCalledTimes(1);
 
-      expect(spawn).toHaveBeenCalledWith(
-        EXPECTED_PYTHON_COMMAND,
-        expect.arrayContaining([
-          ...EXPECTED_PYTHON_BASE_ARGS,
-          expect.stringContaining('run.py'),
-          '--spec',
-          'spec-001'
-        ]),
-        expect.objectContaining({
-          cwd: TEST_PROJECT_PATH  // Process runs from project directory to avoid cross-drive issues on Windows (#1661)
-        })
-      );
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+      const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
+      expect(config.taskId).toBe('task-1');
+      expect(config.processType).toBe('task-execution');
+      expect(config.session.agentType).toBe('build_orchestrator');
+    }, 15000);
 
-    it('should spawn Python process for QA process', async () => {
-      const { spawn } = await import('child_process');
+    it('should create a WorkerBridge for QA process', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
 
-      // Start the async operation
-      const promise = manager.startQAProcess('task-1', TEST_PROJECT_PATH, 'spec-001');
+      await manager.startQAProcess('task-1', '/project', 'spec-001');
 
-      // Wait for spawn to complete (ensures listeners are attached), then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise;
+      expect(createdBridges).toHaveLength(1);
+      const bridge = createdBridges[0];
+      expect(bridge.spawn).toHaveBeenCalledTimes(1);
 
-      expect(spawn).toHaveBeenCalledWith(
-        EXPECTED_PYTHON_COMMAND,
-        expect.arrayContaining([
-          ...EXPECTED_PYTHON_BASE_ARGS,
-          expect.stringContaining('run.py'),
-          '--spec',
-          'spec-001',
-          '--qa'
-        ]),
-        expect.objectContaining({
-          cwd: TEST_PROJECT_PATH  // Process runs from project directory to avoid cross-drive issues on Windows (#1661)
-        })
-      );
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+      const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
+      expect(config.taskId).toBe('task-1');
+      expect(config.processType).toBe('qa-process');
+      expect(config.session.agentType).toBe('qa_reviewer');
+    }, 15000);
 
-    it('should accept parallel options without affecting spawn args', async () => {
-      // Note: --parallel was removed from run.py CLI - parallel execution is handled internally by the agent
-      const { spawn } = await import('child_process');
+    it('should accept parallel options without affecting process type', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
 
-      // Start the async operation
-      const promise = manager.startTaskExecution('task-1', TEST_PROJECT_PATH, 'spec-001', {
+      await manager.startTaskExecution('task-1', '/project', 'spec-001', {
         parallel: true,
-        workers: 4
+        workers: 4,
       });
 
-      // Wait for spawn to complete (ensures listeners are attached), then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise;
-      // Should spawn normally - parallel options don't affect CLI args anymore
-      expect(spawn).toHaveBeenCalledWith(
-        EXPECTED_PYTHON_COMMAND,
-        expect.arrayContaining([
-          ...EXPECTED_PYTHON_BASE_ARGS,
-          expect.stringContaining('run.py'),
-          '--spec',
-          'spec-001'
-        ]),
-        expect.any(Object)
-      );
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+      expect(createdBridges).toHaveLength(1);
+      const bridge = createdBridges[0];
+      const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
+      expect(config.processType).toBe('task-execution');
+    }, 15000);
 
-    it('should emit log events from stdout', async () => {
+    it('should emit log events forwarded from the bridge', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
       const logHandler = vi.fn();
       manager.on('log', logHandler);
 
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
+      await manager.startSpecCreation('task-1', '/project', 'Test');
 
-      // Simulate stdout data (must include newline for buffered output processing)
-      mockStdout.emit('data', Buffer.from('Test log output\n'));
+      // Simulate bridge emitting a log event
+      const bridge = createdBridges[0];
+      bridge.emit('log', 'task-1', 'Test log output\n', undefined);
 
       expect(logHandler).toHaveBeenCalledWith('task-1', 'Test log output\n', undefined);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+    }, 15000);
 
-    it('should emit log events from stderr', async () => {
+    it('should emit error events forwarded from the bridge', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
-      const logHandler = vi.fn();
-      manager.on('log', logHandler);
-
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
-
-      // Simulate stderr data (must include newline for buffered output processing)
-      mockStderr.emit('data', Buffer.from('Progress: 50%\n'));
-
-      expect(logHandler).toHaveBeenCalledWith('task-1', 'Progress: 50%\n', undefined);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
-
-    it('should emit exit event when process exits', async () => {
-      const { AgentManager } = await import('../../main/agent');
-
-      const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
-      const exitHandler = vi.fn();
-      manager.on('exit', exitHandler);
-
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
-
-      // Simulate process exit
-      mockProcess.emit('exit', 0);
-
-      // Exit event includes taskId, exit code, process type, and optional projectId
-      expect(exitHandler).toHaveBeenCalledWith('task-1', 0, expect.any(String), undefined);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
-
-    it('should emit error event when process errors', async () => {
-      const { AgentManager } = await import('../../main/agent');
-
-      const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
       const errorHandler = vi.fn();
       manager.on('error', errorHandler);
 
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
+      await manager.startSpecCreation('task-1', '/project', 'Test');
 
-      // Simulate process error
-      mockProcess.emit('error', new Error('Spawn failed'));
+      const bridge = createdBridges[0];
+      bridge.emit('error', 'task-1', 'Something went wrong', undefined);
 
-      expect(errorHandler).toHaveBeenCalledWith('task-1', 'Spawn failed', undefined);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+      expect(errorHandler).toHaveBeenCalledWith('task-1', 'Something went wrong', undefined);
+    }, 15000);
+
+    it('should emit exit events forwarded from the bridge', async () => {
+      const { AgentManager } = await import('../../main/agent');
+
+      const manager = new AgentManager();
+      const exitHandler = vi.fn();
+      manager.on('exit', exitHandler);
+
+      await manager.startSpecCreation('task-1', '/project', 'Test');
+
+      const bridge = createdBridges[0];
+      bridge.emit('exit', 'task-1', 0, 'spec-creation', undefined);
+
+      expect(exitHandler).toHaveBeenCalledWith('task-1', 0, 'spec-creation', undefined);
+    }, 15000);
+
+    it('should report task as running after spawn', async () => {
+      const { AgentManager } = await import('../../main/agent');
+
+      const manager = new AgentManager();
+      await manager.startSpecCreation('task-1', '/project', 'Test');
+
+      expect(manager.isRunning('task-1')).toBe(true);
+    }, 15000);
 
     it('should kill task and remove from tracking', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
+      await manager.startSpecCreation('task-1', '/project', 'Test');
 
       expect(manager.isRunning('task-1')).toBe(true);
 
       const result = manager.killTask('task-1');
 
       expect(result).toBe(true);
-      // On Windows, kill() is called without arguments; on Unix, kill('SIGTERM') is used
-      if (isWindows()) {
-        expect(mockProcess.kill).toHaveBeenCalled();
-      } else {
-        expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
-      }
       expect(manager.isRunning('task-1')).toBe(false);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+    }, 15000);
 
     it('should return false when killing non-existent task', async () => {
       const { AgentManager } = await import('../../main/agent');
@@ -377,100 +362,62 @@ describe('Subprocess Spawn Integration', () => {
       const result = manager.killTask('nonexistent');
 
       expect(result).toBe(false);
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
+    }, 15000);
 
     it('should track running tasks', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
       expect(manager.getRunningTasks()).toHaveLength(0);
 
-      // Start tasks in parallel
-      const promise1 = manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test 1');
-      const promise2 = manager.startTaskExecution('task-2', TEST_PROJECT_PATH, 'spec-001');
+      await manager.startSpecCreation('task-1', '/project', 'Test 1');
+      await manager.startTaskExecution('task-2', '/project', 'spec-001');
 
-      // Wait for both tasks to be tracked (spawn happens after async operations)
-      await vi.waitFor(() => {
-        expect(manager.getRunningTasks()).toHaveLength(2);
-      }, { timeout: 5000 });
-
-      // Wait for both spawn promises to fully resolve — this ensures the exit
-      // handlers are attached to mockProcess. A single setImmediate is NOT enough
-      // on Windows CI because spawnProcess has async operations (getAPIProfileEnv,
-      // getRecoveryCoordinator) between addProcess and the .on('exit') listener.
-      // Waiting for the promises guarantees spawnProcess has completed fully.
-      await Promise.allSettled([promise1, promise2]);
-
-      // Both tasks share the same mockProcess, so one emit fires both exit handlers
-      mockProcess.emit('exit', 0);
-
-      // Wait for tasks to be removed from tracking (cleanup may be async)
-      await vi.waitFor(() => {
-        expect(manager.getRunningTasks()).toHaveLength(0);
-      }, { timeout: 5000 });
+      expect(manager.getRunningTasks()).toHaveLength(2);
+      expect(manager.getRunningTasks()).toContain('task-1');
+      expect(manager.getRunningTasks()).toContain('task-2');
     }, 15000);
-
-    it('should use configured Python path', async () => {
-      const { spawn } = await import('child_process');
-      const { AgentManager } = await import('../../main/agent');
-
-      const manager = new AgentManager();
-      manager.configure('/custom/python3', AUTO_CLAUDE_SOURCE);
-
-      await manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test');
-
-      expect(spawn).toHaveBeenCalledWith(
-        '/custom/python3',
-        expect.any(Array),
-        expect.any(Object)
-      );
-    }, 30000);  // Increase timeout for Windows CI (dynamic imports are slow)
 
     it('should kill all running tasks', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
+      await manager.startSpecCreation('task-1', '/project', 'Test 1');
+      await manager.startTaskExecution('task-2', '/project', 'spec-001');
 
-      // Start two async operations
-      const promise1 = manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test 1');
-      const promise2 = manager.startTaskExecution('task-2', TEST_PROJECT_PATH, 'spec-001');
-
-      // Wait for spawn to complete (ensures listeners are attached), then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise1;
-      mockProcess.emit('exit', 0);
-      await promise2;
+      expect(manager.getRunningTasks()).toHaveLength(2);
 
       await manager.killAll();
 
       expect(manager.getRunningTasks()).toHaveLength(0);
-    }, 10000);  // Increase timeout for Windows CI
+    }, 15000);
 
     it('should allow sequential execution of same task', async () => {
       const { AgentManager } = await import('../../main/agent');
 
       const manager = new AgentManager();
-      manager.configure(undefined, AUTO_CLAUDE_SOURCE);
 
-      // Start first operation
-      const promise1 = manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test 1');
-      // Wait for spawn, then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise1;
+      await manager.startSpecCreation('task-1', '/project', 'Test 1');
+      expect(manager.isRunning('task-1')).toBe(true);
 
-      // Start another process for same task (first was already completed)
-      const promise2 = manager.startSpecCreation('task-1', TEST_PROJECT_PATH, 'Test 2');
-      // Wait for spawn, then emit exit
-      await new Promise(resolve => setImmediate(resolve));
-      mockProcess.emit('exit', 0);
-      await promise2;
+      // Kill the first run
+      manager.killTask('task-1');
+      expect(manager.isRunning('task-1')).toBe(false);
 
-      // Both processes completed successfully
-      // (the first process was already done before the second started)
-    }, 10000);  // Increase timeout for Windows CI
+      // Start again
+      await manager.startSpecCreation('task-1', '/project', 'Test 2');
+      expect(manager.isRunning('task-1')).toBe(true);
+    }, 15000);
+
+    it('should include projectId in executor config when provided', async () => {
+      const { AgentManager } = await import('../../main/agent');
+
+      const manager = new AgentManager();
+      await manager.startSpecCreation('task-1', '/project', 'Test task', undefined, undefined, undefined, 'project-42');
+
+      const bridge = createdBridges[0];
+      const config: AgentExecutorConfig = bridge.spawn.mock.calls[0][0];
+      expect(config.projectId).toBe('project-42');
+    }, 15000);
   });
 });

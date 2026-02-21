@@ -2,7 +2,6 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { spawn } from 'child_process';
 import { IPC_CHANNELS, getSpecsDir, AUTO_BUILD_PATHS } from '../../../shared/constants';
 import type {
   IPCResult,
@@ -12,15 +11,12 @@ import type {
 } from '../../../shared/types';
 import { projectStore } from '../../project-store';
 import { getMemoryService, isKuzuAvailable } from '../../memory-service';
-import { getEffectiveSourcePath } from '../../updater/path-resolver';
 import {
   loadGraphitiStateFromSpecs,
   buildMemoryStatus
 } from './memory-status-handlers';
 import { loadFileBasedMemories } from './memory-data-handlers';
-import { parsePythonCommand } from '../../python-detector';
-import { getConfiguredPythonPath } from '../../python-env-manager';
-import { getAugmentedEnv } from '../../env-utils';
+import { runProjectIndexer } from '../../ai/project/project-indexer';
 
 /**
  * Load project index from file
@@ -144,78 +140,12 @@ export function registerProjectContextHandlers(
       }
 
       try {
-        // Run the analyzer script to regenerate project_index.json
-        const autoBuildSource = getEffectiveSourcePath();
-
-        if (!autoBuildSource) {
-          return {
-            success: false,
-            error: 'Auto-build source path not configured'
-          };
-        }
-
-        const analyzerPath = path.join(autoBuildSource, 'analyzer.py');
         const indexOutputPath = path.join(project.path, AUTO_BUILD_PATHS.PROJECT_INDEX);
 
-        // Get configured Python path (venv if ready, otherwise bundled/system)
-        // This ensures we use the venv Python which has dependencies installed
-        const pythonCmd = getConfiguredPythonPath();
-        console.log('[project-context] Using Python:', pythonCmd);
+        // Run the TypeScript project indexer (replaces Python subprocess)
+        const projectIndex = runProjectIndexer(project.path, indexOutputPath);
 
-        const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonCmd);
-
-        // Run analyzer
-        await new Promise<void>((resolve, reject) => {
-          let stdout = '';
-          let stderr = '';
-
-          const proc = spawn(pythonCommand, [
-            ...pythonBaseArgs,
-            analyzerPath,
-            '--project-dir', project.path,
-            '--output', indexOutputPath
-          ], {
-            cwd: project.path,
-            env: {
-              ...getAugmentedEnv(),
-              PYTHONIOENCODING: 'utf-8',
-              PYTHONUTF8: '1'
-            }
-          });
-
-          proc.stdout?.on('data', (data) => {
-            stdout += data.toString('utf-8');
-          });
-
-          proc.stderr?.on('data', (data) => {
-            stderr += data.toString('utf-8');
-          });
-
-          proc.on('close', (code: number) => {
-            if (code === 0) {
-              console.log('[project-context] Analyzer stdout:', stdout);
-              resolve();
-            } else {
-              console.error('[project-context] Analyzer failed with code', code);
-              console.error('[project-context] Analyzer stderr:', stderr);
-              console.error('[project-context] Analyzer stdout:', stdout);
-              reject(new Error(`Analyzer exited with code ${code}: ${stderr || stdout}`));
-            }
-          });
-
-          proc.on('error', (err) => {
-            console.error('[project-context] Analyzer spawn error:', err);
-            reject(err);
-          });
-        });
-
-        // Read the new index
-        const projectIndex = loadProjectIndex(project.path);
-        if (projectIndex) {
-          return { success: true, data: projectIndex };
-        }
-
-        return { success: false, error: 'Failed to generate project index' };
+        return { success: true, data: projectIndex };
       } catch (error) {
         return {
           success: false,

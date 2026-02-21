@@ -11,23 +11,24 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
-import type { AuthFailureInfo } from '../../../shared/types/terminal';
-import { getGitHubConfig } from './utils';
+import {
+  IPC_CHANNELS,
+  DEFAULT_FEATURE_MODELS,
+  DEFAULT_FEATURE_THINKING,
+} from '../../../shared/constants';
+import { getGitHubConfig, githubFetch } from './utils';
 import { readSettingsFile } from '../../settings-utils';
 import { getAugmentedEnv } from '../../env-utils';
 import type { Project, AppSettings } from '../../../shared/types';
 import { createContextLogger } from './utils/logger';
 import { withProjectOrNull } from './utils/project-middleware';
 import { createIPCCommunicators } from './utils/ipc-communicator';
-import { getRunnerEnv } from './utils/runner-env';
 import {
-  runPythonSubprocess,
-  getPythonPath,
-  getRunnerPath,
-  validateGitHubModule,
-  buildRunnerArgs,
-} from './utils/subprocess-runner';
+  triageBatchIssues,
+  type GitHubIssue as TriageGitHubIssue,
+  type TriageResult as EngineTriageResult,
+} from '../../ai/runners/github/triage-engine';
+import type { ModelShorthand, ThinkingLevel } from '../../ai/config/types';
 
 // Debug logging
 const { debug: debugLog } = createContextLogger('GitHub Triage');
@@ -35,7 +36,14 @@ const { debug: debugLog } = createContextLogger('GitHub Triage');
 /**
  * Triage categories
  */
-export type TriageCategory = 'bug' | 'feature' | 'documentation' | 'question' | 'duplicate' | 'spam' | 'feature_creep';
+export type TriageCategory =
+  | 'bug'
+  | 'feature'
+  | 'documentation'
+  | 'question'
+  | 'duplicate'
+  | 'spam'
+  | 'feature_creep';
 
 /**
  * Triage result for a single issue
@@ -97,9 +105,9 @@ function getTriageConfig(project: Project): TriageConfig {
     const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     return {
       enabled: data.triage_enabled ?? false,
-      duplicateThreshold: data.duplicate_threshold ?? 0.80,
+      duplicateThreshold: data.duplicate_threshold ?? 0.8,
       spamThreshold: data.spam_threshold ?? 0.75,
-      featureCreepThreshold: data.feature_creep_threshold ?? 0.70,
+      featureCreepThreshold: data.feature_creep_threshold ?? 0.7,
       enableComments: data.enable_triage_comments ?? false,
     };
   } catch {
@@ -108,9 +116,9 @@ function getTriageConfig(project: Project): TriageConfig {
 
   return {
     enabled: false,
-    duplicateThreshold: 0.80,
+    duplicateThreshold: 0.8,
     spamThreshold: 0.75,
-    featureCreepThreshold: 0.70,
+    featureCreepThreshold: 0.7,
     enableComments: false,
   };
 }
@@ -183,53 +191,95 @@ function getTriageResults(project: Project): TriageResult[] {
     return [];
   }
 
-  return results.sort((a, b) => new Date(b.triagedAt).getTime() - new Date(a.triagedAt).getTime());
+  return results.sort(
+    (a, b) => new Date(b.triagedAt).getTime() - new Date(a.triagedAt).getTime(),
+  );
 }
 
-// IPC communication helpers removed - using createIPCCommunicators instead
+/**
+ * Save a single triage result to disk in the format expected by getTriageResults().
+ */
+function saveTriageResultToDisk(project: Project, result: TriageResult): void {
+  const issuesDir = path.join(getGitHubDir(project), 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const data = {
+    issue_number: result.issueNumber,
+    repo: result.repo,
+    category: result.category,
+    confidence: result.confidence,
+    labels_to_add: result.labelsToAdd,
+    labels_to_remove: result.labelsToRemove,
+    is_duplicate: result.isDuplicate,
+    duplicate_of: result.duplicateOf ?? null,
+    is_spam: result.isSpam,
+    is_feature_creep: result.isFeatureCreep,
+    suggested_breakdown: result.suggestedBreakdown,
+    priority: result.priority,
+    comment: result.comment ?? null,
+    triaged_at: result.triagedAt,
+  };
+
+  fs.writeFileSync(
+    path.join(issuesDir, `triage_${result.issueNumber}.json`),
+    JSON.stringify(data, null, 2),
+    'utf-8',
+  );
+}
 
 /**
- * Get GitHub Issues model and thinking settings from app settings
+ * Get GitHub Issues model and thinking settings from app settings.
+ * Returns the model shorthand (for TypeScript engine) and thinkingLevel.
  */
-function getGitHubIssuesSettings(): { model: string; thinkingLevel: string } {
+function getGitHubIssuesSettings(): { modelShorthand: ModelShorthand; thinkingLevel: ThinkingLevel } {
   const rawSettings = readSettingsFile() as Partial<AppSettings> | undefined;
 
-  // Get feature models/thinking with defaults
   const featureModels = rawSettings?.featureModels ?? DEFAULT_FEATURE_MODELS;
   const featureThinking = rawSettings?.featureThinking ?? DEFAULT_FEATURE_THINKING;
 
-  // Get Issues-specific settings (with fallback to defaults)
-  const modelShort = featureModels.githubIssues ?? DEFAULT_FEATURE_MODELS.githubIssues;
-  const thinkingLevel = featureThinking.githubIssues ?? DEFAULT_FEATURE_THINKING.githubIssues;
+  const modelShorthand = (featureModels.githubIssues ??
+    DEFAULT_FEATURE_MODELS.githubIssues) as ModelShorthand;
+  const thinkingLevel = (featureThinking.githubIssues ??
+    DEFAULT_FEATURE_THINKING.githubIssues) as ThinkingLevel;
 
-  // Convert model short name to full model ID
-  const model = MODEL_ID_MAP[modelShort] ?? MODEL_ID_MAP['opus'];
+  debugLog('GitHub Issues settings', { modelShorthand, thinkingLevel });
 
-  debugLog('GitHub Issues settings', { modelShort, model, thinkingLevel });
-
-  return { model, thinkingLevel };
+  return { modelShorthand, thinkingLevel };
 }
 
-// getBackendPath function removed - using subprocess-runner utility instead
+/**
+ * Convert engine TriageResult to handler TriageResult format.
+ */
+function convertEngineResult(
+  engineResult: EngineTriageResult,
+  repo: string,
+): TriageResult {
+  return {
+    issueNumber: engineResult.issueNumber,
+    repo,
+    category: engineResult.category as TriageCategory,
+    confidence: engineResult.confidence,
+    labelsToAdd: engineResult.labelsToAdd,
+    labelsToRemove: engineResult.labelsToRemove,
+    isDuplicate: engineResult.isDuplicate,
+    duplicateOf: engineResult.duplicateOf ?? undefined,
+    isSpam: engineResult.isSpam,
+    isFeatureCreep: engineResult.isFeatureCreep,
+    suggestedBreakdown: engineResult.suggestedBreakdown,
+    priority: engineResult.priority as 'high' | 'medium' | 'low',
+    comment: engineResult.comment ?? undefined,
+    triagedAt: new Date().toISOString(),
+  };
+}
 
 /**
- * Run the Python triage runner
+ * Run the TypeScript triage engine on a set of issues.
  */
 async function runTriage(
   project: Project,
   issueNumbers: number[] | null,
-  applyLabels: boolean,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
 ): Promise<TriageResult[]> {
-  // Comprehensive validation of GitHub module
-  const validation = await validateGitHubModule(project);
-
-  if (!validation.valid) {
-    throw new Error(validation.error);
-  }
-
-  const backendPath = validation.backendPath!;
-
   const { sendProgress } = createIPCCommunicators<TriageProgress, TriageResult[]>(
     mainWindow,
     {
@@ -237,71 +287,129 @@ async function runTriage(
       error: IPC_CHANNELS.GITHUB_TRIAGE_ERROR,
       complete: IPC_CHANNELS.GITHUB_TRIAGE_COMPLETE,
     },
-    project.id
+    project.id,
   );
 
-  const { model, thinkingLevel } = getGitHubIssuesSettings();
-  const additionalArgs = issueNumbers ? issueNumbers.map(n => n.toString()) : [];
-  if (applyLabels) {
-    additionalArgs.push('--apply-labels');
+  const config = getGitHubConfig(project);
+  if (!config) {
+    throw new Error('No GitHub configuration found for project');
   }
 
-  const args = buildRunnerArgs(
-    getRunnerPath(backendPath),
-    project.path,
-    'triage',
-    additionalArgs,
-    { model, thinkingLevel }
-  );
+  const { modelShorthand, thinkingLevel } = getGitHubIssuesSettings();
 
-  debugLog('Spawning triage process', { args, model, thinkingLevel });
+  debugLog('Starting TypeScript triage', { modelShorthand, thinkingLevel });
 
-  const subprocessEnv = await getRunnerEnv();
-
-  const { promise } = runPythonSubprocess<TriageResult[]>({
-    pythonPath: getPythonPath(backendPath),
-    args,
-    cwd: backendPath,
-    env: subprocessEnv,
-    onProgress: (percent, message) => {
-      debugLog('Progress update', { percent, message });
-      sendProgress({
-        phase: 'analyzing',
-        progress: percent,
-        message,
-        totalIssues: 0,
-        processedIssues: 0,
-      });
-    },
-    onStdout: (line) => debugLog('STDOUT:', line),
-    onStderr: (line) => debugLog('STDERR:', line),
-    onAuthFailure: (authFailureInfo: AuthFailureInfo) => {
-      debugLog('Auth failure detected in triage', authFailureInfo);
-      mainWindow.webContents.send(IPC_CHANNELS.CLAUDE_AUTH_FAILURE, authFailureInfo);
-    },
-    onComplete: () => {
-      // Load results from disk
-      const results = getTriageResults(project);
-      debugLog('Triage results loaded', { count: results.length });
-      return results;
-    },
+  // Fetch issues from GitHub API
+  sendProgress({
+    phase: 'fetching',
+    progress: 10,
+    message: 'Fetching issues from GitHub...',
+    totalIssues: 0,
+    processedIssues: 0,
   });
 
-  const result = await promise;
+  let issuesToTriage: TriageGitHubIssue[];
 
-  if (!result.success) {
-    throw new Error(result.error ?? 'Triage failed');
+  if (issueNumbers && issueNumbers.length > 0) {
+    // Fetch specific issues
+    const fetchedIssues = await Promise.all(
+      issueNumbers.map(async (n): Promise<TriageGitHubIssue | null> => {
+        try {
+          const issue = (await githubFetch(
+            config.token,
+            `/repos/${config.repo}/issues/${n}`,
+          )) as {
+            number: number;
+            title: string;
+            body?: string;
+            user: { login: string };
+            created_at: string;
+            labels?: Array<{ name: string }>;
+          };
+          return {
+            number: issue.number,
+            title: issue.title,
+            body: issue.body,
+            author: { login: issue.user.login },
+            createdAt: issue.created_at,
+            labels: issue.labels,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    issuesToTriage = fetchedIssues.filter((i): i is TriageGitHubIssue => i !== null);
+  } else {
+    // Fetch open issues (up to 100)
+    const issues = (await githubFetch(
+      config.token,
+      `/repos/${config.repo}/issues?state=open&per_page=100`,
+    )) as Array<{
+      number: number;
+      title: string;
+      body?: string;
+      user: { login: string };
+      created_at: string;
+      labels?: Array<{ name: string }>;
+      pull_request?: unknown;
+    }>;
+
+    // Filter out pull requests (GitHub API includes PRs in /issues)
+    issuesToTriage = issues
+      .filter((i) => !i.pull_request)
+      .map((i) => ({
+        number: i.number,
+        title: i.title,
+        body: i.body,
+        author: { login: i.user.login },
+        createdAt: i.created_at,
+        labels: i.labels,
+      }));
   }
 
-  return result.data!;
+  const totalIssues = issuesToTriage.length;
+  debugLog('Issues to triage', { count: totalIssues });
+
+  sendProgress({
+    phase: 'analyzing',
+    progress: 20,
+    message: `Triaging ${totalIssues} issues...`,
+    totalIssues,
+    processedIssues: 0,
+  });
+
+  // Run triage engine
+  const engineResults = await triageBatchIssues(
+    issuesToTriage,
+    { repo: config.repo, model: modelShorthand, thinkingLevel },
+    (update) => {
+      sendProgress({
+        phase: 'analyzing',
+        progress: 20 + Math.round(update.progress * 0.7),
+        message: update.message,
+        totalIssues,
+        processedIssues: Math.round((update.progress / 100) * totalIssues),
+      });
+    },
+  );
+
+  // Convert and save results to disk
+  const results: TriageResult[] = [];
+  for (const engineResult of engineResults) {
+    const result = convertEngineResult(engineResult, config.repo);
+    results.push(result);
+    saveTriageResultToDisk(project, result);
+  }
+
+  debugLog('Triage completed, results saved', { count: results.length });
+  return results;
 }
 
 /**
  * Register triage-related handlers
  */
-export function registerTriageHandlers(
-  getMainWindow: () => BrowserWindow | null
-): void {
+export function registerTriageHandlers(getMainWindow: () => BrowserWindow | null): void {
   debugLog('Registering Triage handlers');
 
   // Get triage config
@@ -314,7 +422,7 @@ export function registerTriageHandlers(
         debugLog('Triage config loaded', { enabled: config.enabled });
         return config;
       });
-    }
+    },
   );
 
   // Save triage config
@@ -328,7 +436,7 @@ export function registerTriageHandlers(
         return true;
       });
       return result ?? false;
-    }
+    },
   );
 
   // Get triage results
@@ -342,7 +450,7 @@ export function registerTriageHandlers(
         return results;
       });
       return result ?? [];
-    }
+    },
   );
 
   // Run triage
@@ -358,26 +466,27 @@ export function registerTriageHandlers(
 
       try {
         await withProjectOrNull(projectId, async (project) => {
-          const { sendProgress, sendError: _sendError, sendComplete } = createIPCCommunicators<TriageProgress, TriageResult[]>(
-            mainWindow,
-            {
-              progress: IPC_CHANNELS.GITHUB_TRIAGE_PROGRESS,
-              error: IPC_CHANNELS.GITHUB_TRIAGE_ERROR,
-              complete: IPC_CHANNELS.GITHUB_TRIAGE_COMPLETE,
-            },
-            projectId
-          );
+          const { sendProgress, sendError: _sendError, sendComplete } =
+            createIPCCommunicators<TriageProgress, TriageResult[]>(
+              mainWindow,
+              {
+                progress: IPC_CHANNELS.GITHUB_TRIAGE_PROGRESS,
+                error: IPC_CHANNELS.GITHUB_TRIAGE_ERROR,
+                complete: IPC_CHANNELS.GITHUB_TRIAGE_COMPLETE,
+              },
+              projectId,
+            );
 
           debugLog('Starting triage');
           sendProgress({
             phase: 'fetching',
-            progress: 10,
-            message: 'Fetching issues...',
+            progress: 5,
+            message: 'Starting triage...',
             totalIssues: 0,
             processedIssues: 0,
           });
 
-          const results = await runTriage(project, issueNumbers ?? null, false, mainWindow);
+          const results = await runTriage(project, issueNumbers ?? null, mainWindow);
 
           debugLog('Triage completed', { resultsCount: results.length });
           sendProgress({
@@ -399,11 +508,11 @@ export function registerTriageHandlers(
             error: IPC_CHANNELS.GITHUB_TRIAGE_ERROR,
             complete: IPC_CHANNELS.GITHUB_TRIAGE_COMPLETE,
           },
-          projectId
+          projectId,
         );
         sendError(error instanceof Error ? error.message : 'Failed to run triage');
       }
-    }
+    },
   );
 
   // Apply labels to issues
@@ -421,7 +530,7 @@ export function registerTriageHandlers(
         try {
           for (const issueNumber of issueNumbers) {
             const triageResults = getTriageResults(project);
-            const result = triageResults.find(r => r.issueNumber === issueNumber);
+            const result = triageResults.find((r) => r.issueNumber === issueNumber);
 
             if (result && result.labelsToAdd.length > 0) {
               debugLog('Applying labels to issue', { issueNumber, labels: result.labelsToAdd });
@@ -432,33 +541,41 @@ export function registerTriageHandlers(
               }
 
               // Validate labels - reject any that contain shell metacharacters
-              const safeLabels = result.labelsToAdd.filter((label: string) => /^[\w\s\-.:]+$/.test(label));
+              const safeLabels = result.labelsToAdd.filter((label: string) =>
+                /^[\w\s\-.:]+$/.test(label),
+              );
               if (safeLabels.length !== result.labelsToAdd.length) {
                 debugLog('Some labels were filtered due to invalid characters', {
                   original: result.labelsToAdd,
-                  filtered: safeLabels
+                  filtered: safeLabels,
                 });
               }
 
               if (safeLabels.length > 0) {
                 const { execFileSync } = await import('child_process');
                 // Use execFileSync with arguments array to prevent command injection
-                execFileSync('gh', ['issue', 'edit', String(issueNumber), '--add-label', safeLabels.join(',')], {
-                  cwd: project.path,
-                  env: getAugmentedEnv(),
-                });
+                execFileSync(
+                  'gh',
+                  ['issue', 'edit', String(issueNumber), '--add-label', safeLabels.join(',')],
+                  {
+                    cwd: project.path,
+                    env: getAugmentedEnv(),
+                  },
+                );
               }
             }
           }
           debugLog('Labels applied successfully');
           return true;
         } catch (error) {
-          debugLog('Failed to apply labels', { error: error instanceof Error ? error.message : error });
+          debugLog('Failed to apply labels', {
+            error: error instanceof Error ? error.message : error,
+          });
           return false;
         }
       });
       return applyResult ?? false;
-    }
+    },
   );
 
   debugLog('Triage handlers registered');

@@ -7,12 +7,14 @@ import { existsSync, readdirSync, statSync, readFileSync, promises as fsPromises
 import { execFileSync, spawn, spawnSync, exec, execFile } from 'child_process';
 import { homedir } from 'os';
 import { projectStore } from '../../project-store';
-import { getConfiguredPythonPath, PythonEnvManager, pythonEnvManager as pythonEnvManagerSingleton } from '../../python-env-manager';
+import { PythonEnvManager } from '../../python-env-manager';
 import { getEffectiveSourcePath } from '../../updater/path-resolver';
-import { getBestAvailableProfileEnv } from '../../rate-limit-detector';
+import { MergeOrchestrator } from '../../ai/merge/orchestrator';
+import { createMergeResolverFn } from '../../ai/runners/merge-resolver';
+import { createPR } from '../../ai/runners/github/pr-creator';
+import type { ModelShorthand } from '../../ai/config/types';
 import { findTaskAndProject } from './shared';
 import { updateRoadmapFeatureOutcome } from '../../utils/roadmap-utils';
-import { parsePythonCommand } from '../../python-detector';
 import { getToolPath } from '../../cli-tool-manager';
 import { promisify } from 'util';
 import {
@@ -1942,268 +1944,112 @@ export function registerWorktreeHandlers(
 
         debug('Found task:', task.specId, 'project:', project.path);
 
+        const specDir = path.join(project.path, project.autoBuildPath || '.auto-claude', 'specs', task.specId);
+        const worktreePath = findTaskWorktree(project.path, task.specId);
+
         // Auto-fix any misconfigured bare repo before merge operation
         // This prevents issues where git operations fail due to incorrect bare=true config
         if (fixMisconfiguredBareRepo(project.path)) {
           debug('Fixed misconfigured bare repository at:', project.path);
         }
 
-        // Use run.py --merge to handle the merge
-        const sourcePath = getEffectiveSourcePath();
-        if (!sourcePath) {
-          return { success: false, error: 'Auto Claude source not found' };
-        }
-
-        const runScript = path.join(sourcePath, 'run.py');
-        const specDir = path.join(project.path, project.autoBuildPath || '.auto-claude', 'specs', task.specId);
-
-        if (!existsSync(specDir)) {
-          debug('Spec directory not found:', specDir);
-          return { success: false, error: 'Spec directory not found' };
-        }
-
-        // Check worktree exists before merge
-        const worktreePath = findTaskWorktree(project.path, task.specId);
-        debug('Worktree path:', worktreePath, 'exists:', !!worktreePath);
-
-        // Check if changes are already staged (for stage-only mode)
-        if (options?.noCommit) {
-          const stagedResult = spawnSync(getToolPath('git'), ['diff', '--staged', '--name-only'], {
-            cwd: project.path,
-            encoding: 'utf-8',
-            env: getIsolatedGitEnv()
-          });
-
-          if (stagedResult.status === 0 && stagedResult.stdout?.trim()) {
-            const stagedFiles = stagedResult.stdout.trim().split('\n');
-            debug('Changes already staged:', stagedFiles.length, 'files');
-            // Return success - changes are already staged
-            return {
-              success: true,
-              data: {
-                success: true,
-                merged: false,
-                message: `Changes already staged (${stagedFiles.length} files). Review with git diff --staged.`,
-                staged: true,
-                alreadyStaged: true,
-                projectPath: project.path
-              }
-            };
-          }
-        }
-
-        // Get git status before merge (only if project is a working tree, not a bare repo)
-        if (isGitWorkTree(project.path)) {
-          try {
-            const gitStatusBefore = execFileSync(getToolPath('git'), ['status', '--short'], { cwd: project.path, encoding: 'utf-8' });
-            debug('Git status BEFORE merge in main project:\n', gitStatusBefore || '(clean)');
-            const gitBranch = execFileSync(getToolPath('git'), ['branch', '--show-current'], { cwd: project.path, encoding: 'utf-8' }).trim();
-            debug('Current branch:', gitBranch);
-          } catch (e) {
-            debug('Failed to get git status before:', e);
-          }
-        } else {
-          debug('Project is a bare repository - skipping pre-merge git status check');
-        }
-
-        const args = [
-          runScript,
-          '--spec', task.specId,
-          '--project-dir', project.path,
-          '--merge'
-        ];
-
-        // Add --no-commit flag if requested (stage changes without committing)
-        if (options?.noCommit) {
-          args.push('--no-commit');
-        }
-
-        // Add --base-branch with proper priority:
+        // Determine base branch with proper priority:
         // 1. Task metadata baseBranch (explicit task-level override)
         // 2. Project settings mainBranch (project-level default)
-        // This matches the logic in execution-handlers.ts
+        // 3. Default to 'main'
         const taskBaseBranch = getTaskBaseBranch(specDir);
         const projectMainBranch = project.settings?.mainBranch;
-        const effectiveBaseBranch = taskBaseBranch || projectMainBranch;
+        const effectiveBaseBranch = taskBaseBranch || projectMainBranch || 'main';
+        debug('Using base branch:', effectiveBaseBranch,
+          `(source: ${taskBaseBranch ? 'task metadata' : projectMainBranch ? 'project settings' : 'default'})`);
 
-        if (effectiveBaseBranch) {
-          args.push('--base-branch', effectiveBaseBranch);
-          debug('Using base branch:', effectiveBaseBranch,
-            `(source: ${taskBaseBranch ? 'task metadata' : 'project settings'})`);
-        }
+        // Get utility settings for merge resolver model selection
+        const utilitySettings = getUtilitySettings();
+        debug('Utility settings for merge:', utilitySettings);
 
-        // Use configured Python path (venv if ready, otherwise bundled/system)
-        const pythonPath = getConfiguredPythonPath();
-        debug('Running command:', pythonPath, args.join(' '));
-        debug('Working directory:', sourcePath);
+        // Emit initial progress event so renderer shows the merge has started
+        const mainWindow = getMainWindow();
+        const emitProgress = (stage: string, percent: number, message: string, details: Record<string, unknown> = {}) => {
+          if (mainWindow) {
+            mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, {
+              type: 'progress',
+              stage,
+              percent,
+              message,
+              details
+            });
+          }
+        };
 
-        // Get profile environment with OAuth token for AI merge resolution
-        const profileResult = getBestAvailableProfileEnv();
-        const profileEnv = profileResult.env;
-        debug('Profile env for merge:', {
-          hasOAuthToken: !!profileEnv.CLAUDE_CODE_OAUTH_TOKEN,
-          hasConfigDir: !!profileEnv.CLAUDE_CONFIG_DIR
+        emitProgress('analyzing', 0, 'Starting merge engine');
+
+        // Build the AI resolver function using the merge-resolver runner
+        const modelShorthand = (utilitySettings.model as ModelShorthand) || 'haiku';
+        const aiResolverFn = createMergeResolverFn(modelShorthand, 'low');
+
+        // Create the merge orchestrator
+        const storageDir = path.join(project.path, project.autoBuildPath || '.auto-claude');
+        const orchestrator = new MergeOrchestrator({
+          projectDir: project.path,
+          storageDir,
+          enableAi: true,
+          aiResolver: aiResolverFn,
+          dryRun: false,
         });
 
-        return new Promise((resolve) => {
-          const MERGE_TIMEOUT_MS = 600000; // 10 minutes timeout for AI merge operations with many files
-          let timeoutId: NodeJS.Timeout | null = null;
-          let resolved = false;
+        // Run the merge with progress callbacks
+        let mergeSucceeded = false;
+        let mergeError: string | undefined;
 
-          // Get Python environment for bundled packages
-          const pythonEnv = pythonEnvManagerSingleton.getPythonEnv();
+        try {
+          const report = await orchestrator.mergeTask(
+            task.specId,
+            worktreePath ?? undefined,
+            effectiveBaseBranch,
+            (stage, percent, message, details) => {
+              emitProgress(stage, percent, message, details ?? {});
+            }
+          );
 
-          // Get utility settings for merge resolver
-          const utilitySettings = getUtilitySettings();
-          debug('Utility settings for merge:', utilitySettings);
-
-          // Parse Python command to handle space-separated commands like "py -3"
-          const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
-          const mergeProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
-            cwd: sourcePath,
-            env: {
-              ...getIsolatedGitEnv(),
-              ...pythonEnv,
-              ...profileEnv,
-              PYTHONUNBUFFERED: '1',
-              PYTHONUTF8: '1',
-              UTILITY_MODEL: utilitySettings.model,
-              UTILITY_MODEL_ID: utilitySettings.modelId,
-              UTILITY_THINKING_BUDGET: utilitySettings.thinkingBudget === null ? '' : (utilitySettings.thinkingBudget?.toString() || '')
-            },
-            stdio: ['ignore', 'pipe', 'pipe']
+          debug('Merge report:', {
+            success: report.success,
+            stats: report.stats,
+            error: report.error,
+            fileResults: report.fileResults.size
           });
 
-          let stdout = '';
-          let stderr = '';
+          if (report.success) {
+            // Apply merged content to the project directory
+            const applied = orchestrator.applyToProject(report);
+            debug('Applied merge to project:', applied);
 
-          // Set up timeout to kill hung processes
-          timeoutId = setTimeout(() => {
-            if (!resolved) {
-              debug('TIMEOUT: Merge process exceeded', MERGE_TIMEOUT_MS, 'ms, killing...');
-              resolved = true;
-
-              // Send timeout error progress event to the renderer
-              const mainWindow = getMainWindow();
-              if (mainWindow) {
-                mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, {
-                  type: 'progress',
-                  stage: 'error',
-                  percent: 0,
-                  message: 'Merge process timed out after 10 minutes',
-                  details: {}
-                });
-              }
-
-              // Platform-specific process termination with fallback
-              killProcessGracefully(mergeProcess, {
-                debugPrefix: '[MERGE]',
-                debug: isDebugMode
-              });
-
-              // Check if merge might have succeeded before the hang
-              // Look for success indicators in the output
-              const mayHaveSucceeded = stdout.includes('staged') ||
-                                       stdout.includes('Successfully merged') ||
-                                       stdout.includes('Changes from');
-
-              if (mayHaveSucceeded) {
-                debug('TIMEOUT: Process hung but merge may have succeeded based on output');
-                const isStageOnly = options?.noCommit === true;
-                resolve({
-                  success: true,
-                  data: {
-                    success: true,
-                    message: 'Changes staged (process timed out but merge appeared successful)',
-                    staged: isStageOnly,
-                    projectPath: isStageOnly ? project.path : undefined
-                  }
-                });
-              } else {
-                resolve({
-                  success: false,
-                  error: 'Merge process timed out. Check git status to see if merge completed.'
-                });
-              }
-            }
-          }, MERGE_TIMEOUT_MS);
-
-          let lineBuffer = ''; // Buffer for partial JSON lines spanning data chunks
-
-          mergeProcess.stdout.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            debug('STDOUT:', chunk);
-
-            // Prepend any buffered partial line from previous chunk
-            const combined = lineBuffer + chunk;
-            const lines = combined.split('\n');
-
-            // Last element may be a partial line - buffer it for next chunk
-            lineBuffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed) continue;
-
+            if (applied) {
+              // Stage all changed files
               try {
-                const parsed = JSON.parse(trimmed);
-                // Validate parsed object has expected MergeProgress structure before forwarding
-                if (
-                  parsed &&
-                  parsed.type === 'progress' &&
-                  typeof parsed.stage === 'string' &&
-                  typeof parsed.percent === 'number' &&
-                  typeof parsed.message === 'string'
-                ) {
-                  const mainWindow = getMainWindow();
-                  if (mainWindow) {
-                    mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, parsed);
-                  }
-                  // Don't accumulate progress lines in stdout - they are not part of the final result
-                  continue;
-                }
-              } catch {
-                // Not valid JSON - treat as regular output
+                execFileSync(getToolPath('git'), ['add', '-A'], {
+                  cwd: project.path,
+                  encoding: 'utf-8',
+                  env: getIsolatedGitEnv()
+                });
+                debug('Staged merged files');
+              } catch (gitErr) {
+                debug('Failed to stage merged files:', gitErr);
               }
 
-              // Accumulate non-progress lines for final result parsing
-              stdout += line + '\n';
+              mergeSucceeded = true;
+            } else {
+              mergeError = 'Failed to apply merged files to project directory';
             }
-          });
+          } else {
+            mergeError = report.error ?? 'Merge failed';
+          }
+        } catch (err) {
+          mergeError = err instanceof Error ? err.message : String(err);
+          debug('Merge orchestrator threw:', mergeError);
+          emitProgress('error', 0, `Merge failed: ${mergeError}`);
+        }
 
-          mergeProcess.stderr.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            stderr += chunk;
-            debug('STDERR:', chunk);
-          });
-
-          // Handler for when process exits
-          const handleProcessExit = async (code: number | null, signal: string | null = null) => {
-            if (resolved) return; // Prevent double-resolution
-            resolved = true;
-            if (timeoutId) clearTimeout(timeoutId);
-
-            // Flush any remaining buffered line
-            if (lineBuffer.trim()) {
-              try {
-                const parsed = JSON.parse(lineBuffer.trim());
-                if (parsed && parsed.type === 'progress') {
-                  const mainWindow = getMainWindow();
-                  if (mainWindow) {
-                    mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, parsed);
-                  }
-                } else {
-                  stdout += lineBuffer;
-                }
-              } catch {
-                stdout += lineBuffer;
-              }
-              lineBuffer = '';
-            }
-
-            debug('Process exited with code:', code, 'signal:', signal);
-            debug('Full stdout:', stdout);
-            debug('Full stderr:', stderr);
+        // Post-merge: check git status, update plan files, clean worktree
 
             // Get git status after merge (only if project is a working tree, not a bare repo)
             if (isGitWorkTree(project.path)) {
@@ -2219,7 +2065,7 @@ export function registerWorktreeHandlers(
               debug('Project is a bare repository - skipping git status check (this is normal for worktree-based projects)');
             }
 
-            if (code === 0) {
+            if (mergeSucceeded) {
               const isStageOnly = options?.noCommit === true;
 
               // Verify changes were actually staged when stage-only mode is requested
@@ -2443,7 +2289,7 @@ export function registerWorktreeHandlers(
               // Route status change through TaskStateManager (XState) to avoid dual emission
               taskStateManager.handleManualStatusChange(taskId, newStatus as any, task, project);
 
-              resolve({
+              return {
                 success: true,
                 data: {
                   success: true,
@@ -2452,68 +2298,19 @@ export function registerWorktreeHandlers(
                   projectPath: staged ? project.path : undefined,
                   suggestedCommitMessage
                 }
-              });
+              };
             } else {
-              // Check if there were actual merge conflicts
-              // More specific patterns to avoid false positives from debug output like "files_with_conflicts: 0"
-              const conflictPatterns = [
-                /CONFLICT \(/i,                         // Git merge conflict marker
-                /merge conflict/i,                      // Explicit merge conflict message
-                /\bconflict detected\b/i,               // Our own conflict detection message
-                /\bconflicts? found\b/i,                // "conflicts found" or "conflict found"
-                /Automatic merge failed/i,             // Git's automatic merge failure message
-              ];
-              const combinedOutput = stdout + stderr;
-              const hasConflicts = conflictPatterns.some(pattern => pattern.test(combinedOutput));
-              debug('Merge failed. hasConflicts:', hasConflicts);
-
-              resolve({
+              // Merge failed - return error to renderer
+              debug('Merge failed. mergeError:', mergeError);
+              return {
                 success: true,
                 data: {
                   success: false,
-                  message: hasConflicts
-                    ? 'Merge conflicts detected'
-                    : `Merge failed: ${stripAnsiCodes(stderr || stdout)}`,
-                  conflictFiles: hasConflicts ? [] : undefined
+                  message: mergeError ?? 'Merge failed',
+                  conflictFiles: undefined
                 }
-              });
+              };
             }
-          };
-
-          mergeProcess.on('close', (code: number | null, signal: string | null) => {
-            handleProcessExit(code, signal);
-          });
-
-          // Also listen to 'exit' event in case 'close' doesn't fire
-          mergeProcess.on('exit', (code: number | null, signal: string | null) => {
-            // Give close event a chance to fire first with complete output
-            setTimeout(() => handleProcessExit(code, signal), 100);
-          });
-
-          mergeProcess.on('error', (err: Error) => {
-            if (resolved) return;
-            resolved = true;
-            if (timeoutId) clearTimeout(timeoutId);
-            console.error('[MERGE] Process spawn error:', err);
-
-            // Send error progress event to the renderer
-            const mainWindow = getMainWindow();
-            if (mainWindow) {
-              mainWindow.webContents.send(IPC_CHANNELS.TASK_MERGE_PROGRESS, taskId, {
-                type: 'progress',
-                stage: 'error',
-                percent: 0,
-                message: `Merge process crashed: ${err.message}`,
-                details: {}
-              });
-            }
-
-            resolve({
-              success: false,
-              error: `Failed to run merge: ${err.message}`
-            });
-          });
-        });
       } catch (error) {
         console.error('[MERGE] Exception in merge handler:', error);
         return {
@@ -2526,29 +2323,13 @@ export function registerWorktreeHandlers(
 
   /**
    * Preview merge conflicts before actually merging
-   * Uses the smart merge system to analyze potential conflicts
+   * Uses the TypeScript MergeOrchestrator to analyze potential conflicts without applying changes
    */
   ipcMain.handle(
     IPC_CHANNELS.TASK_WORKTREE_MERGE_PREVIEW,
     async (_, taskId: string): Promise<IPCResult<WorktreeMergeResult>> => {
       console.warn('[IPC] TASK_WORKTREE_MERGE_PREVIEW called with taskId:', taskId);
       try {
-        // Ensure Python environment is ready
-        if (!pythonEnvManager.isEnvReady()) {
-          console.warn('[IPC] Python environment not ready, initializing...');
-          const autoBuildSource = getEffectiveSourcePath();
-          if (autoBuildSource) {
-            const status = await pythonEnvManager.initialize(autoBuildSource);
-            if (!status.ready) {
-              console.error('[IPC] Python environment failed to initialize:', status.error);
-              return { success: false, error: `Python environment not ready: ${status.error || 'Unknown error'}` };
-            }
-          } else {
-            console.error('[IPC] Auto Claude source not found');
-            return { success: false, error: 'Python environment not ready and Auto Claude source not found' };
-          }
-        }
-
         const { task, project } = findTaskAndProject(taskId);
         if (!task || !project) {
           console.error('[IPC] Task not found:', taskId);
@@ -2586,128 +2367,69 @@ export function registerWorktreeHandlers(
           console.warn('[IPC] Project is a bare repository - skipping uncommitted changes check');
         }
 
-        const sourcePath = getEffectiveSourcePath();
-        if (!sourcePath) {
-          console.error('[IPC] Auto Claude source not found');
-          return { success: false, error: 'Auto Claude source not found' };
-        }
-
-        const runScript = path.join(sourcePath, 'run.py');
-        const specDir = path.join(project.path, project.autoBuildPath || '.auto-claude', 'specs', task.specId);
-        const args = [
-          runScript,
-          '--spec', task.specId,
-          '--project-dir', project.path,
-          '--merge-preview'
-        ];
-
-        // Add --base-branch with proper priority:
+        // Determine base branch with proper priority:
         // 1. Task metadata baseBranch (explicit task-level override)
         // 2. Project settings mainBranch (project-level default)
-        // This matches the logic in execution-handlers.ts
+        // 3. Default to 'main'
+        const specDir = path.join(project.path, project.autoBuildPath || '.auto-claude', 'specs', task.specId);
         const taskBaseBranch = getTaskBaseBranch(specDir);
         const projectMainBranch = project.settings?.mainBranch;
-        const effectiveBaseBranch = taskBaseBranch || projectMainBranch;
+        const effectiveBaseBranch = taskBaseBranch || projectMainBranch || 'main';
+        console.warn('[IPC] Using base branch for preview:', effectiveBaseBranch,
+          `(source: ${taskBaseBranch ? 'task metadata' : projectMainBranch ? 'project settings' : 'default'})`);
 
-        if (effectiveBaseBranch) {
-          args.push('--base-branch', effectiveBaseBranch);
-          console.warn('[IPC] Using base branch for preview:', effectiveBaseBranch,
-            `(source: ${taskBaseBranch ? 'task metadata' : 'project settings'})`);
-        }
-
-        // Use configured Python path (venv if ready, otherwise bundled/system)
-        const pythonPath = getConfiguredPythonPath();
-        console.warn('[IPC] Running merge preview:', pythonPath, args.join(' '));
-
-        // Get profile environment for consistency
-        const previewProfileResult = getBestAvailableProfileEnv();
-        const previewProfileEnv = previewProfileResult.env;
-        // Get Python environment for bundled packages
-        const previewPythonEnv = pythonEnvManagerSingleton.getPythonEnv();
-
-        return new Promise((resolve) => {
-          // Parse Python command to handle space-separated commands like "py -3"
-          const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
-          const previewProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
-            cwd: sourcePath,
-            env: { ...getIsolatedGitEnv(), ...previewPythonEnv, ...previewProfileEnv, PYTHONUNBUFFERED: '1', PYTHONUTF8: '1', DEBUG: 'true' }
-          });
-
-          let stdout = '';
-          let stderr = '';
-
-          previewProcess.stdout.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            stdout += chunk;
-            console.warn('[IPC] merge-preview stdout:', chunk);
-          });
-
-          previewProcess.stderr.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            stderr += chunk;
-            console.warn('[IPC] merge-preview stderr:', chunk);
-          });
-
-          previewProcess.on('close', (code: number) => {
-            console.warn('[IPC] merge-preview process exited with code:', code);
-            if (code === 0) {
-              try {
-                // Parse JSON output from Python
-                const result = JSON.parse(stdout.trim());
-                console.warn('[IPC] merge-preview result:', JSON.stringify(result, null, 2));
-                resolve({
-                  success: true,
-                  data: {
-                    success: result.success,
-                    message: result.error || 'Preview completed',
-                    preview: {
-                      files: result.files || [],
-                      conflicts: result.conflicts || [],
-                      summary: result.summary || {
-                        totalFiles: 0,
-                        conflictFiles: 0,
-                        totalConflicts: 0,
-                        autoMergeable: 0,
-                        hasGitConflicts: false
-                      },
-                      gitConflicts: result.gitConflicts || null,
-                      // Include uncommitted changes info for the frontend
-                      uncommittedChanges: hasUncommittedChanges ? {
-                        hasChanges: true,
-                        files: uncommittedFiles,
-                        count: uncommittedFiles.length
-                      } : null
-                    }
-                  }
-                });
-              } catch (parseError) {
-                console.error('[IPC] Failed to parse preview result:', parseError);
-                console.error('[IPC] stdout:', stdout);
-                console.error('[IPC] stderr:', stderr);
-                resolve({
-                  success: false,
-                  error: `Failed to parse preview result: ${stripAnsiCodes(stderr || stdout)}`
-                });
-              }
-            } else {
-              console.error('[IPC] Preview failed with exit code:', code);
-              console.error('[IPC] stderr:', stderr);
-              console.error('[IPC] stdout:', stdout);
-              resolve({
-                success: false,
-                error: `Preview failed: ${stripAnsiCodes(stderr || stdout)}`
-              });
-            }
-          });
-
-          previewProcess.on('error', (err: Error) => {
-            console.error('[IPC] merge-preview spawn error:', err);
-            resolve({
-              success: false,
-              error: `Failed to run preview: ${err.message}`
-            });
-          });
+        // Run preview using the TypeScript MergeOrchestrator in dry-run mode
+        // (no AI resolver needed for preview — only conflict detection and analysis)
+        const storageDir = path.join(project.path, project.autoBuildPath || '.auto-claude');
+        const orchestrator = new MergeOrchestrator({
+          projectDir: project.path,
+          storageDir,
+          enableAi: false,
+          dryRun: true,
         });
+
+        console.warn('[IPC] Running TypeScript merge preview for task:', task.specId);
+        const previewResult = orchestrator.previewMerge([task.specId]);
+
+        const summary = previewResult['summary'] as Record<string, number> | undefined;
+        const rawConflicts = previewResult['conflicts'] as Array<Record<string, unknown>> | undefined;
+        const filesToMerge = previewResult['files_to_merge'] as string[] | undefined;
+
+        // Map orchestrator conflict format to frontend MergeConflict shape
+        const mergeConflicts = (rawConflicts || []).map((c) => ({
+          file: String(c['file'] ?? ''),
+          location: String(c['location'] ?? ''),
+          tasks: Array.isArray(c['tasks']) ? (c['tasks'] as string[]) : [],
+          severity: (c['severity'] ?? 'low') as import('../../../shared/types/task').ConflictSeverity,
+          canAutoMerge: Boolean(c['can_auto_merge']),
+          strategy: c['strategy'] != null ? String(c['strategy']) : undefined,
+          reason: String(c['reason'] ?? ''),
+        }));
+
+        return {
+          success: true,
+          data: {
+            success: true,
+            message: 'Preview completed',
+            preview: {
+              files: filesToMerge || [],
+              conflicts: mergeConflicts,
+              summary: {
+                totalFiles: summary?.['total_files'] ?? 0,
+                conflictFiles: summary?.['conflict_files'] ?? 0,
+                totalConflicts: summary?.['total_conflicts'] ?? 0,
+                autoMergeable: summary?.['auto_mergeable'] ?? 0,
+                hasGitConflicts: false,
+              },
+              // Include uncommitted changes info for the frontend
+              uncommittedChanges: hasUncommittedChanges ? {
+                hasChanges: true,
+                files: uncommittedFiles,
+                count: uncommittedFiles.length,
+              } : null,
+            },
+          },
+        };
       } catch (error) {
         console.error('[IPC] TASK_WORKTREE_MERGE_PREVIEW error:', error);
         return {
@@ -3194,12 +2916,6 @@ export function registerWorktreeHandlers(
       try {
         debug('Handler called with taskId:', taskId, 'options:', options);
 
-        // Ensure Python environment is ready
-        const pythonEnvError = await initializePythonEnvForPR(pythonEnvManager);
-        if (pythonEnvError) {
-          return { success: false, error: pythonEnvError };
-        }
-
         const { task, project } = findTaskAndProject(taskId);
         if (!task || !project) {
           debug('Task or project not found');
@@ -3208,13 +2924,6 @@ export function registerWorktreeHandlers(
 
         debug('Found task:', task.specId, 'project:', project.path);
 
-        // Use run.py --create-pr to handle the PR creation
-        const sourcePath = getEffectiveSourcePath();
-        if (!sourcePath) {
-          return { success: false, error: 'Auto Claude source not found' };
-        }
-
-        const runScript = path.join(sourcePath, 'run.py');
         const specDir = path.join(project.path, project.autoBuildPath || '.auto-claude', 'specs', task.specId);
 
         // Use EAFP pattern - try to read specDir and catch ENOENT
@@ -3236,197 +2945,87 @@ export function registerWorktreeHandlers(
         }
         debug('Worktree path:', worktreePath);
 
-        // Build arguments using helper function
-        const taskBaseBranch = getTaskBaseBranch(specDir);
-        const { args, validationError } = buildCreatePRArgs(
-          runScript,
-          task.specId,
-          project.path,
-          options,
-          taskBaseBranch
-        );
-        if (validationError) {
-          return { success: false, error: validationError };
+        // Validate options
+        if (options?.targetBranch && !GIT_BRANCH_REGEX.test(options.targetBranch)) {
+          return { success: false, error: 'Invalid target branch name' };
         }
+        if (options?.title) {
+          if (options.title.length > MAX_PR_TITLE_LENGTH) {
+            return { success: false, error: `PR title exceeds maximum length of ${MAX_PR_TITLE_LENGTH} characters` };
+          }
+          if (!PRINTABLE_CHARS_REGEX.test(options.title)) {
+            return { success: false, error: 'PR title contains invalid characters' };
+          }
+        }
+
+        // Determine base branch and branch name
+        const taskBaseBranch = getTaskBaseBranch(specDir);
+        const baseBranch = options?.targetBranch || taskBaseBranch || 'main';
+        const branchName = `auto-claude/${task.specId}`;
+        const prTitle = options?.title || `auto-claude: ${task.specId}`;
+
         if (taskBaseBranch) {
           debug('Using stored base branch:', taskBaseBranch);
         }
 
-        // Use configured Python path
-        const pythonPath = getConfiguredPythonPath();
-        debug('Running command:', pythonPath, args.join(' '));
-        debug('Working directory:', sourcePath);
+        // Get tool paths
+        const ghPath = getToolPath('gh');
+        const gitPath = getToolPath('git');
 
-        // Get profile environment with OAuth token
-        const profileResult = getBestAvailableProfileEnv();
-        const profileEnv = profileResult.env;
+        debug('Creating PR via TypeScript runner:', { branchName, baseBranch, prTitle });
 
-        return new Promise((resolve) => {
-          let timeoutId: NodeJS.Timeout | null = null;
-          let resolved = false;
+        // Run the TypeScript PR creator
+        const result = await createPR({
+          projectDir: project.path,
+          worktreePath,
+          specId: task.specId,
+          branchName,
+          baseBranch,
+          title: prTitle,
+          draft: options?.draft,
+          ghPath,
+          gitPath,
+        });
 
-          // Get Python environment for bundled packages
-          const pythonEnv = pythonEnvManagerSingleton.getPythonEnv();
+        debug('PR creation result:', result);
 
-          // Get gh CLI path to pass to Python backend
-          const ghCliPath = getToolPath('gh');
+        if (result.success && result.prUrl && !result.alreadyExists) {
+          // Update task status after successful PR creation
+          await updateTaskStatusAfterPRCreation(
+            specDir,
+            worktreePath,
+            result.prUrl,
+            project.autoBuildPath,
+            task.specId,
+            debug
+          );
 
-          // Parse Python command to handle space-separated commands like "py -3"
-          const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
-          const createPRProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
-            cwd: sourcePath,
-            env: {
-              ...getIsolatedGitEnv(),
-              ...pythonEnv,
-              ...profileEnv,
-              GITHUB_CLI_PATH: ghCliPath,
-              PYTHONUNBUFFERED: '1',
-              PYTHONUTF8: '1'
-            },
-            stdio: ['ignore', 'pipe', 'pipe']
-          });
+          // Update linked roadmap feature
+          if (project.path && task.specId) {
+            const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
+            updateRoadmapFeatureOutcome(roadmapFile, [task.specId], 'completed', '[PR_CREATE]').catch((err) => {
+              debug('Failed to update roadmap feature after PR creation:', err);
+            });
+          }
+        } else if (result.alreadyExists) {
+          debug('PR already exists, not updating task status');
+        }
 
-          let stdout = '';
-          let stderr = '';
-
-          // Set up timeout to kill hung processes
-          timeoutId = setTimeout(() => {
-            if (!resolved) {
-              debug('TIMEOUT: Create PR process exceeded', PR_CREATION_TIMEOUT_MS, 'ms, killing...');
-              resolved = true;
-
-              // Platform-specific process termination with fallback
-              killProcessGracefully(createPRProcess, {
-                debugPrefix: '[PR_CREATION]',
-                debug: isDebugMode
-              });
-
-              resolve({
-                success: false,
-                error: 'PR creation timed out. Check if the PR was created on GitHub.'
-              });
-            }
-          }, PR_CREATION_TIMEOUT_MS);
-
-          createPRProcess.stdout.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            stdout += chunk;
-            debug('STDOUT:', chunk);
-          });
-
-          createPRProcess.stderr.on('data', (data: Buffer) => {
-            const chunk = data.toString('utf-8');
-            stderr += chunk;
-            debug('STDERR:', chunk);
-          });
-
-          /**
-           * Handle process exit - shared logic for both 'close' and 'exit' events.
-           * Parses JSON output, updates task status if PR was created, and resolves the promise.
-           *
-           * @param code - Process exit code (0 = success, non-zero = failure)
-           * @param eventSource - Which event triggered this ('close' or 'exit') for debug logging
-           */
-          const handleCreatePRProcessExit = async (code: number | null, eventSource: 'close' | 'exit'): Promise<void> => {
-            if (resolved) return;
-            resolved = true;
-            if (timeoutId) clearTimeout(timeoutId);
-
-            debug(`Process exited via ${eventSource} event with code:`, code);
-            debug('Full stdout:', stdout);
-            debug('Full stderr:', stderr);
-
-            if (code === 0) {
-              // Parse JSON output using helper function
-              const result = parsePRJsonOutput(stdout);
-              if (result) {
-                debug('Parsed result:', result);
-
-                // Only update task status if a NEW PR was created (not if it already exists)
-                if (result.success !== false && result.prUrl && !result.alreadyExists) {
-                  await updateTaskStatusAfterPRCreation(
-                    specDir,
-                    worktreePath,
-                    result.prUrl,
-                    project.autoBuildPath,
-                    task.specId,
-                    debug
-                  );
-
-                  // Update linked roadmap feature on backend (complements renderer-side handling)
-                  if (project.path && task.specId) {
-                    const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
-                    updateRoadmapFeatureOutcome(roadmapFile, [task.specId], 'completed', '[PR_CREATE]').catch((err) => {
-                      debug('Failed to update roadmap feature after PR creation:', err);
-                    });
-                  }
-                } else if (result.alreadyExists) {
-                  debug('PR already exists, not updating task status');
-                }
-
-                resolve({
-                  success: true,
-                  data: {
-                    success: result.success,
-                    prUrl: result.prUrl,
-                    error: result.error,
-                    alreadyExists: result.alreadyExists
-                  }
-                });
-              } else {
-                // No JSON found, but process succeeded
-                debug('No JSON in output, assuming success');
-                resolve({
-                  success: true,
-                  data: {
-                    success: true,
-                    prUrl: undefined
-                  }
-                });
-              }
-            } else {
-              debug('Process failed with code:', code);
-
-              // Try to parse JSON from stdout even on failure
-              const result = parsePRJsonOutput(stdout);
-              if (result) {
-                debug('Parsed error result:', result);
-                resolve({
-                  success: false,
-                  error: result.error || 'Failed to create PR'
-                });
-              } else {
-                // Fallback to raw output if JSON parsing fails
-                // Prefer stdout over stderr since stderr often contains debug messages
-                resolve({
-                  success: false,
-                  error: stripAnsiCodes(stdout || stderr || 'Failed to create PR')
-                });
-              }
+        if (result.success) {
+          return {
+            success: true,
+            data: {
+              success: true,
+              prUrl: result.prUrl,
+              alreadyExists: result.alreadyExists
             }
           };
+        }
 
-          createPRProcess.on('close', (code: number | null) => {
-            handleCreatePRProcessExit(code, 'close');
-          });
-
-          // Also listen to 'exit' event in case 'close' doesn't fire
-          createPRProcess.on('exit', (code: number | null) => {
-            // Give close event a chance to fire first with complete output
-            setTimeout(() => handleCreatePRProcessExit(code, 'exit'), 100);
-          });
-
-          createPRProcess.on('error', (err: Error) => {
-            if (resolved) return;
-            resolved = true;
-            if (timeoutId) clearTimeout(timeoutId);
-            debug('Process spawn error:', err);
-            resolve({
-              success: false,
-              error: `Failed to run create-pr: ${err.message}`
-            });
-          });
-        });
+        return {
+          success: false,
+          error: result.error || 'Failed to create PR'
+        };
       } catch (error) {
         console.error('[CREATE_PR] Exception in handler:', error);
         return {

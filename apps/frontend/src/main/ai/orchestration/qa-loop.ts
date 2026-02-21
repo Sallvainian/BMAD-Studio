@@ -16,9 +16,15 @@
  * - Human feedback processing (QA_FIX_REQUEST.md)
  */
 
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'events';
+
+import {
+  generateEscalationReport,
+  generateManualTestPlan,
+  generateQAReport,
+} from './qa-reports';
 
 import type { AgentType } from '../config/agent-configs';
 import type { Phase } from '../config/types';
@@ -258,18 +264,27 @@ export class QALoop extends EventEmitter {
         if (status === 'approved') {
           consecutiveErrors = 0;
           lastErrorContext = undefined;
-          this.recordIteration(iteration, 'approved', [], iterationDuration);
+          await this.recordIteration(iteration, 'approved', [], iterationDuration);
+          await this.writeReports('approved');
           return this.outcome(true, iteration, Date.now() - startTime);
         }
 
         if (status === 'rejected') {
           consecutiveErrors = 0;
           lastErrorContext = undefined;
-          this.recordIteration(iteration, 'rejected', issues, iterationDuration);
+          await this.recordIteration(iteration, 'rejected', issues, iterationDuration);
 
           // Check for recurring issues
           if (this.hasRecurringIssues(issues)) {
             this.emitTyped('log', 'Recurring issues detected — escalating to human review');
+            const recurringIssues = this.getRecurringIssues(issues);
+            try {
+              const escalationReport = generateEscalationReport(this.iterationHistory, recurringIssues);
+              await writeFile(join(this.config.specDir, 'QA_ESCALATION.md'), escalationReport, 'utf-8');
+            } catch {
+              // Non-fatal
+            }
+            await this.writeReports('escalated');
             return this.outcome(false, iteration, Date.now() - startTime, 'recurring_issues');
           }
 
@@ -299,11 +314,13 @@ export class QALoop extends EventEmitter {
           });
 
           if (fixResult.outcome === 'cancelled') {
+            await this.writeReports('max_iterations');
             return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
           }
 
           if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure') {
             this.emitTyped('log', `Fixer error: ${fixResult.error?.message ?? 'unknown'}`);
+            await this.writeReports('max_iterations');
             return this.outcome(false, iteration, Date.now() - startTime, 'error', fixResult.error?.message);
           }
 
@@ -315,7 +332,7 @@ export class QALoop extends EventEmitter {
         // status === 'unknown' — QA agent didn't update implementation_plan.json
         consecutiveErrors++;
         const errorMsg = 'QA agent did not update implementation_plan.json with qa_signoff';
-        this.recordIteration(iteration, 'error', [{ title: 'QA error', description: errorMsg }], iterationDuration);
+        await this.recordIteration(iteration, 'error', [{ title: 'QA error', description: errorMsg }], iterationDuration);
 
         lastErrorContext = {
           errorType: 'missing_implementation_plan_update',
@@ -326,6 +343,7 @@ export class QALoop extends EventEmitter {
 
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           this.emitTyped('log', `${MAX_CONSECUTIVE_ERRORS} consecutive errors — escalating to human`);
+          await this.writeReports('max_iterations');
           return this.outcome(false, iteration, Date.now() - startTime, 'consecutive_errors');
         }
 
@@ -333,6 +351,7 @@ export class QALoop extends EventEmitter {
       }
 
       // Max iterations reached
+      await this.writeReports('max_iterations');
       return this.outcome(false, maxIterations, Date.now() - startTime, 'max_iterations');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -478,21 +497,96 @@ export class QALoop extends EventEmitter {
   }
 
   /**
-   * Record an iteration in the history.
+   * Record an iteration in the history and persist it to implementation_plan.json.
    */
-  private recordIteration(
+  private async recordIteration(
     iteration: number,
     status: 'approved' | 'rejected' | 'error',
     issues: QAIssue[],
     durationMs: number,
-  ): void {
-    this.iterationHistory.push({
+  ): Promise<void> {
+    const record: QAIterationRecord = {
       iteration,
       status,
       issues,
       durationMs,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    this.iterationHistory.push(record);
+
+    // Persist to implementation_plan.json
+    try {
+      const planPath = join(this.config.specDir, 'implementation_plan.json');
+      const raw = await readFile(planPath, 'utf-8');
+      const plan = JSON.parse(raw) as {
+        qa_iteration_history?: QAIterationRecord[];
+        qa_stats?: Record<string, unknown>;
+      };
+
+      if (!plan.qa_iteration_history) {
+        plan.qa_iteration_history = [];
+      }
+      plan.qa_iteration_history.push(record);
+
+      // Update summary stats
+      plan.qa_stats = {
+        total_iterations: plan.qa_iteration_history.length,
+        last_iteration: iteration,
+        last_status: status,
+      };
+
+      await writeFile(planPath, JSON.stringify(plan, null, 2), 'utf-8');
+    } catch {
+      // Non-fatal — iteration is still tracked in memory
+    }
+  }
+
+  /**
+   * Collect issues that are considered "recurring" from history.
+   */
+  private getRecurringIssues(currentIssues: QAIssue[]): QAIssue[] {
+    const recurring: QAIssue[] = [];
+    const titleCounts = new Map<string, number>();
+
+    for (const record of this.iterationHistory) {
+      for (const issue of record.issues) {
+        const key = issue.title.toLowerCase().trim();
+        titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+      }
+    }
+
+    for (const issue of currentIssues) {
+      const key = issue.title.toLowerCase().trim();
+      const count = (titleCounts.get(key) ?? 0) + 1;
+      if (count >= RECURRING_ISSUE_THRESHOLD) {
+        recurring.push(issue);
+      }
+    }
+
+    return recurring;
+  }
+
+  /**
+   * Write all QA reports to disk at the end of the loop.
+   */
+  private async writeReports(finalStatus: 'approved' | 'escalated' | 'max_iterations'): Promise<void> {
+    const specDir = this.config.specDir;
+    const projectDir = this.config.projectDir;
+
+    try {
+      const qaReport = generateQAReport(this.iterationHistory, finalStatus);
+      await writeFile(join(specDir, 'qa_report.md'), qaReport, 'utf-8');
+    } catch {
+      // Non-fatal
+    }
+
+    try {
+      const manualTestPlan = await generateManualTestPlan(specDir, projectDir);
+      await writeFile(join(specDir, 'MANUAL_TEST_PLAN.md'), manualTestPlan, 'utf-8');
+    } catch {
+      // Non-fatal
+    }
   }
 
   // ===========================================================================
