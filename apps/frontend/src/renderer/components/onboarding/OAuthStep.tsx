@@ -231,7 +231,7 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
 
   // Handle auth terminal success
   const handleAuthTerminalSuccess = useCallback(async (email?: string) => {
-    console.warn('[OAuthStep] Auth success:', email);
+    console.warn('[OAuthStep] Auth success');
 
     // Close terminal immediately
     setAuthTerminal(null);
