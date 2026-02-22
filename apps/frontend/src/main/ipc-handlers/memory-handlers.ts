@@ -863,4 +863,70 @@ export function registerMemoryHandlers(): void {
       }
     }
   );
+
+  // ============================================
+  // Memory System V5 (libSQL-backed) Handlers
+  // ============================================
+
+  // Search memories
+  ipcMain.handle(
+    'memory:search',
+    async (_event, query: string, filters: Record<string, unknown>) => {
+      try {
+        const { getMemoryClient } = await import('../ai/memory/db');
+        const { EmbeddingService } = await import('../ai/memory/embedding-service');
+        const { Reranker } = await import('../ai/memory/retrieval/reranker');
+        const { RetrievalPipeline } = await import('../ai/memory/retrieval/pipeline');
+        const { MemoryServiceImpl } = await import('../ai/memory/memory-service');
+
+        const client = await getMemoryClient();
+        const embeddingService = new EmbeddingService(client);
+        await embeddingService.initialize();
+        const reranker = new Reranker();
+        const pipeline = new RetrievalPipeline(client, embeddingService, reranker);
+        const service = new MemoryServiceImpl(client, embeddingService, pipeline);
+
+        const memories = await service.search({
+          query: query || undefined,
+          ...(filters as object),
+        });
+
+        return { success: true, data: memories };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to search memories',
+        };
+      }
+    },
+  );
+
+  // Insert a user-taught memory (from /remember command or Teach panel)
+  ipcMain.handle(
+    'memory:insert-user-taught',
+    async (_event, content: string, projectId: string, tags: string[]) => {
+      try {
+        const { getMemoryClient } = await import('../ai/memory/db');
+        const { EmbeddingService } = await import('../ai/memory/embedding-service');
+        const { Reranker } = await import('../ai/memory/retrieval/reranker');
+        const { RetrievalPipeline } = await import('../ai/memory/retrieval/pipeline');
+        const { MemoryServiceImpl } = await import('../ai/memory/memory-service');
+
+        const client = await getMemoryClient();
+        const embeddingService = new EmbeddingService(client);
+        await embeddingService.initialize();
+        const reranker = new Reranker();
+        const pipeline = new RetrievalPipeline(client, embeddingService, reranker);
+        const service = new MemoryServiceImpl(client, embeddingService, pipeline);
+
+        const id = await service.insertUserTaught(content, projectId, tags);
+        return { success: true, id };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to insert memory',
+        };
+      }
+    },
+  );
 }
