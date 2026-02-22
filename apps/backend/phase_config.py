@@ -63,6 +63,15 @@ SPEC_PHASE_THINKING_LEVELS: dict[str, str] = {
     "quick_spec": "medium",
     "historical_context": "medium",
     "complexity_assessment": "medium",
+    # BMAD phases (legacy names kept for backward compatibility)
+    "bmad_analysis": "high",
+    "bmad_planning": "high",
+    "bmad_solutioning": "high",
+    # BMAD phases (new naming scheme)
+    "bmad_prd_writing": "high",
+    "bmad_architecture": "high",
+    "bmad_story_planning": "medium",
+    "bmad_quick_spec": "medium",
 }
 
 # Default phase configuration (fallback, matches 'Balanced' profile)

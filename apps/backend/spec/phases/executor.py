@@ -9,6 +9,7 @@ Combines all phase implementation mixins.
 from collections.abc import Callable
 from pathlib import Path
 
+from .bmad_phases import BMADPhaseMixin
 from .discovery_phases import DiscoveryPhaseMixin
 from .planning_phases import PlanningPhaseMixin
 from .requirements_phases import RequirementsPhaseMixin
@@ -21,6 +22,7 @@ class PhaseExecutor(
     RequirementsPhaseMixin,
     SpecPhaseMixin,
     PlanningPhaseMixin,
+    BMADPhaseMixin,
 ):
     """
     Executes individual phases of spec creation.
@@ -30,6 +32,7 @@ class PhaseExecutor(
     - RequirementsPhaseMixin: Requirements, historical context, and research phases
     - SpecPhaseMixin: Spec writing and self-critique phases
     - PlanningPhaseMixin: Implementation planning and validation phases
+    - BMADPhaseMixin: BMAD methodology phases (analysis, planning, solutioning)
     """
 
     def __init__(
