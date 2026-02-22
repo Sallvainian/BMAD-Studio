@@ -1,3 +1,21 @@
+## 2.7.14 - Fork Cleanup
+
+### ✨ New Features
+
+- **Sonnet 4.6 models** — Added Sonnet 4.6 and Sonnet 4.6 (1M) to model configuration
+- **PR markdown rendering** — PR descriptions and AI analysis now render as markdown with rerun button
+
+### 🐛 Bug Fixes
+
+- **Ideation** — Rebuild ideation.json from type files when stale or missing instead of crashing
+
+### 🛠️ Improvements
+
+- **Git history** — Reorganized fork commits into clean logical groups
+- **Branch cleanup** — Removed 66 stale upstream-mirrored branches
+- **Dependabot** — Disabled on fork (upstream handles dependency updates)
+- **CLAUDE.md** — Expanded project structure documentation
+
 ## 2.7.13 - Code Signing
 
 ### 🛠️ Improvements
