@@ -10,7 +10,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/frontend/package.json'
+      - 'apps/desktop/package.json'
       - 'package.json'
   workflow_dispatch:
     inputs:
@@ -50,7 +50,7 @@ jobs:
       - name: Get package version
         id: package
         run: |
-          VERSION=$(node -p "require('./apps/frontend/package.json').version")
+          VERSION=$(node -p "require('./apps/desktop/package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Package version: $VERSION"
 

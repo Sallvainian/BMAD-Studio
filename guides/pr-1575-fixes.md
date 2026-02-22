@@ -22,13 +22,13 @@ Agent events (log, error, exit, execution-progress, task-event) did not carry a 
 - All event handlers in `agent-events-handlers.ts` now receive and use `projectId`
 
 ### Files Changed
-- `apps/frontend/src/main/agent/types.ts`
-- `apps/frontend/src/main/agent/agent-manager.ts`
-- `apps/frontend/src/main/agent/agent-process.ts`
-- `apps/frontend/src/main/ipc-handlers/task/shared.ts`
-- `apps/frontend/src/main/ipc-handlers/agent-events-handlers.ts`
-- `apps/frontend/src/main/ipc-handlers/task/execution-handlers.ts`
-- `apps/frontend/src/__tests__/integration/subprocess-spawn.test.ts`
+- `apps/desktop/src/main/agent/types.ts`
+- `apps/desktop/src/main/agent/agent-manager.ts`
+- `apps/desktop/src/main/agent/agent-process.ts`
+- `apps/desktop/src/main/ipc-handlers/task/shared.ts`
+- `apps/desktop/src/main/ipc-handlers/agent-events-handlers.ts`
+- `apps/desktop/src/main/ipc-handlers/task/execution-handlers.ts`
+- `apps/desktop/src/__tests__/integration/subprocess-spawn.test.ts`
 
 ## Bug 2: "Incomplete" Badge on Plan Review Tasks
 
@@ -47,7 +47,7 @@ Two issues combined:
 - Changed `handleProcessExited` to only set `unexpected: true` when `exitCode !== 0` — a code-0 exit is normal and should not trigger error transitions
 
 ### Files Changed
-- `apps/frontend/src/main/task-state-manager.ts`
+- `apps/desktop/src/main/task-state-manager.ts`
 
 ## Bug 3: Backend qa.py Racing with XState Status
 
@@ -75,7 +75,7 @@ The planner agent writes `implementation_plan.json` via Claude's Write tool, whi
 Added a re-stamp mechanism in the file watcher's `progress` event handler. When the file watcher detects a plan file change and the `xstateState` field is missing (indicating the backend overwrote the file), the handler re-persists the current XState state back to the file. This also covers the worktree copy.
 
 ### Files Changed
-- `apps/frontend/src/main/ipc-handlers/agent-events-handlers.ts`
+- `apps/desktop/src/main/ipc-handlers/agent-events-handlers.ts`
 
 ## Bug 5: QA Tasks in Wrong Column After Project Switch
 
@@ -91,7 +91,7 @@ Changed the phase-to-status mapping in `persistPlanPhaseSync`:
 - `qa_fixing` → `ai_review` (was `in_progress`)
 
 ### Files Changed
-- `apps/frontend/src/main/ipc-handlers/task/plan-file-utils.ts`
+- `apps/desktop/src/main/ipc-handlers/task/plan-file-utils.ts`
 
 ## Bug 6: updateTaskStatus Not Applying reviewReason
 
@@ -106,7 +106,7 @@ Tasks completing planning with `requireReviewBeforeCoding=true` would show an "I
 - Updated skip condition to check both `status` AND `reviewReason`
 
 ### Files Changed
-- `apps/frontend/src/renderer/stores/task-store.ts`
+- `apps/desktop/src/renderer/stores/task-store.ts`
 
 ## Bug 7: Task Stuck in "In Progress" After Planning (requireReviewBeforeCoding)
 
@@ -129,7 +129,7 @@ Added an XState "settled state" guard in the `execution-progress` handler. When 
 XState's own `persistStatus()` and `emitPhaseFromState()` already handle disk and renderer updates correctly when transitioning to these states.
 
 ### Files Changed
-- `apps/frontend/src/main/ipc-handlers/agent-events-handlers.ts`
+- `apps/desktop/src/main/ipc-handlers/agent-events-handlers.ts`
 
 ## Testing
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 Auto Claude is an autonomous multi-agent coding framework that plans, builds, and validates software for you. It's a monorepo with an Electron/React frontend (desktop UI + TypeScript AI agent layer) and a Python backend (CLI utilities + Graphiti memory sidecar).
 
-> **Deep-dive reference:** [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md) | **Frontend contributing:** [apps/frontend/CONTRIBUTING.md](apps/frontend/CONTRIBUTING.md)
+> **Deep-dive reference:** [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md) | **Frontend contributing:** [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md)
 
 ## Product Overview
 
@@ -30,11 +30,11 @@ Auto Claude is a desktop application (+ CLI) where users describe a goal and AI 
 
 ## Critical Rules
 
-**Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `apps/frontend/src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
+**Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `apps/desktop/src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
 
 **i18n required** — All frontend user-facing text uses `react-i18next` translation keys. Hardcoded strings in JSX/TSX break localization for non-English users. Add keys to both `en/*.json` and `fr/*.json`.
 
-**Platform abstraction** — Never use `process.platform` directly. Import from `apps/frontend/src/main/platform/`. CI tests all three platforms.
+**Platform abstraction** — Never use `process.platform` directly. Import from `apps/desktop/src/main/platform/`. CI tests all three platforms.
 
 **No time estimates** — Provide priority-based ordering instead of duration predictions.
 
@@ -145,15 +145,15 @@ autonomous-coding/
 ```bash
 npm run install:all              # Install all dependencies from root
 # Or separately:
-cd apps/frontend && npm install
+cd apps/desktop && npm install
 ```
 
 ### Testing
 
 | Stack | Command | Tool |
 |-------|---------|------|
-| Frontend unit | `cd apps/frontend && npm test` | Vitest |
-| Frontend E2E | `cd apps/frontend && npm run test:e2e` | Playwright |
+| Frontend unit | `cd apps/desktop && npm test` | Vitest |
+| Frontend E2E | `cd apps/desktop && npm run test:e2e` | Playwright |
 
 ### Releases
 ```bash
@@ -163,7 +163,7 @@ git push && gh pr create --base main             # PR to main triggers release
 
 See [RELEASE.md](RELEASE.md) for full release process.
 
-## AI Agent Layer (`apps/frontend/src/main/ai/`)
+## AI Agent Layer (`apps/desktop/src/main/ai/`)
 
 All AI agent logic lives in TypeScript using the Vercel AI SDK v6. This replaces the previous Python `claude-agent-sdk` integration.
 
@@ -308,7 +308,7 @@ Full PTY-based terminal integration:
 
 ## i18n Guidelines
 
-All frontend UI text uses `react-i18next`. Translation files: `apps/frontend/src/shared/i18n/locales/{en,fr}/*.json`
+All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/{en,fr}/*.json`
 
 **Namespaces:** `common`, `navigation`, `settings`, `dialogs`, `tasks`, `errors`, `onboarding`, `welcome`
 
@@ -329,7 +329,7 @@ When adding new UI text: add keys to ALL language files, use `namespace:section.
 
 Supports Windows, macOS, Linux. CI tests all three.
 
-**Platform modules:** `apps/frontend/src/main/platform/`
+**Platform modules:** `apps/desktop/src/main/platform/`
 
 | Function | Purpose |
 |----------|---------|

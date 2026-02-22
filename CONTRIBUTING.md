@@ -171,7 +171,7 @@ npm start
 The project consists of two main components:
 
 1. **Python Backend** (`apps/backend/`) - The core autonomous coding framework
-2. **Electron Frontend** (`apps/frontend/`) - Desktop UI
+2. **Electron Frontend** (`apps/desktop/`) - Desktop UI
 
 From the repository root, two commands handle everything:
 
@@ -243,8 +243,8 @@ When you commit, the following checks run automatically:
 |-------|-------|-------------|
 | **ruff** | `apps/backend/` | Python linter with auto-fix |
 | **ruff-format** | `apps/backend/` | Python code formatter |
-| **eslint** | `apps/frontend/` | TypeScript/React linter |
-| **typecheck** | `apps/frontend/` | TypeScript type checking |
+| **eslint** | `apps/desktop/` | TypeScript/React linter |
+| **typecheck** | `apps/desktop/` | TypeScript type checking |
 | **trailing-whitespace** | All files | Removes trailing whitespace |
 | **end-of-file-fixer** | All files | Ensures files end with newline |
 | **check-yaml** | All files | Validates YAML syntax |
@@ -301,7 +301,7 @@ def gnc(sd):
 ### TypeScript/React
 
 - Use TypeScript strict mode
-- Follow the existing component patterns in `apps/frontend/src/`
+- Follow the existing component patterns in `apps/desktop/src/`
 - Use functional components with hooks
 - Prefer named exports over default exports
 - Use the UI components from `src/renderer/components/ui/`
@@ -415,7 +415,7 @@ Test configuration is in `tests/pytest.ini`.
 ### Frontend Tests
 
 ```bash
-cd apps/frontend
+cd apps/desktop
 
 # Run unit tests
 npm test
@@ -476,7 +476,7 @@ source .venv/bin/activate
 pytest ../../tests/ -v
 
 # Frontend tests
-cd apps/frontend
+cd apps/desktop
 npm test
 npm run lint
 npm run typecheck
@@ -788,7 +788,7 @@ git push --force-with-lease
 
 # Verify everything works
 npm run test:backend
-cd apps/frontend && npm test && npm run lint && npm run typecheck
+cd apps/desktop && npm test && npm run lint && npm run typecheck
 ```
 
 **PR size:**
@@ -813,7 +813,7 @@ cd apps/frontend && npm test && npm run lint && npm run typecheck
    npm run test:backend
 
    # Frontend
-   cd apps/frontend && npm test && npm run lint && npm run typecheck
+   cd apps/desktop && npm test && npm run lint && npm run typecheck
    ```
 
 4. **Update documentation** if your changes affect:
@@ -882,7 +882,7 @@ The core autonomous coding framework:
 - **Memory**: `memory.py` (file-based), `graphiti_memory.py` (graph-based)
 - **QA**: `qa_loop.py`, `prompts/qa_*.md`
 
-### Electron Frontend (`apps/frontend/`)
+### Electron Frontend (`apps/desktop/`)
 
 Desktop interface:
 

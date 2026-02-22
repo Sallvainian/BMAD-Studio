@@ -4,50 +4,23 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'apps/**'
-      - 'tests/**'
+      - 'apps/desktop/**'
       - '.github/workflows/lint.yml'
       - '.github/actions/**'
-      - 'apps/frontend/biome.jsonc'
-      - '.pre-commit-config.yaml'
+      - 'apps/desktop/biome.jsonc'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'apps/**'
-      - 'tests/**'
+      - 'apps/desktop/**'
       - '.github/workflows/lint.yml'
       - '.github/actions/**'
-      - 'apps/frontend/biome.jsonc'
-      - '.pre-commit-config.yaml'
+      - 'apps/desktop/biome.jsonc'
 
 concurrency:
   group: lint-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Python linting (Ruff) - already fast, no changes needed
-  python:
-    name: Python (Ruff)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      # Pin ruff version to match .pre-commit-config.yaml
-      - name: Install ruff
-        run: pip install ruff==0.14.10
-
-      - name: Run ruff check
-        run: ruff check apps/backend/ --output-format=github
-
-      - name: Run ruff format check
-        run: ruff format apps/backend/ --check --diff
-
   # TypeScript/JavaScript linting (Biome) - 15-25x faster than ESLint
   typescript:
     name: TypeScript (Biome)
@@ -63,7 +36,7 @@ jobs:
           version: 2.3.11
 
       - name: Run Biome
-        working-directory: apps/frontend
+        working-directory: apps/desktop
         # biome ci fails on errors by default; warnings are reported but don't block
         # Use --error-on-warnings when ready to enforce all rules
         run: biome ci .
@@ -74,15 +47,13 @@ jobs:
   lint-complete:
     name: Lint Complete
     runs-on: ubuntu-latest
-    needs: [python, typescript]
+    needs: [typescript]
     if: always()
     steps:
       - name: Check lint results
         run: |
-          if [[ "${{ needs.python.result }}" != "success" ]] || \
-             [[ "${{ needs.typescript.result }}" != "success" ]]; then
+          if [[ "${{ needs.typescript.result }}" != "success" ]]; then
             echo "❌ Linting failed"
-            echo "  Python:     ${{ needs.python.result }}"
             echo "  TypeScript: ${{ needs.typescript.result }}"
             exit 1
           fi

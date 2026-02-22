@@ -112,7 +112,7 @@ function checkGitStatus() {
 
 // Update package.json version
 function updatePackageJson(newVersion) {
-  const frontendPath = path.join(__dirname, '..', 'apps', 'frontend', 'package.json');
+  const frontendPath = path.join(__dirname, '..', 'apps', 'desktop', 'package.json');
   const rootPath = path.join(__dirname, '..', 'package.json');
 
   if (!fs.existsSync(frontendPath)) {
@@ -197,7 +197,7 @@ function main() {
   success('Git working directory is clean');
 
   // 2. Read current version
-  const packagePath = path.join(__dirname, '..', 'apps', 'frontend', 'package.json');
+  const packagePath = path.join(__dirname, '..', 'apps', 'desktop', 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
   const currentVersion = packageJson.version;
   info(`Current version: ${currentVersion}`);
@@ -259,7 +259,7 @@ function main() {
 
   // 7. Create git commit
   info('Creating git commit...');
-  exec('git add apps/frontend/package.json package.json apps/backend/__init__.py');
+  exec('git add apps/desktop/package.json package.json apps/backend/__init__.py');
   exec(`git commit -m "chore: bump version to ${newVersion}"`);
   success(`Created commit: "chore: bump version to ${newVersion}"`);
 

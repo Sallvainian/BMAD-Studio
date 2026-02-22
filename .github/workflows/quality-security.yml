@@ -1,24 +1,19 @@
 name: Quality Security
 
 # CodeQL runs on all PRs, pushes to main, and weekly schedule
-# Note: CodeQL takes 20-30 min per language (40-60 min total)
-# Bandit is fast (5-10 min)
+# Note: CodeQL takes 20-30 min
 
 on:
   push:
     branches: [main]
     paths:
-      - 'apps/**'
-      - 'tests/**'
-      - 'pyproject.toml'
+      - 'apps/desktop/**'
       - 'package.json'
       - '.github/workflows/quality-security.yml'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'apps/**'
-      - 'tests/**'
-      - 'pyproject.toml'
+      - 'apps/desktop/**'
       - 'package.json'
       - '.github/workflows/quality-security.yml'
   schedule:
@@ -41,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, javascript-typescript]
+        language: [javascript-typescript]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,91 +55,13 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
-  # Bandit runs on all PRs - it's fast (5-10 min)
-  python-security:
-    name: Python Security (Bandit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Install Bandit
-        run: pip install bandit
-
-      - name: Run Bandit security scan
-        id: bandit
-        run: |
-          echo "::group::Running Bandit security scan"
-          bandit -r apps/backend/ -ll -ii -f json -o bandit-report.json || BANDIT_EXIT=$?
-          if [ "${BANDIT_EXIT:-0}" -gt 1 ]; then
-            echo "::error::Bandit scan failed with exit code $BANDIT_EXIT"
-            exit 1
-          fi
-          echo "::endgroup::"
-
-      - name: Analyze Bandit results
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const fs = require('fs');
-
-            if (!fs.existsSync('bandit-report.json')) {
-              core.setFailed('Bandit report not found - scan may have failed');
-              return;
-            }
-
-            const report = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
-            const results = report.results || [];
-
-            const high = results.filter(r => r.issue_severity === 'HIGH');
-            const medium = results.filter(r => r.issue_severity === 'MEDIUM');
-            const low = results.filter(r => r.issue_severity === 'LOW');
-
-            console.log(`::group::Bandit Security Scan Results`);
-            console.log(`Found ${results.length} issues:`);
-            console.log(`  HIGH:   ${high.length}`);
-            console.log(`  MEDIUM: ${medium.length}`);
-            console.log(`  LOW:    ${low.length}`);
-            console.log('::endgroup::');
-
-            let summary = `## Python Security Scan (Bandit)\n\n`;
-            summary += `| Severity | Count |\n`;
-            summary += `|----------|-------|\n`;
-            summary += `| High | ${high.length} |\n`;
-            summary += `| Medium | ${medium.length} |\n`;
-            summary += `| Low | ${low.length} |\n\n`;
-
-            if (high.length > 0) {
-              summary += `### High Severity Issues\n\n`;
-              for (const issue of high) {
-                summary += `- **${issue.filename}:${issue.line_number}**\n`;
-                summary += `  - ${issue.issue_text}\n`;
-                summary += `  - Test: \`${issue.test_id}\` (${issue.test_name})\n\n`;
-              }
-            }
-
-            core.summary.addRaw(summary);
-            await core.summary.write();
-
-            if (high.length > 0) {
-              core.setFailed(`Found ${high.length} high severity security issue(s)`);
-            } else {
-              console.log('No high severity security issues found');
-            }
-
   # --------------------------------------------------------------------------
   # Gate Job - Single check for branch protection
   # --------------------------------------------------------------------------
   security-summary:
     name: Security Summary
     runs-on: ubuntu-latest
-    needs: [codeql, python-security]
+    needs: [codeql]
     if: always()
     timeout-minutes: 5
     steps:
@@ -153,19 +70,15 @@ jobs:
         with:
           script: |
             const codeql = '${{ needs.codeql.result }}';
-            const bandit = '${{ needs.python-security.result }}';
 
             console.log('Security Check Results:');
             console.log(`  CodeQL:        ${codeql}`);
-            console.log(`  Bandit:        ${bandit}`);
 
             // Only 'failure' is a real failure; 'skipped' is acceptable (e.g., path filters, PR skipping CodeQL)
             const acceptable = ['success', 'skipped'];
             const codeqlOk = acceptable.includes(codeql);
-            const banditOk = acceptable.includes(bandit);
-            const allPassed = codeqlOk && banditOk;
 
-            if (allPassed) {
+            if (codeqlOk) {
               console.log('\n✅ All security checks passed');
               core.summary.addRaw('## ✅ Security Checks Passed\n\nAll security scans completed successfully.');
             } else {

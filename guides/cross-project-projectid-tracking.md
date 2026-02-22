@@ -147,13 +147,13 @@ agent-events-handlers.ts
 
 | File | Change |
 |------|--------|
-| `apps/frontend/src/main/agent/types.ts` | Added `projectId?: string` to all event signatures |
-| `apps/frontend/src/main/agent/agent-manager.ts` | Added `projectId` to context storage, start methods, restart flow |
-| `apps/frontend/src/main/agent/agent-process.ts` | Added `projectId` to `spawnProcess` and all `emitter.emit()` calls |
-| `apps/frontend/src/main/ipc-handlers/task/shared.ts` | Scoped `findTaskAndProject` by projectId with fallback |
-| `apps/frontend/src/main/ipc-handlers/agent-events-handlers.ts` | All event handlers receive and forward projectId |
-| `apps/frontend/src/main/ipc-handlers/task/execution-handlers.ts` | All 9 `agentManager.start*` call sites pass `project.id` |
-| `apps/frontend/src/__tests__/integration/subprocess-spawn.test.ts` | Updated test expectations for new projectId parameter |
+| `apps/desktop/src/main/agent/types.ts` | Added `projectId?: string` to all event signatures |
+| `apps/desktop/src/main/agent/agent-manager.ts` | Added `projectId` to context storage, start methods, restart flow |
+| `apps/desktop/src/main/agent/agent-process.ts` | Added `projectId` to `spawnProcess` and all `emitter.emit()` calls |
+| `apps/desktop/src/main/ipc-handlers/task/shared.ts` | Scoped `findTaskAndProject` by projectId with fallback |
+| `apps/desktop/src/main/ipc-handlers/agent-events-handlers.ts` | All event handlers receive and forward projectId |
+| `apps/desktop/src/main/ipc-handlers/task/execution-handlers.ts` | All 9 `agentManager.start*` call sites pass `project.id` |
+| `apps/desktop/src/__tests__/integration/subprocess-spawn.test.ts` | Updated test expectations for new projectId parameter |
 
 ## Verification
 

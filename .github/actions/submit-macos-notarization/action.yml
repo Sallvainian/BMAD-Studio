@@ -14,7 +14,7 @@ inputs:
   dmg-path:
     description: 'Path to the dist directory containing the DMG file'
     required: false
-    default: 'apps/frontend/dist'
+    default: 'apps/desktop/dist'
 
 outputs:
   notarization-id:

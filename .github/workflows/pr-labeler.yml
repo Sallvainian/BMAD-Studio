@@ -56,7 +56,7 @@ jobs:
 
               // Area detection paths
               AREA_PATHS: Object.freeze({
-                frontend: 'apps/frontend/',
+                frontend: 'apps/desktop/',
                 backend: 'apps/backend/',
                 ci: '.github/'
               }),

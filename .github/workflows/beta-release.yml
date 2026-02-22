@@ -74,35 +74,11 @@ jobs:
           # Use tag for real releases, develop branch for dry runs
           ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Install Rust toolchain (for building native Python packages)
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache pip wheel cache (for compiled packages like real_ladybug)
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/pip
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            pip-wheel-${{ runner.os }}-x64-
-
-      - name: Cache bundled Python
-        uses: actions/cache@v5
-        with:
-          path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-rust-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            python-bundle-${{ runner.os }}-x64-3.12.8-rust-
-
       - name: Build application
-        run: cd apps/frontend && npm run build
+        run: cd apps/desktop && npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -111,7 +87,7 @@ jobs:
       - name: Package macOS (Intel)
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/frontend && npm run package:mac -- --x64 --config.extraMetadata.version="$VERSION"
+          cd apps/desktop && npm run package:mac -- --x64 --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
@@ -133,9 +109,9 @@ jobs:
         with:
           name: macos-intel-builds
           path: |
-            apps/frontend/dist/*.dmg
-            apps/frontend/dist/*.zip
-            apps/frontend/dist/*.yml
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.yml
 
   # Apple Silicon build on ARM64 runner for native compilation
   build-macos-arm64:
@@ -150,32 +126,11 @@ jobs:
           # Use tag for real releases, develop branch for dry runs
           ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Cache pip wheel cache
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/pip
-          key: pip-wheel-${{ runner.os }}-arm64-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            pip-wheel-${{ runner.os }}-arm64-
-
-      - name: Cache bundled Python
-        uses: actions/cache@v5
-        with:
-          path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-arm64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            python-bundle-${{ runner.os }}-arm64-3.12.8-
-
       - name: Build application
-        run: cd apps/frontend && npm run build
+        run: cd apps/desktop && npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -184,7 +139,7 @@ jobs:
       - name: Package macOS (Apple Silicon)
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/frontend && npm run package:mac -- --arm64 --config.extraMetadata.version="$VERSION"
+          cd apps/desktop && npm run package:mac -- --arm64 --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
@@ -206,9 +161,9 @@ jobs:
         with:
           name: macos-arm64-builds
           path: |
-            apps/frontend/dist/*.dmg
-            apps/frontend/dist/*.zip
-            apps/frontend/dist/*.yml
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.yml
 
   build-windows:
     needs: create-tag
@@ -225,32 +180,11 @@ jobs:
           # Use tag for real releases, develop branch for dry runs
           ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Cache pip wheel cache
-        uses: actions/cache@v5
-        with:
-          path: ~\AppData\Local\pip\Cache
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            pip-wheel-${{ runner.os }}-x64-
-
-      - name: Cache bundled Python
-        uses: actions/cache@v5
-        with:
-          path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            python-bundle-${{ runner.os }}-x64-3.12.8-
-
       - name: Build application
-        run: cd apps/frontend && npm run build
+        run: cd apps/desktop && npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -260,7 +194,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/frontend && npm run package:win -- --config.extraMetadata.version="$VERSION"
+          cd apps/desktop && npm run package:win -- --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable electron-builder's built-in signing (we use Azure Trusted Signing instead)
@@ -284,7 +218,7 @@ jobs:
           endpoint: https://neu.codesigning.azure.net/
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
-          files-folder: apps/frontend/dist
+          files-folder: apps/desktop/dist
           files-folder-filter: exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
@@ -294,7 +228,7 @@ jobs:
         if: env.AZURE_CLIENT_ID != ''
         shell: pwsh
         run: |
-          cd apps/frontend/dist
+          cd apps/desktop/dist
           $exeFile = Get-ChildItem -Filter "*.exe" | Select-Object -First 1
           if ($exeFile) {
             Write-Host "Verifying signature on $($exeFile.Name)..."
@@ -318,7 +252,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          cd apps/frontend/dist
+          cd apps/desktop/dist
 
           # Find the installer exe (electron-builder names it with "Setup" or just the app name)
           # electron-builder produces one installer exe per build
@@ -385,8 +319,8 @@ jobs:
         with:
           name: windows-builds
           path: |
-            apps/frontend/dist/*.exe
-            apps/frontend/dist/*.yml
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.yml
 
   build-linux:
     needs: create-tag
@@ -396,11 +330,6 @@ jobs:
         with:
           # Use tag for real releases, develop branch for dry runs
           ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
 
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
@@ -414,24 +343,8 @@ jobs:
           flatpak install -y --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
           flatpak install -y --user flathub org.electronjs.Electron2.BaseApp//25.08
 
-      - name: Cache pip wheel cache
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/pip
-          key: pip-wheel-${{ runner.os }}-x64-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            pip-wheel-${{ runner.os }}-x64-
-
-      - name: Cache bundled Python
-        uses: actions/cache@v5
-        with:
-          path: apps/frontend/python-runtime
-          key: python-bundle-${{ runner.os }}-x64-3.12.8-${{ hashFiles('apps/backend/requirements.txt') }}
-          restore-keys: |
-            python-bundle-${{ runner.os }}-x64-3.12.8-
-
       - name: Build application
-        run: cd apps/frontend && npm run build
+        run: cd apps/desktop && npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -440,7 +353,7 @@ jobs:
       - name: Package Linux
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/frontend && npm run package:linux -- --config.extraMetadata.version="$VERSION"
+          cd apps/desktop && npm run package:linux -- --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -448,17 +361,17 @@ jobs:
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
       - name: Verify Linux packages
-        run: cd apps/frontend && npm run verify:linux
+        run: cd apps/desktop && npm run verify:linux
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-builds
           path: |
-            apps/frontend/dist/*.AppImage
-            apps/frontend/dist/*.deb
-            apps/frontend/dist/*.flatpak
-            apps/frontend/dist/*.yml
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+            apps/desktop/dist/*.flatpak
+            apps/desktop/dist/*.yml
 
   # Finalize macOS notarization (runs in parallel with Windows/Linux builds)
   finalize-notarization:

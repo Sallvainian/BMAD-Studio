@@ -47,7 +47,7 @@ reviews:
         Focus on Python best practices, type hints, and async patterns.
         Check for proper error handling and security considerations.
         Verify compatibility with Python 3.12+.
-    - path: "apps/frontend/**/*.{ts,tsx}"
+    - path: "apps/desktop/**/*.{ts,tsx}"
       instructions: |
         Review React patterns and TypeScript type safety.
         Check for proper state management and component composition.
