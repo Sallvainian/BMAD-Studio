@@ -2,7 +2,7 @@
  * Code Search Functionality
  *
  * Searches the codebase for relevant files based on keywords.
- * Ported from apps/backend/context/search.py
+ * See apps/desktop/src/main/ai/context/search.ts for the TypeScript implementation.
  * Uses Node.js fs — no AI SDK dependency.
  */
 

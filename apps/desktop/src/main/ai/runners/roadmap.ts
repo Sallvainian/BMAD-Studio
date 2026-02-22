@@ -3,7 +3,7 @@
  * ==============
  *
  * AI-powered roadmap generation using Vercel AI SDK.
- * Ported from apps/backend/runners/roadmap/ (orchestrator + phases).
+ * See apps/desktop/src/main/ai/runners/roadmap.ts for the TypeScript implementation.
  *
  * Multi-step process: project discovery → feature generation → roadmap synthesis.
  * Uses `createSimpleClient()` with read-only tools and streaming.

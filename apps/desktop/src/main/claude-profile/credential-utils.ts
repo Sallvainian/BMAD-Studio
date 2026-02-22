@@ -12,7 +12,7 @@
  * - Custom profiles: "Claude Code-credentials-{sha256-8-hash}" where hash is first 8 chars
  *   of SHA256 hash of the CLAUDE_CONFIG_DIR path
  *
- * Mirrors the functionality of apps/backend/core/auth.py get_token_from_keychain()
+ * Mirrors the functionality of apps/desktop/src/main/claude-profile/credential-utils.ts (originally from Python core/auth)
  */
 
 import { execFileSync } from 'child_process';

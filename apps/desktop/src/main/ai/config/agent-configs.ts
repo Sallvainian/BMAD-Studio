@@ -2,7 +2,7 @@
  * Agent Configuration Registry
  * =============================
  *
- * Ported from apps/backend/agents/tools_pkg/models.py
+ * See apps/desktop/src/main/ai/config/agent-configs.ts (originally from Python agents/tools_pkg/models)
  *
  * Single source of truth for agent type → tools → MCP servers mapping.
  * This enables phase-aware tool control and context window optimization.
@@ -159,7 +159,7 @@ export interface AgentConfig {
 
 /**
  * Single source of truth for agent type → tools → MCP servers mapping.
- * Ported from AGENT_CONFIGS in apps/backend/agents/tools_pkg/models.py.
+ * See apps/desktop/src/main/ai/config/agent-configs.ts for the full TypeScript implementation.
  */
 export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   // ═══════════════════════════════════════════════════════════════════════

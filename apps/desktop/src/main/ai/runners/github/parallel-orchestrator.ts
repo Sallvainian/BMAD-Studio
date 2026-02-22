@@ -3,7 +3,7 @@
  * ==================================
  *
  * PR reviewer using parallel specialist analysis via Promise.allSettled().
- * Ported from apps/backend/runners/github/services/parallel_orchestrator_reviewer.py.
+ * See apps/desktop/src/main/ai/runners/github/parallel-orchestrator.ts for the TypeScript implementation.
  *
  * The orchestrator analyzes the PR and runs specialized agents (security,
  * quality, logic, codebase-fit) in parallel. Results are synthesized into

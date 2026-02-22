@@ -61,7 +61,7 @@ The backend `qa.py` tool was writing `plan["status"] = "human_review"` directly 
 Removed the backend's direct status writes from `qa.py`. The frontend XState state machine is now the sole owner of status transitions — the backend only updates `last_updated` timestamps and QA-specific fields.
 
 ### Files Changed
-- `apps/backend/agents/tools_pkg/tools/qa.py`
+- `apps/backend/agents/tools_pkg/tools/qa.py` (now removed — backend deleted)
 
 ## Bug 4: Plan File Overwrite by Planner Agent
 

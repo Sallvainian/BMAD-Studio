@@ -68,7 +68,6 @@ node scripts/bump-version.js 2.8.0   # Set specific version
 This will:
 - Update `apps/desktop/package.json`
 - Update `package.json` (root)
-- Update `apps/backend/__init__.py`
 - Check if `CHANGELOG.md` has an entry for the new version (warns if missing)
 - Create a commit with message `chore: bump version to X.Y.Z`
 

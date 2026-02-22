@@ -3,7 +3,7 @@
  * ===============
  *
  * AI chat for codebase insights using Vercel AI SDK.
- * Ported from apps/backend/runners/insights_runner.py.
+ * See apps/desktop/src/main/ai/runners/insights.ts for the TypeScript implementation.
  *
  * Provides an AI-powered chat interface for asking questions about a codebase.
  * Can also suggest tasks based on the conversation.

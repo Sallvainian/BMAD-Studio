@@ -3,7 +3,7 @@
  * ======================
  *
  * Tracks file modification history across task modifications.
- * Ported from apps/backend/merge/file_evolution/.
+ * See apps/desktop/src/main/ai/merge/file-evolution.ts for the TypeScript implementation.
  *
  * Manages:
  * - Baseline capture when worktrees are created

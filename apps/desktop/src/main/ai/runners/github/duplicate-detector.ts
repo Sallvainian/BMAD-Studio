@@ -3,7 +3,7 @@
  * =======================================
  *
  * Detects duplicate and similar issues before processing.
- * Ported from apps/backend/runners/github/duplicates.py.
+ * See apps/desktop/src/main/ai/runners/github/duplicate-detector.ts for the TypeScript implementation.
  *
  * Uses text-based similarity (title + body) with entity extraction.
  * Embedding-based similarity is not available in the Electron main process,

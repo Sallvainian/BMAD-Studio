@@ -2,12 +2,8 @@
  * Spec Validator
  * ==============
  *
- * Validates spec outputs at each checkpoint. Ported from:
- *   - apps/backend/spec/validate_pkg/spec_validator.py
- *   - apps/backend/spec/validate_pkg/validators/
- *   - apps/backend/spec/validate_pkg/schemas.py
- *   - apps/backend/spec/validate_pkg/auto_fix.py
- *   - apps/backend/spec/validate_pkg/models.py
+ * Validates spec outputs at each checkpoint.
+ * See apps/desktop/src/main/ai/spec/spec-validator.ts for the TypeScript implementation.
  *
  * Includes:
  *   - validateImplementationPlan() — DAG validation, field checks

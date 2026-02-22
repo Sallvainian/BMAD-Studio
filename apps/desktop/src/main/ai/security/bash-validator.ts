@@ -5,7 +5,7 @@
  * Pre-tool-use hook that validates bash commands for security.
  * Main enforcement point for the security system.
  *
- * Ported from: apps/backend/security/hooks.py
+ * See apps/desktop/src/main/ai/security/bash-validator.ts for the TypeScript implementation.
  */
 
 import * as path from 'node:path';
@@ -68,7 +68,7 @@ type HookResult = Record<string, never> | HookDenyResult;
  * Central map of command names → validator functions.
  *
  * Individual validators will be registered here as they are ported.
- * The dispatch pattern mirrors apps/backend/security/validator_registry.py.
+ * The dispatch pattern mirrors apps/desktop/src/main/ai/security/bash-validator.ts VALIDATORS registry.
  */
 export const VALIDATORS: Record<string, ValidatorFunction> = {
   // Validators will be populated as they are ported from Python.
@@ -95,7 +95,7 @@ export function getValidator(
 /**
  * Check if a command is allowed by the security profile.
  *
- * Ported from: apps/backend/project/__init__.py → is_command_allowed()
+ * See apps/desktop/src/main/ai/security/bash-validator.ts → isCommandAllowed()
  */
 export function isCommandAllowed(
   command: string,
@@ -138,7 +138,7 @@ export function isCommandAllowed(
  * 4. Runs additional validation for sensitive commands
  * 5. Blocks disallowed commands with clear error messages
  *
- * Ported from: apps/backend/security/hooks.py → bash_security_hook()
+ * See apps/desktop/src/main/ai/security/bash-validator.ts → bashSecurityHook()
  */
 export function bashSecurityHook(
   inputData: HookInputData,
@@ -236,7 +236,7 @@ export function bashSecurityHook(
 /**
  * Validate a command string against a security profile (for testing/debugging).
  *
- * Ported from: apps/backend/security/hooks.py → validate_command()
+ * See apps/desktop/src/main/ai/security/bash-validator.ts → validateCommand()
  */
 export function validateCommand(
   command: string,

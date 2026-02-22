@@ -5,7 +5,7 @@
  * Detects programming languages, package managers, databases,
  * infrastructure tools, and cloud providers from project files.
  *
- * Ported from: apps/backend/project/stack_detector.py
+ * See apps/desktop/src/main/ai/project/stack-detector.ts for the TypeScript implementation.
  */
 
 import * as fs from 'node:fs';

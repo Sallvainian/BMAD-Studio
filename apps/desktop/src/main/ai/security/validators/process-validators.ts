@@ -4,7 +4,7 @@
  *
  * Validators for process management commands (pkill, kill, killall).
  *
- * Ported from: apps/backend/security/process_validators.py
+ * See apps/desktop/src/main/ai/security/validators/process-validators.ts for the TypeScript implementation.
  */
 
 import type { ValidationResult } from '../bash-validator';

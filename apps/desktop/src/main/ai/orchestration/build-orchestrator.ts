@@ -2,7 +2,7 @@
  * Build Orchestrator
  * ==================
  *
- * Replaces apps/backend/run.py main build loop.
+ * See apps/desktop/src/main/ai/orchestration/build-orchestrator.ts for the TypeScript implementation.
  * Drives the full build lifecycle through phase progression:
  *   planning → coding → qa_review → qa_fixing → complete/failed
  *

@@ -3,7 +3,7 @@
  * =====================
  *
  * Records a codebase discovery to session memory (codebase_map.json).
- * Ported from apps/backend/agents/tools_pkg/tools/memory.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/record-discovery.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__record_discovery
  */

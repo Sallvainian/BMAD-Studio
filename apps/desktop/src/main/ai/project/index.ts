@@ -6,7 +6,7 @@
  * frameworks, and generate security profiles with dynamic
  * command allowlisting.
  *
- * Ported from: apps/backend/project/
+ * See apps/desktop/src/main/ai/project/ for the TypeScript implementation.
  */
 
 export { analyzeProject, buildSecurityProfile, ProjectAnalyzer } from './analyzer';

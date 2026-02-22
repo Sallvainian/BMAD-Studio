@@ -9,7 +9,7 @@
  * arbitrary commands since `bash` is in BASE_COMMANDS but the commands
  * inside -c were not being validated.
  *
- * Ported from: apps/backend/security/shell_validators.py
+ * See apps/desktop/src/main/ai/security/validators/shell-validators.ts for the TypeScript implementation.
  */
 
 import type { ValidationResult } from '../bash-validator';

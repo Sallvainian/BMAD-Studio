@@ -2,7 +2,7 @@
  * Graphiti Knowledge Graph Integration (stub)
  *
  * Provides historical hints from the Graphiti memory system when available.
- * Ported from apps/backend/context/graphiti_integration.py
+ * The memory system is now implemented in apps/desktop/src/main/ai/memory/.
  *
  * This is a no-op stub for the initial TypeScript port.
  * A future implementation can wire this to the Graphiti MCP call.

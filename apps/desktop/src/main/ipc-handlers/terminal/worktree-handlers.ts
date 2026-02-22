@@ -260,7 +260,7 @@ interface DependencyConfig {
  * Default mapping from dependency type to sharing strategy.
  *
  * Data-driven — add new entries here rather than writing if/else branches.
- * Mirrors the Python implementation in apps/backend/core/workspace/dependency_strategy.py.
+ * See apps/desktop/src/main/ipc-handlers/terminal/worktree-handlers.ts for the TypeScript implementation.
  */
 const DEFAULT_STRATEGY_MAP: Record<string, 'symlink' | 'recreate' | 'copy' | 'skip'> = {
   // JavaScript / Node.js — symlink is safe and fast

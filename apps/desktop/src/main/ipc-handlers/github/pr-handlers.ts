@@ -986,7 +986,7 @@ function parseLogLine(line: string): { source: string; content: string; isError:
     /^\*\*.+\*\*:?\s*$/,
     // Numbered list items (1. Add DANGEROUS_FLAGS...)
     /^\d+\.\s+.+$/,
-    // File references (File: apps/backend/...)
+    // File references (File: apps/desktop/...)
     /^\s+File:\s+.+$/,
   ];
   for (const pattern of summaryPatterns) {

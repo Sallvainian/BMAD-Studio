@@ -180,12 +180,12 @@ function buildToolRegistry(): ToolRegistry {
 function loadPrompt(promptName: string): string | null {
   // Try to find the prompts directory relative to common locations
   const candidateBases: string[] = [
-    // Standard: apps/backend/prompts/ relative to project root
+    // Standard: apps/desktop/prompts/ relative to project root
     // The worker runs in the Electron main process — __dirname is in out/main/
-    // We need to traverse up to find apps/backend/prompts/
-    join(__dirname, '..', '..', '..', '..', 'apps', 'backend', 'prompts'),
-    join(__dirname, '..', '..', '..', 'apps', 'backend', 'prompts'),
-    join(__dirname, '..', '..', 'apps', 'backend', 'prompts'),
+    // We need to traverse up to find apps/desktop/prompts/
+    join(__dirname, '..', '..', 'prompts'),
+    join(__dirname, '..', '..', '..', 'apps', 'desktop', 'prompts'),
+    join(__dirname, '..', '..', '..', '..', 'apps', 'desktop', 'prompts'),
     join(__dirname, 'prompts'),
   ];
 

@@ -26,8 +26,9 @@ import { parseEnvFile } from './utils';
 const settingsPath = getSettingsPath();
 
 /**
- * Auto-detect the auto-claude source path relative to the app location.
+ * Auto-detect the auto-claude prompts path relative to the app location.
  * Works across platforms (macOS, Windows, Linux) in both dev and production modes.
+ * Prompts live in apps/desktop/prompts/ (dev) or extraResources/prompts (prod).
  */
 const detectAutoBuildSourcePath = (): string | null => {
   const possiblePaths: string[] = [];
@@ -35,28 +36,28 @@ const detectAutoBuildSourcePath = (): string | null => {
   // Development mode paths
   if (is.dev) {
     // In dev, __dirname is typically apps/desktop/out/main
-    // We need to go up to find apps/backend
+    // We need to go up to find apps/desktop/prompts
     possiblePaths.push(
-      path.resolve(__dirname, '..', '..', '..', 'backend'),      // From out/main -> apps/backend
-      path.resolve(process.cwd(), 'apps', 'backend')             // From cwd (repo root)
+      path.resolve(__dirname, '..', '..', 'prompts'),            // From out/main -> apps/desktop/prompts
+      path.resolve(process.cwd(), 'apps', 'desktop', 'prompts') // From cwd (repo root)
     );
   } else {
     // Production mode paths (packaged app)
-    // The backend is bundled as extraResources/backend
-    // On all platforms, it should be at process.resourcesPath/backend
+    // Prompts are bundled as extraResources/prompts
+    // On all platforms, it should be at process.resourcesPath/prompts
     possiblePaths.push(
-      path.resolve(process.resourcesPath, 'backend')             // Primary: extraResources/backend
+      path.resolve(process.resourcesPath, 'prompts')             // Primary: extraResources/prompts
     );
     // Fallback paths for different app structures
     const appPath = app.getAppPath();
     possiblePaths.push(
-      path.resolve(appPath, '..', 'backend'),                    // Sibling to asar
-      path.resolve(appPath, '..', '..', 'Resources', 'backend')  // macOS bundle structure
+      path.resolve(appPath, '..', 'prompts'),                    // Sibling to asar
+      path.resolve(appPath, '..', '..', 'Resources', 'prompts') // macOS bundle structure
     );
   }
 
   // Add process.cwd() as last resort on all platforms
-  possiblePaths.push(path.resolve(process.cwd(), 'apps', 'backend'));
+  possiblePaths.push(path.resolve(process.cwd(), 'apps', 'desktop', 'prompts'));
 
   // Enable debug logging with DEBUG=1
   const debug = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
@@ -71,9 +72,8 @@ const detectAutoBuildSourcePath = (): string | null => {
   }
 
   for (const p of possiblePaths) {
-    // Use runners/spec_runner.py as marker - this is the file actually needed for task execution
-    // This prevents matching legacy 'auto-claude/' directories that don't have the runners
-    const markerPath = path.join(p, 'runners', 'spec_runner.py');
+    // Use planner.md as marker - this is the file needed for task planning
+    const markerPath = path.join(p, 'planner.md');
     const exists = existsSync(p) && existsSync(markerPath);
 
     if (debug) {
@@ -81,12 +81,12 @@ const detectAutoBuildSourcePath = (): string | null => {
     }
 
     if (exists) {
-      console.warn(`[detectAutoBuildSourcePath] Auto-detected source path: ${p}`);
+      console.warn(`[detectAutoBuildSourcePath] Auto-detected prompts path: ${p}`);
       return p;
     }
   }
 
-  console.warn('[detectAutoBuildSourcePath] Could not auto-detect Auto Claude source path. Please configure manually in settings.');
+  console.warn('[detectAutoBuildSourcePath] Could not auto-detect Auto Claude prompts path. Please configure manually in settings.');
   console.warn('[detectAutoBuildSourcePath] Set DEBUG=1 environment variable for detailed path checking.');
   return null;
 };

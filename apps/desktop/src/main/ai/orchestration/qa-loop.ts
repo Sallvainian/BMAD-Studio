@@ -2,7 +2,7 @@
  * QA Validation Loop
  * ==================
  *
- * Replaces apps/backend/qa/loop.py.
+ * See apps/desktop/src/main/ai/orchestration/qa-loop.ts for the TypeScript implementation.
  *
  * Coordinates the QA review/fix iteration cycle:
  *   1. QA Reviewer agent validates the build

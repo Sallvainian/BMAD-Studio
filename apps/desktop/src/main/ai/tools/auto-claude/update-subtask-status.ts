@@ -3,7 +3,7 @@
  * ==========================
  *
  * Updates the status of a subtask in implementation_plan.json.
- * Ported from apps/backend/agents/tools_pkg/tools/subtask.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/update-subtask-status.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__update_subtask_status
  */

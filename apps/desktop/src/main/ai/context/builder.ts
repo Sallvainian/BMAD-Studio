@@ -4,7 +4,7 @@
  * Orchestrates all context-building steps: keyword extraction → file search →
  * service matching → categorization → pattern discovery → Graphiti hints.
  *
- * Ported from apps/backend/context/builder.py
+ * See apps/desktop/src/main/ai/context/builder.ts for the TypeScript implementation.
  * Entry point: buildContext()
  */
 

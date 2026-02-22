@@ -3,7 +3,7 @@
  * ====================================
  *
  * Groups similar issues together for combined processing with configurable
- * concurrency limits. Ported from apps/backend/runners/github/batch_issues.py.
+ * concurrency limits. See apps/desktop/src/main/ai/runners/github/batch-processor.ts for the TypeScript implementation.
  *
  * Uses a single AI call (generateText) to analyze and group issues, then
  * processes each batch with bounded concurrency via a semaphore.

@@ -135,21 +135,6 @@ function updatePackageJson(newVersion) {
   return { oldVersion, packagePath: frontendPath };
 }
 
-// Update apps/backend/__init__.py version
-function updateBackendInit(newVersion) {
-  const initPath = path.join(__dirname, '..', 'apps', 'backend', '__init__.py');
-
-  if (!fs.existsSync(initPath)) {
-    warning(`Backend __init__.py not found at ${initPath}, skipping`);
-    return false;
-  }
-
-  let content = fs.readFileSync(initPath, 'utf8');
-  content = content.replace(/__version__\s*=\s*"[^"]*"/, `__version__ = "${newVersion}"`);
-  fs.writeFileSync(initPath, content);
-  return true;
-}
-
 // Check if CHANGELOG.md has an entry for the version
 function checkChangelogEntry(version) {
   const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
@@ -220,11 +205,6 @@ function main() {
   updatePackageJson(newVersion);
   success('Updated package.json files');
 
-  info('Updating apps/backend/__init__.py...');
-  if (updateBackendInit(newVersion)) {
-    success('Updated apps/backend/__init__.py');
-  }
-
   // Note: README.md is NOT updated here - it gets updated by the release workflow
   // after the GitHub release is successfully published. This prevents version
   // mismatches where README shows a version that doesn't exist yet.
@@ -259,7 +239,7 @@ function main() {
 
   // 7. Create git commit
   info('Creating git commit...');
-  exec('git add apps/desktop/package.json package.json apps/backend/__init__.py');
+  exec('git add apps/desktop/package.json package.json');
   exec(`git commit -m "chore: bump version to ${newVersion}"`);
   success(`Created commit: "chore: bump version to ${newVersion}"`);
 

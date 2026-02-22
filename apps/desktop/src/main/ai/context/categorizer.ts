@@ -2,7 +2,7 @@
  * File Categorization
  *
  * Categorizes matched files into those to modify vs those to reference.
- * Ported from apps/backend/context/categorizer.py
+ * See apps/desktop/src/main/ai/context/categorizer.ts for the TypeScript implementation.
  */
 
 import type { FileMatch } from './types.js';

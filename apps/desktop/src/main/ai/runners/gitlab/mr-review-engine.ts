@@ -3,7 +3,7 @@
  * ================
  *
  * Core logic for AI-powered GitLab Merge Request code review.
- * Ported from apps/backend/runners/gitlab/services/mr_review_engine.py.
+ * See apps/desktop/src/main/ai/runners/gitlab/mr-review-engine.ts for the TypeScript implementation.
  *
  * Uses `createSimpleClient()` with `generateText()` for single-pass review.
  */

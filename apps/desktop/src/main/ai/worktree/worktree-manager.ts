@@ -3,7 +3,7 @@
  * ================
  *
  * TypeScript replacement for the Python WorktreeManager.create_worktree()
- * in apps/backend/core/worktree.py (lines 610-742).
+ * See apps/desktop/src/main/ai/worktree/worktree-manager.ts for the TypeScript implementation.
  *
  * Creates and manages git worktrees for autonomous task execution.
  * Each task runs in an isolated worktree at:

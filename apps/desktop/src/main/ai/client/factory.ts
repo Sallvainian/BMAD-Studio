@@ -3,7 +3,7 @@
  * ==============
  *
  * Factory functions for creating configured AI clients.
- * Ported from apps/backend/core/client.py.
+ * Ported from apps/desktop/src/main/ai/client/ (originally from Python core/client).
  *
  * - `createAgentClient()` — Full client with tools, MCP, and security.
  *   Used by planner, coder, QA, and other pipeline agents.

@@ -5,7 +5,7 @@
  * Scans file content for potential secrets before commit.
  * Designed to prevent accidental exposure of API keys, tokens, and credentials.
  *
- * Ported from: apps/backend/security/scan_secrets.py
+ * See apps/desktop/src/main/ai/security/secret-scanner.ts for the TypeScript implementation.
  */
 
 import * as fs from 'node:fs';

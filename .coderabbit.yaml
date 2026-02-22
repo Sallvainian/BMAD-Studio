@@ -42,18 +42,14 @@ reviews:
 
   # Path-specific review instructions
   path_instructions:
-    - path: "apps/backend/**/*.py"
-      instructions: |
-        Focus on Python best practices, type hints, and async patterns.
-        Check for proper error handling and security considerations.
-        Verify compatibility with Python 3.12+.
     - path: "apps/desktop/**/*.{ts,tsx}"
       instructions: |
         Review React patterns and TypeScript type safety.
         Check for proper state management and component composition.
-    - path: "tests/**"
+        Verify Vercel AI SDK v6 usage patterns and tool definitions.
+    - path: "apps/desktop/**/*.test.{ts,tsx}"
       instructions: |
-        Ensure tests are comprehensive and follow pytest conventions.
+        Ensure tests are comprehensive and follow Vitest conventions.
         Check for proper mocking and test isolation.
 
 chat:

@@ -3,7 +3,7 @@
  * =====================
  *
  * Generates high-quality commit messages using Vercel AI SDK.
- * Ported from apps/backend/commit_message.py.
+ * See apps/desktop/src/main/ai/runners/commit-message.ts for the TypeScript implementation.
  *
  * Features:
  * - Conventional commits format (feat/fix/refactor/etc)

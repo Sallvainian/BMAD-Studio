@@ -2,7 +2,7 @@
  * Spec Orchestrator
  * =================
  *
- * Replaces apps/backend/runners/spec_runner.py and apps/backend/spec/pipeline/orchestrator.py.
+ * See apps/desktop/src/main/ai/orchestration/spec-orchestrator.ts for the TypeScript implementation.
  *
  * Drives the spec creation pipeline through dynamic complexity-based phase selection:
  *   discovery → requirements → complexity_assessment → [research] → context →

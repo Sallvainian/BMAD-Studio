@@ -2,7 +2,7 @@
  * Tool Registry
  * =============
  *
- * Ported from apps/backend/agents/tools_pkg/models.py.
+ * See apps/desktop/src/main/ai/tools/registry.ts for the TypeScript implementation.
  *
  * Single source of truth for tool name constants, agent-to-tool mappings,
  * and the ToolRegistry class that resolves tools for a given agent type.

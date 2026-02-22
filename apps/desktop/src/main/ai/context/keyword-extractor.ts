@@ -2,7 +2,7 @@
  * Keyword Extraction
  *
  * Extracts meaningful keywords from task descriptions for code search.
- * Ported from apps/backend/context/keyword_extractor.py
+ * See apps/desktop/src/main/ai/context/keyword-extractor.ts for the TypeScript implementation.
  */
 
 const STOPWORDS = new Set([

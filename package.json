@@ -9,9 +9,7 @@
     "libs/*"
   ],
   "scripts": {
-    "install:backend": "node scripts/install-backend.js",
-    "install:frontend": "cd apps/desktop && npm install",
-    "install:all": "npm run install:backend && npm run install:frontend",
+    "install:all": "cd apps/desktop && npm install",
     "start": "cd apps/desktop && npm run build && npm run start",
     "dev": "cd apps/desktop && npm run dev",
     "dev:debug": "cd apps/desktop && npm run dev:debug",
@@ -19,8 +17,6 @@
     "build": "cd apps/desktop && npm run build",
     "lint": "cd apps/desktop && npm run lint",
     "test": "cd apps/desktop && npm test",
-    "test:backend": "node scripts/test-backend.js",
-    "test:coverage": "node scripts/test-backend.js --cov --cov-report=term-missing --cov-report=html",
     "package": "cd apps/desktop && npm run package",
     "package:mac": "cd apps/desktop && npm run package:mac",
     "package:win": "cd apps/desktop && npm run package:win",

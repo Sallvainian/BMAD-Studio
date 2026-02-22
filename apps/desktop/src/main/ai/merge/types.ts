@@ -3,7 +3,7 @@
  * ==================
  *
  * Core data structures for the intent-aware merge system.
- * Ported from apps/backend/merge/types.py.
+ * See apps/desktop/src/main/ai/merge/types.ts for the TypeScript implementation.
  */
 
 import { createHash } from 'crypto';

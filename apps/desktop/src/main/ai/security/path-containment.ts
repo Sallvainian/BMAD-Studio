@@ -8,7 +8,7 @@
  * Handles symlink resolution, relative path traversal (../),
  * and cross-platform path normalization.
  *
- * Ported from: apps/backend/security concepts (new for TS frontend)
+ * See apps/desktop/src/main/ai/security/path-containment.ts for the TypeScript implementation.
  */
 
 import * as fs from 'node:fs';

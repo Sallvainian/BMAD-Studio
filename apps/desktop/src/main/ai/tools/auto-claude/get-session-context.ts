@@ -7,7 +7,7 @@
  *   - memory/gotchas.md         → gotchas & pitfalls
  *   - memory/patterns.md        → code patterns
  *
- * Ported from apps/backend/agents/tools_pkg/tools/memory.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/get-session-context.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__get_session_context
  */

@@ -57,14 +57,13 @@ jobs:
               // Area detection paths
               AREA_PATHS: Object.freeze({
                 frontend: 'apps/desktop/',
-                backend: 'apps/backend/',
                 ci: '.github/'
               }),
 
               // Label definitions
               LABELS: Object.freeze({
                 SIZE: ['size/XS', 'size/S', 'size/M', 'size/L', 'size/XL'],
-                AREA: ['area/frontend', 'area/backend', 'area/fullstack', 'area/ci']
+                AREA: ['area/frontend', 'area/ci']
               }),
 
               // Pagination
@@ -117,16 +116,15 @@ jobs:
             /**
              * Detect areas affected by file changes
              * @param {Array} files - List of changed files
-             * @returns {{frontend: boolean, backend: boolean, ci: boolean}}
+             * @returns {{frontend: boolean, ci: boolean}}
              */
             function detectAreas(files) {
-              const areas = { frontend: false, backend: false, ci: false };
+              const areas = { frontend: false, ci: false };
               const { AREA_PATHS } = CONFIG;
 
               for (const file of files) {
                 const path = file.filename || '';
                 if (path.startsWith(AREA_PATHS.frontend)) areas.frontend = true;
-                if (path.startsWith(AREA_PATHS.backend)) areas.backend = true;
                 if (path.startsWith(AREA_PATHS.ci)) areas.ci = true;
               }
 
@@ -135,13 +133,11 @@ jobs:
 
             /**
              * Determine area label based on detected areas
-             * @param {{frontend: boolean, backend: boolean, ci: boolean}} areas
+             * @param {{frontend: boolean, ci: boolean}} areas
              * @returns {string|null} Area label or null
              */
             function determineAreaLabel(areas) {
-              if (areas.frontend && areas.backend) return 'area/fullstack';
               if (areas.frontend) return 'area/frontend';
-              if (areas.backend) return 'area/backend';
               if (areas.ci) return 'area/ci';
               return null;
             }

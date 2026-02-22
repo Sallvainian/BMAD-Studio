@@ -7,7 +7,7 @@
  * - Prompt caching thresholds (Anthropic 1024-4096 token minimums)
  * - Adaptive thinking for Opus 4.6 (both max_thinking_tokens AND effort_level)
  *
- * Ported from apps/backend/phase_config.py: is_adaptive_model(), get_thinking_kwargs_for_model()
+ * See apps/desktop/src/main/ai/providers/transforms.ts for the TypeScript implementation.
  */
 
 import type { SupportedProvider } from './types';

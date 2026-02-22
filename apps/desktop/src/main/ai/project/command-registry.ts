@@ -6,7 +6,7 @@
  * Maps technologies to their associated commands for building
  * tailored security allowlists.
  *
- * Ported from: apps/backend/project/command_registry/
+ * See apps/desktop/src/main/ai/project/command-registry.ts for the TypeScript implementation.
  */
 
 // ---------------------------------------------------------------------------

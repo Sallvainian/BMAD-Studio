@@ -18,7 +18,7 @@ export const AVAILABLE_MODELS = [
 ] as const;
 
 // Maps model shorthand to actual Claude model IDs
-// Values must match apps/backend/phase_config.py MODEL_ID_MAP
+// Values must match apps/desktop/src/main/ai/config/types.ts MODEL_ID_MAP
 export const MODEL_ID_MAP: Record<string, string> = {
   opus: 'claude-opus-4-6',
   'opus-1m': 'claude-opus-4-6',

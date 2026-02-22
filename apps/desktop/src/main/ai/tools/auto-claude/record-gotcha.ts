@@ -3,7 +3,7 @@
  * ==================
  *
  * Records a gotcha or pitfall to specDir/memory/gotchas.md.
- * Ported from apps/backend/agents/tools_pkg/tools/memory.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/record-gotcha.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__record_gotcha
  */

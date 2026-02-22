@@ -3,7 +3,7 @@
  * =====================
  *
  * Updates the QA sign-off status in implementation_plan.json.
- * Ported from apps/backend/agents/tools_pkg/tools/qa.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/update-qa-status.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__update_qa_status
  *

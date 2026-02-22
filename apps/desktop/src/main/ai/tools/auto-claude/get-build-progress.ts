@@ -3,7 +3,7 @@
  * =======================
  *
  * Reports current build progress from implementation_plan.json.
- * Ported from apps/backend/agents/tools_pkg/tools/progress.py.
+ * See apps/desktop/src/main/ai/tools/auto-claude/get-build-progress.ts for the TypeScript implementation.
  *
  * Tool name: mcp__auto-claude__get_build_progress
  */

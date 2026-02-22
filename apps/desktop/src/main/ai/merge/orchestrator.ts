@@ -3,7 +3,7 @@
  * ==================
  *
  * Main coordinator for the intent-aware merge system.
- * Ported from apps/backend/merge/orchestrator.py.
+ * See apps/desktop/src/main/ai/merge/orchestrator.ts for the TypeScript implementation.
  *
  * Orchestrates the complete merge pipeline:
  * 1. Load file evolution data (baselines + task changes)

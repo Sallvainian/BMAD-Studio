@@ -3,7 +3,7 @@
  * ============
  *
  * Type definitions for the AI client factory layer.
- * Mirrors the configuration surface of apps/backend/core/client.py.
+ * Mirrors the configuration surface of apps/desktop/src/main/ai/client/factory.ts.
  */
 
 import type { LanguageModel } from 'ai';

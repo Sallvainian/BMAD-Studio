@@ -3,8 +3,7 @@
  * =================
  *
  * Regex-based semantic analysis for code changes.
- * Ported from apps/backend/merge/semantic_analysis/regex_analyzer.py
- * and apps/backend/merge/semantic_analysis/comparison.py.
+ * See apps/desktop/src/main/ai/merge/semantic-analyzer.ts for the TypeScript implementation.
  *
  * Analyzes diffs using language-specific regex patterns to detect:
  * - Import additions/removals

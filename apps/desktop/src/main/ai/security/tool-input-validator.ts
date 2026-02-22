@@ -5,7 +5,7 @@
  * Validates tool_input structure before tool execution.
  * Catches malformed inputs (null, wrong type, missing required keys) early.
  *
- * Ported from: apps/backend/security/tool_input_validator.py
+ * See apps/desktop/src/main/ai/security/tool-input-validator.ts for the TypeScript implementation.
  */
 
 // ---------------------------------------------------------------------------

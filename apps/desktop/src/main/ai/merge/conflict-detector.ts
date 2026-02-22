@@ -3,9 +3,7 @@
  * =================
  *
  * Detects conflicts between multiple task changes using rule-based analysis.
- * Ported from apps/backend/merge/conflict_detector.py,
- * apps/backend/merge/conflict_analysis.py, and
- * apps/backend/merge/compatibility_rules.py.
+ * See apps/desktop/src/main/ai/merge/conflict-detector.ts for the TypeScript implementation.
  *
  * 80+ compatibility rules encode domain knowledge about which changes conflict.
  * The detector determines:

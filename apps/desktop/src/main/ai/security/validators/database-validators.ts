@@ -4,7 +4,7 @@
  *
  * Validators for database operations (postgres, mysql, redis, mongodb).
  *
- * Ported from: apps/backend/security/database_validators.py
+ * See apps/desktop/src/main/ai/security/validators/database-validators.ts for the TypeScript implementation.
  */
 
 import type { ValidationResult } from '../bash-validator';

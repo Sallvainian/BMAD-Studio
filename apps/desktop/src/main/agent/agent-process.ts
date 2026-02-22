@@ -1039,9 +1039,9 @@ export class AgentProcessManager {
    *
    * Priority (later sources override earlier):
    * 1. App-wide memory settings from settings.json (NEW - enables memory from onboarding)
-   * 2. Backend source .env (apps/backend/.env) - CLI defaults
+   * 2. Auto-build source .env (prompts directory) - default values
    * 3. Project's .auto-claude/.env - Frontend-configured settings (memory, integrations)
-   * 4. Project settings (graphitiMcpUrl, useClaudeMd) - Runtime overrides
+   * 4. Project settings (useClaudeMd) - Runtime overrides
    */
   getCombinedEnv(projectPath: string): Record<string, string> {
     // Load app-wide memory settings from settings.json

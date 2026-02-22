@@ -5,7 +5,7 @@
  * Data structures for representing technology stacks,
  * custom scripts, and security profiles for project analysis.
  *
- * Ported from: apps/backend/project/models.py
+ * See apps/desktop/src/main/ai/project/types.ts for the TypeScript implementation.
  */
 
 // ---------------------------------------------------------------------------

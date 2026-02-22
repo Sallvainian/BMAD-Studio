@@ -3,7 +3,7 @@
  * ========================
  *
  * Extracts structured insights from completed coding sessions using Vercel AI SDK.
- * Ported from apps/backend/analysis/insight_extractor.py.
+ * See apps/desktop/src/main/ai/runners/insight-extractor.ts for the TypeScript implementation.
  *
  * Runs after each session to capture rich, actionable knowledge for the memory system.
  * Falls back to generic insights if extraction fails (never blocks the build).

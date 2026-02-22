@@ -66,52 +66,10 @@ lerna-debug.log*
 .update-metadata.json
 
 # ===========================
-# Python (apps/backend)
-# ===========================
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-eggs/
-.eggs/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-.conda/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-
-# Type checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pytype/
-.pyre/
-
-# ===========================
-# Node.js (apps/frontend)
+# Node.js (apps/desktop)
 # ===========================
 node_modules
-apps/frontend/node_modules
+apps/desktop/node_modules
 .npm
 .yarn/
 .pnp.*
@@ -120,7 +78,6 @@ apps/frontend/node_modules
 dist/
 out/
 *.tsbuildinfo
-apps/frontend/python-runtime/
 
 # Cache
 .cache/
@@ -132,8 +89,8 @@ apps/frontend/python-runtime/
 # ===========================
 # Electron
 # ===========================
-apps/frontend/dist/
-apps/frontend/out/
+apps/desktop/dist/
+apps/desktop/out/
 *.asar
 *.blockmap
 *.snap

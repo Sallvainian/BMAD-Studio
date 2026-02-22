@@ -5,7 +5,7 @@
  * Orchestrates project analysis to build dynamic security profiles.
  * Coordinates stack detection, framework detection, and structure analysis.
  *
- * Ported from: apps/backend/project/analyzer.py
+ * See apps/desktop/src/main/ai/project/analyzer.ts for the TypeScript implementation.
  */
 
 import * as crypto from 'node:crypto';

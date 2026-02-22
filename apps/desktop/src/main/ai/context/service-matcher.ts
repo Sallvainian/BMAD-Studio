@@ -2,7 +2,7 @@
  * Service Matching and Suggestion
  *
  * Suggests which services in the project index are relevant for a task.
- * Ported from apps/backend/context/service_matcher.py
+ * See apps/desktop/src/main/ai/context/service-matcher.ts for the TypeScript implementation.
  */
 
 import type { ProjectIndex } from './types.js';

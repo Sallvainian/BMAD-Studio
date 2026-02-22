@@ -102,24 +102,24 @@ export function getDefaultDbPath(): string {
 }
 
 /**
- * Get the path to the query_memory.py script
+ * Get the path to the query_memory.py script.
+ * NOTE: The Graphiti Python sidecar has been replaced by the TypeScript memory system
+ * in apps/desktop/src/main/ai/memory/. This function remains for legacy LadybugDB
+ * compatibility but may return null if the script is not present.
  */
 function getQueryScriptPath(): string | null {
-  // Look for the script in backend directory - validate using spec_runner.py marker
+  // Look for the script bundled as extraResources in packaged builds
   const possiblePaths = [
-    // Packaged app: backend is in extraResources (process.resourcesPath/backend)
-    ...(app.isPackaged ? [path.join(process.resourcesPath, 'backend', 'query_memory.py')] : []),
-    // Apps structure: from dist/main -> apps/backend
-    path.resolve(__dirname, '..', '..', '..', 'backend', 'query_memory.py'),
-    path.resolve(app.getAppPath(), '..', 'backend', 'query_memory.py'),
-    path.resolve(process.cwd(), 'apps', 'backend', 'query_memory.py')
+    // Packaged app: script is in extraResources
+    ...(app.isPackaged ? [path.join(process.resourcesPath, 'query_memory.py')] : []),
+    // Development: look relative to the app path
+    path.resolve(__dirname, '..', '..', '..', 'query_memory.py'),
+    path.resolve(app.getAppPath(), '..', 'query_memory.py'),
+    path.resolve(process.cwd(), 'query_memory.py')
   ];
 
   for (const p of possiblePaths) {
-    // Validate backend structure by checking for spec_runner.py marker
-    const backendPath = path.dirname(p);
-    const specRunnerPath = path.join(backendPath, 'runners', 'spec_runner.py');
-    if (fs.existsSync(p) && fs.existsSync(specRunnerPath)) {
+    if (fs.existsSync(p)) {
       return p;
     }
   }
@@ -127,32 +127,13 @@ function getQueryScriptPath(): string | null {
 }
 
 /**
- * Get the backend venv Python path.
- * Looks for the backend venv first, then falls back to system Python.
+ * Get the Python path for memory queries.
+ * Falls back to system Python since the venv is no longer bundled with the app.
  */
 function getBackendPythonPath(): string {
-  // Development mode: Find the backend venv which has real_ladybug installed
-  const possibleBackendPaths = [
-    path.resolve(__dirname, '..', '..', '..', 'backend'),
-    path.resolve(app.getAppPath(), '..', 'backend'),
-    path.resolve(process.cwd(), 'apps', 'backend')
-  ];
-
-  for (const backendPath of possibleBackendPaths) {
-    // Check for backend venv Python (has real_ladybug installed)
-    const venvPython = isWindows()
-      ? path.join(backendPath, '.venv', 'Scripts', 'python.exe')
-      : path.join(backendPath, '.venv', 'bin', 'python');
-
-    if (fs.existsSync(venvPython)) {
-      console.log(`[MemoryService] Using backend venv Python: ${venvPython}`);
-      return venvPython;
-    }
-  }
-
   // Fall back to system Python
   const fallbackPython = getSystemPythonPath();
-  console.log(`[MemoryService] Backend venv not found, falling back to: ${fallbackPython}`);
+  console.log(`[MemoryService] Using system Python: ${fallbackPython}`);
   return fallbackPython;
 }
 

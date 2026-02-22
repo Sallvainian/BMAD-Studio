@@ -3,7 +3,7 @@
  * ========================
  *
  * Generates minimal, focused prompts for each subtask and planner invocation.
- * Mirrors apps/backend/prompts_pkg/prompt_generator.py.
+ * See apps/desktop/src/main/ai/prompts/subtask-prompt-generator.ts for the TypeScript implementation.
  *
  * Instead of a 900-line mega-prompt, each subtask gets a tailored ~100-line
  * prompt with only the context it needs. This reduces token usage by ~80%

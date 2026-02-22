@@ -3,7 +3,7 @@
  * ===========
  *
  * Deterministic merge strategies without AI.
- * Ported from apps/backend/merge/auto_merger/.
+ * See apps/desktop/src/main/ai/merge/auto-merger.ts for the TypeScript implementation.
  *
  * Implements 8 merge strategies:
  * 1. COMBINE_IMPORTS — merge import statements

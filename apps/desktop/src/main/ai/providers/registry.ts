@@ -4,7 +4,7 @@
  * Creates a centralized provider registry using AI SDK v6's createProviderRegistry.
  * Enables unified model access via 'provider:model' string format.
  *
- * Ported from apps/backend/core/client.py provider routing logic.
+ * See apps/desktop/src/main/ai/providers/registry.ts for the TypeScript implementation.
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code when working with this repository.
 
-Auto Claude is an autonomous multi-agent coding framework that plans, builds, and validates software for you. It's a monorepo with an Electron/React frontend (desktop UI + TypeScript AI agent layer) and a Python backend (CLI utilities + Graphiti memory sidecar).
+Auto Claude is an autonomous multi-agent coding framework that plans, builds, and validates software for you. It's a TypeScript-first Electron desktop application with a self-contained AI agent layer (Vercel AI SDK v6). A lightweight Python sidecar provides the optional Graphiti memory system.
 
 > **Deep-dive reference:** [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md) | **Frontend contributing:** [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md)
 
@@ -94,11 +94,8 @@ To fully clear all PR review data so reviews run fresh, delete/reset these three
 ```
 autonomous-coding/
 ├── apps/
-│   ├── backend/                 # Python backend — Graphiti memory sidecar + CLI utilities
-│   │   ├── core/                # worktree.py, platform/
-│   │   ├── integrations/        # graphiti/ (MCP sidecar)
-│   │   └── prompts/             # Agent system prompts (.md)
-│   └── frontend/                # Electron desktop UI
+│   └── desktop/                 # Electron desktop application (sole app)
+│       ├── prompts/             # Agent system prompts (.md)
 │       └── src/
 │           ├── main/            # Electron main process
 │           │   ├── ai/          # TypeScript AI agent layer (Vercel AI SDK v6)
@@ -135,7 +132,6 @@ autonomous-coding/
 │           │   └── utils/       # ANSI sanitizer, shell escape, provider detection
 │           └── types/           # TypeScript type definitions
 ├── guides/                      # Documentation
-├── tests/                       # Backend test suite
 └── scripts/                     # Build and utility scripts
 ```
 
@@ -209,7 +205,7 @@ const readTool = tool({
 });
 ```
 
-### Agent Prompts (`apps/backend/prompts/`)
+### Agent Prompts (`apps/desktop/prompts/`)
 
 | Prompt | Purpose |
 |--------|---------|
@@ -225,7 +221,7 @@ Each spec in `.auto-claude/specs/XXX-name/` contains: `spec.md`, `requirements.j
 
 ### Memory System (Graphiti)
 
-Graph-based semantic memory accessed via MCP sidecar (`integrations/graphiti/`). The Python Graphiti sidecar remains; the AI layer connects to it via `createMCPClient` from `@ai-sdk/mcp`. Configured through the Electron app's onboarding/settings UI. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#memory-system) for details.
+Graph-based semantic memory accessed via a Python MCP sidecar (lives outside `apps/desktop/`). The AI layer connects to it via `createMCPClient` from `@ai-sdk/mcp`. Configured through the Electron app's onboarding/settings UI. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#memory-system) for details.
 
 ## Frontend Development
 

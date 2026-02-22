@@ -1,7 +1,7 @@
 /**
  * Phase Configuration Module
  *
- * Ported from apps/backend/phase_config.py.
+ * See apps/desktop/src/main/ai/config/phase-config.ts for the full TypeScript implementation.
  * Handles model and thinking level configuration for different execution phases.
  * Reads configuration from task_metadata.json and provides resolved model IDs.
  */

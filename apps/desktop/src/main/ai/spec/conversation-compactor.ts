@@ -6,7 +6,7 @@
  * reducing token usage. After each phase completes, key findings are
  * summarized and passed as context to subsequent phases.
  *
- * Ported from: apps/backend/spec/compaction.py
+ * See apps/desktop/src/main/ai/spec/conversation-compactor.ts for the TypeScript implementation.
  */
 
 import { generateText } from 'ai';

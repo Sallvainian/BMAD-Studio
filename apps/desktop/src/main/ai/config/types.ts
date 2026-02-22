@@ -1,7 +1,7 @@
 /**
  * AI Configuration Types
  *
- * Ported from apps/backend/phase_config.py and apps/desktop/src/shared/constants/models.ts.
+ * See apps/desktop/src/main/ai/config/types.ts and apps/desktop/src/shared/constants/models.ts.
  * Provides model resolution maps, thinking budget configuration, and phase config types
  * for the Vercel AI SDK integration layer.
  */
@@ -31,7 +31,7 @@ export type Phase = 'spec' | 'planning' | 'coding' | 'qa';
 /**
  * Model shorthand to full model ID mapping.
  * Must stay in sync with:
- * - apps/backend/phase_config.py MODEL_ID_MAP
+ * - apps/desktop/src/main/ai/config/types.ts MODEL_ID_MAP
  * - apps/desktop/src/shared/constants/models.ts MODEL_ID_MAP
  */
 export const MODEL_ID_MAP: Record<ModelShorthand, string> = {
@@ -57,7 +57,7 @@ export const MODEL_BETAS_MAP: Partial<Record<ModelShorthand, string[]>> = {
 /**
  * Thinking level to budget tokens mapping.
  * Must stay in sync with:
- * - apps/backend/phase_config.py THINKING_BUDGET_MAP
+ * - apps/desktop/src/main/ai/config/types.ts THINKING_BUDGET_MAP
  * - apps/desktop/src/shared/constants/models.ts THINKING_BUDGET_MAP
  */
 export const THINKING_BUDGET_MAP: Record<ThinkingLevel, number> = {

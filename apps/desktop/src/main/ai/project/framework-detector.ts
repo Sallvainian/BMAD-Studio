@@ -5,7 +5,7 @@
  * Detects frameworks and libraries from package dependencies
  * (package.json, pyproject.toml, requirements.txt, Gemfile, etc.).
  *
- * Ported from: apps/backend/project/framework_detector.py
+ * See apps/desktop/src/main/ai/project/framework-detector.ts for the TypeScript implementation.
  */
 
 import * as fs from 'node:fs';

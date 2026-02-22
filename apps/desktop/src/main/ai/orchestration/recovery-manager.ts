@@ -2,7 +2,7 @@
  * Recovery Manager
  * ================
  *
- * Replaces apps/backend/services/recovery.py.
+ * See apps/desktop/src/main/ai/orchestration/recovery-manager.ts for the TypeScript implementation.
  * Handles checkpoint/recovery logic for the build pipeline:
  * - Save progress to build-progress.txt
  * - Resume from last completed subtask on restart
@@ -97,7 +97,7 @@ export interface BuildCheckpoint {
 /**
  * Manages recovery from build failures and checkpoint/resume logic.
  *
- * Port of apps/backend/services/recovery.py RecoveryManager.
+ * See apps/desktop/src/main/ai/orchestration/recovery-manager.ts RecoveryManager.
  */
 export class RecoveryManager {
   private specDir: string;

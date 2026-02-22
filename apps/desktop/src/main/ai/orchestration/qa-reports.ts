@@ -2,7 +2,7 @@
  * QA Report Generation
  * ====================
  *
- * Replaces apps/backend/qa/report.py.
+ * See apps/desktop/src/main/ai/orchestration/qa-reports.ts for the TypeScript implementation.
  *
  * Handles:
  * - QA summary report (qa_report.md)

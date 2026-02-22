@@ -3,8 +3,7 @@
  * =============
  *
  * Handles rate-limit and authentication pause/resume signalling via
- * filesystem sentinel files. Ported from apps/backend/agents/coder.py and
- * apps/backend/agents/base.py.
+ * filesystem sentinel files. See apps/desktop/src/main/ai/orchestration/pause-handler.ts for the TypeScript implementation.
  *
  * The backend (or, in this TS port, the build orchestrator) creates a pause
  * file when it hits a rate limit or auth failure. The frontend removes this
@@ -15,7 +14,7 @@ import { existsSync, unlinkSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // =============================================================================
-// Constants — mirror apps/backend/agents/base.py
+// Constants — see apps/desktop/src/main/ai/orchestration/pause-handler.ts
 // =============================================================================
 
 /** Created in specDir when the provider returns HTTP 429. */

@@ -3,7 +3,7 @@
  * ===============
  *
  * AI-powered idea generation using Vercel AI SDK.
- * Ported from apps/backend/ideation/generator.py.
+ * See apps/desktop/src/main/ai/runners/ideation.ts for the TypeScript implementation.
  *
  * Uses `createSimpleClient()` with read-only tools and streaming to generate
  * ideas of different types: code improvements, UI/UX, documentation, security,

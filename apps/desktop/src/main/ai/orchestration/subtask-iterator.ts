@@ -2,7 +2,7 @@
  * Subtask Iterator
  * ================
  *
- * Replaces the subtask iteration loop in apps/backend/agents/coder.py.
+ * See apps/desktop/src/main/ai/orchestration/subtask-iterator.ts for the TypeScript implementation.
  * Reads implementation_plan.json, finds the next pending subtask, invokes
  * the coder agent session, and tracks completion/retry/stuck state.
  */

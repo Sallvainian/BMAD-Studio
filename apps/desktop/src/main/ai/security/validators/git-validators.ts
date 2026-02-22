@@ -6,7 +6,7 @@
  * - Commit with secret scanning
  * - Config protection (prevent setting identity fields)
  *
- * Ported from: apps/backend/security/git_validators.py
+ * See apps/desktop/src/main/ai/security/validators/git-validators.ts for the TypeScript implementation.
  */
 
 import type { ValidationResult } from '../bash-validator';

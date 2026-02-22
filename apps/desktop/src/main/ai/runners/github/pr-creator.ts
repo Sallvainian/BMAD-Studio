@@ -3,7 +3,7 @@
  * =================
  *
  * Creates GitHub Pull Requests with AI-generated descriptions using Vercel AI SDK.
- * Ported from apps/backend/core/worktree.py (create_pull_request / push_and_create_pr).
+ * See apps/desktop/src/main/ai/runners/github/pr-creator.ts for the TypeScript implementation.
  *
  * Steps:
  * 1. Push the worktree branch to origin via git

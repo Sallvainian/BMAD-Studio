@@ -3,7 +3,7 @@
  * =============
  *
  * Issue triage logic for detecting duplicates, spam, and feature creep.
- * Ported from apps/backend/runners/github/services/triage_engine.py.
+ * See apps/desktop/src/main/ai/runners/github/triage-engine.ts for the TypeScript implementation.
  *
  * Uses `createSimpleClient()` with `generateText()` for single-turn triage.
  */

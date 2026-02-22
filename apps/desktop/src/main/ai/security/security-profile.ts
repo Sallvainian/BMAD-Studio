@@ -5,7 +5,7 @@
  * Loads and caches project security profiles from .auto-claude/ config.
  * Provides the SecurityProfile instances consumed by bash-validator.ts.
  *
- * Ported from: apps/backend/security/profile.py
+ * See apps/desktop/src/main/ai/security/security-profile.ts for the TypeScript implementation.
  */
 
 import * as fs from 'node:fs';
@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import type { SecurityProfile } from './bash-validator';
 
 // ---------------------------------------------------------------------------
-// Constants (mirrors apps/backend/security/constants.py)
+// Constants (mirrors apps/desktop/src/main/ai/security/security-profile.ts config)
 // ---------------------------------------------------------------------------
 
 const PROFILE_FILENAME = '.auto-claude-security.json';

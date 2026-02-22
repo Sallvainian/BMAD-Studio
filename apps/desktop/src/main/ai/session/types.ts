@@ -3,7 +3,7 @@
  * =============
  *
  * Core type definitions for the agent session runtime.
- * Ported from apps/backend/agents/session.py.
+ * Ported from apps/desktop/src/main/ai/session/types.ts (originally from Python agents/session).
  *
  * - SessionConfig: Everything needed to start an agent session
  * - SessionResult: Outcome of a completed session

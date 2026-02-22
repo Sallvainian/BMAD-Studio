@@ -5,7 +5,7 @@
  * Maps provider names to the correct @ai-sdk/* constructor and handles
  * per-provider options (thinking tokens, strict JSON, Azure deployments).
  *
- * Ported from apps/backend/core/client.py model→provider routing logic.
+ * See apps/desktop/src/main/ai/providers/factory.ts for the TypeScript implementation.
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';

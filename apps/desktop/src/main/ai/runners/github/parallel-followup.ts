@@ -3,7 +3,7 @@
  * ===============================
  *
  * PR follow-up reviewer using parallel specialist analysis via Promise.allSettled().
- * Ported from apps/backend/runners/github/services/parallel_followup_reviewer.py.
+ * See apps/desktop/src/main/ai/runners/github/parallel-followup.ts for the TypeScript implementation.
  *
  * The orchestrator analyzes incremental changes and delegates to specialized agents:
  * - resolution-verifier: Verifies previous findings are addressed

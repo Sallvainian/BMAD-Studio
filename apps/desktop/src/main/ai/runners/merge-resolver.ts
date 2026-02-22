@@ -3,7 +3,7 @@
  * =====================
  *
  * AI-powered merge conflict resolution using Vercel AI SDK.
- * Ported from apps/backend/merge/ai_resolver/claude_client.py.
+ * See apps/desktop/src/main/ai/runners/merge-resolver.ts for the TypeScript implementation.
  *
  * Simple single-turn text generation — takes a system prompt describing
  * the merge context and a user prompt with the conflict, returns the resolution.

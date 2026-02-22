@@ -116,34 +116,10 @@ AI-assisted feature planning with competitor analysis and audience targeting.
 ```
 Auto-Claude/
 ├── apps/
-│   ├── backend/     # Python agents, specs, QA pipeline
-│   └── frontend/    # Electron desktop application
+│   └── desktop/     # Electron desktop application (TypeScript AI agent layer + UI)
 ├── guides/          # Additional documentation
-├── tests/           # Test suite
 └── scripts/         # Build utilities
 ```
-
----
-
-## CLI Usage
-
-For headless operation, CI/CD integration, or terminal-only workflows:
-
-```bash
-cd apps/backend
-
-# Create a spec interactively
-python spec_runner.py --interactive
-
-# Run autonomous build
-python run.py --spec 001
-
-# Review and merge
-python run.py --spec 001 --review
-python run.py --spec 001 --merge
-```
-
-See [guides/CLI-USAGE.md](guides/CLI-USAGE.md) for complete CLI documentation.
 
 ---
 
@@ -174,7 +150,7 @@ All releases are:
 
 | Command | Description |
 |---------|-------------|
-| `npm run install:all` | Install backend and frontend dependencies |
+| `npm run install:all` | Install all dependencies |
 | `npm start` | Build and run the desktop app |
 | `npm run dev` | Run in development mode with hot reload |
 | `npm run package` | Package for current platform |
@@ -184,7 +160,6 @@ All releases are:
 | `npm run package:flatpak` | Package as Flatpak (see [guides/linux.md](guides/linux.md)) |
 | `npm run lint` | Run linter |
 | `npm test` | Run frontend tests |
-| `npm run test:backend` | Run backend tests |
 
 ---
 

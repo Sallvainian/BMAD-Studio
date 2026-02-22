@@ -408,32 +408,33 @@ app.whenReady().then(() => {
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
 
-    // Validate and migrate autoBuildPath - must contain runners/spec_runner.py
+    // Validate and migrate autoBuildPath - must contain planner.md (prompts directory)
     // Uses EAFP pattern (try/catch with accessSync) instead of existsSync to avoid TOCTOU race conditions
     let validAutoBuildPath = settings.autoBuildPath;
     if (validAutoBuildPath) {
-      const specRunnerPath = join(validAutoBuildPath, 'runners', 'spec_runner.py');
-      let specRunnerExists = false;
+      const plannerMdPath = join(validAutoBuildPath, 'planner.md');
+      let plannerExists = false;
       try {
-        accessSync(specRunnerPath);
-        specRunnerExists = true;
+        accessSync(plannerMdPath);
+        plannerExists = true;
       } catch {
         // File doesn't exist or isn't accessible
       }
 
-      if (!specRunnerExists) {
+      if (!plannerExists) {
         // Migration: Try to fix stale paths from old project structure
-        // Old structure: /path/to/project/auto-claude
-        // New structure: /path/to/project/apps/backend
+        // Old structure: /path/to/project/auto-claude or apps/backend
+        // New structure: /path/to/project/apps/desktop/prompts
         let migrated = false;
-        if (validAutoBuildPath.endsWith('/auto-claude') || validAutoBuildPath.endsWith('\\auto-claude')) {
-          const basePath = validAutoBuildPath.replace(/[/\\]auto-claude$/, '');
-          const correctedPath = join(basePath, 'apps', 'backend');
-          const correctedSpecRunnerPath = join(correctedPath, 'runners', 'spec_runner.py');
-
+        const possibleCorrections = [
+          join(validAutoBuildPath.replace(/[/\\]auto-claude$/, ''), 'apps', 'desktop', 'prompts'),
+          join(validAutoBuildPath.replace(/[/\\]backend$/, ''), 'desktop', 'prompts'),
+        ];
+        for (const correctedPath of possibleCorrections) {
+          const correctedPlannerPath = join(correctedPath, 'planner.md');
           let correctedPathExists = false;
           try {
-            accessSync(correctedSpecRunnerPath);
+            accessSync(correctedPlannerPath);
             correctedPathExists = true;
           } catch {
             // Corrected path doesn't exist
@@ -452,11 +453,12 @@ app.whenReady().then(() => {
             } catch (writeError) {
               console.warn('[main] Failed to save migrated autoBuildPath:', writeError);
             }
+            break;
           }
         }
 
         if (!migrated) {
-          console.warn('[main] Configured autoBuildPath is invalid (missing runners/spec_runner.py), will use auto-detection:', validAutoBuildPath);
+          console.warn('[main] Configured autoBuildPath is invalid (missing planner.md), will use auto-detection:', validAutoBuildPath);
           validAutoBuildPath = undefined; // Let auto-detection find the correct path
         }
       }

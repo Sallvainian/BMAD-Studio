@@ -3,7 +3,7 @@
  * =====================================
  *
  * Prevents infinite loops by detecting when the bot is reviewing its own work.
- * Ported from apps/backend/runners/github/bot_detection.py.
+ * See apps/desktop/src/main/ai/runners/github/bot-detector.ts for the TypeScript implementation.
  *
  * Key Features:
  * - Identifies bot user from configured token

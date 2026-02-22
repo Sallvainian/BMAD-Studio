@@ -2,9 +2,9 @@
  * Phase Event Protocol Constants
  * ===============================
  * Single source of truth for execution phase communication between
- * Python backend and TypeScript frontend.
+ * the TypeScript AI agent layer and the Electron renderer.
  *
- * SYNC REQUIREMENT: Phase values must match apps/backend/core/phase_event.py
+ * See apps/desktop/src/main/ai/ for the TypeScript agent implementation.
  *
  * Protocol: __EXEC_PHASE__:{"phase":"coding","message":"Starting"}
  */

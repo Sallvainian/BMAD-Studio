@@ -101,14 +101,14 @@ export class ChangelogService extends EventEmitter {
     }
 
     const possiblePaths = [
-      // Apps structure: from out/main -> apps/backend
-      path.resolve(__dirname, '..', '..', '..', 'backend'),
-      path.resolve(app.getAppPath(), '..', 'backend'),
-      path.resolve(process.cwd(), 'apps', 'backend')
+      // Apps structure: from out/main -> apps/desktop/prompts
+      path.resolve(__dirname, '..', '..', 'prompts'),
+      path.resolve(app.getAppPath(), '..', 'prompts'),
+      path.resolve(process.cwd(), 'apps', 'desktop', 'prompts')
     ];
 
     for (const p of possiblePaths) {
-      if (existsSync(p) && existsSync(path.join(p, 'runners', 'spec_runner.py'))) {
+      if (existsSync(p) && existsSync(path.join(p, 'planner.md'))) {
         return p;
       }
     }

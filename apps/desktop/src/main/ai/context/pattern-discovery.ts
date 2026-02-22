@@ -2,7 +2,7 @@
  * Pattern Discovery
  *
  * Discovers code patterns from reference files to guide implementation.
- * Ported from apps/backend/context/pattern_discovery.py
+ * See apps/desktop/src/main/ai/context/pattern-discovery.ts for the TypeScript implementation.
  */
 
 import fs from 'node:fs';

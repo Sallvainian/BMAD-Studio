@@ -3,7 +3,7 @@
  * ====================
  *
  * Defines MCP server configurations for all supported integrations.
- * Ported from apps/backend/agents/tools_pkg/models.py and core/client.py.
+ * See apps/desktop/src/main/ai/mcp/registry.ts for the TypeScript implementation.
  *
  * Each server config defines how to connect (stdio or StreamableHTTP),
  * and whether it's enabled by default.

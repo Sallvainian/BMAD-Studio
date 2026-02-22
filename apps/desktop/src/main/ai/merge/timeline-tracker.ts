@@ -3,8 +3,7 @@
  * ================
  *
  * Per-file modification timeline using git history.
- * Ported from apps/backend/merge/timeline_tracker.py,
- * timeline_git.py, timeline_models.py, and timeline_persistence.py.
+ * See apps/desktop/src/main/ai/merge/timeline-tracker.ts for the TypeScript implementation.
  *
  * Tracks the "drift" between tasks and main branch,
  * providing full context for merge decisions.

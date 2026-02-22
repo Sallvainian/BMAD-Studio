@@ -73,34 +73,10 @@ Read the full CLA here: [CLA.md](CLA.md)
 
 Before contributing, ensure you have the following installed:
 
-- **Python 3.12+** - For the backend framework
-- **Node.js 24+** - For the Electron frontend
-- **npm 10+** - Package manager for the frontend (comes with Node.js)
-- **uv** (recommended) or **pip** - Python package manager
-- **CMake** - Required for building native dependencies (e.g., LadybugDB)
+- **Node.js 24+** - For the Electron desktop app
+- **npm 10+** - Package manager (comes with Node.js)
+- **CMake** - Required for building native dependencies (e.g., node-pty)
 - **Git** - Version control
-
-### Installing Python 3.12
-
-**Windows:**
-```bash
-winget install Python.Python.3.12
-```
-
-**macOS:**
-```bash
-brew install python@3.12
-```
-
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt install python3.12 python3.12-venv
-```
-
-**Linux (Fedora):**
-```bash
-sudo dnf install python3.12
-```
 
 ### Installing Node.js 24+
 
@@ -168,43 +144,27 @@ npm start
 
 ## Development Setup
 
-The project consists of two main components:
+The project is a single Electron desktop application in `apps/desktop/`. All AI agent logic lives in TypeScript using the Vercel AI SDK v6.
 
-1. **Python Backend** (`apps/backend/`) - The core autonomous coding framework
-2. **Electron Frontend** (`apps/desktop/`) - Desktop UI
-
-From the repository root, two commands handle everything:
+From the repository root:
 
 ```bash
-# Install all dependencies (Python backend + Electron frontend)
+# Install all dependencies
 npm run install:all
 
 # Start development mode (hot reload)
 npm run dev
 ```
 
-`npm run install:all` automatically:
-- Detects Python 3.12+ on your system
-- Creates a virtual environment (`apps/backend/.venv`)
-- Installs backend runtime and test dependencies
-- Copies `.env.example` to `.env` (if not already present)
-- Installs frontend npm dependencies
-
-After install, configure your credentials in `apps/backend/.env`:
-```bash
-# Get your Claude Code OAuth token
-claude setup-token
-
-# Then edit apps/backend/.env with your token and any other provider keys
-```
+`npm run install:all` installs the npm dependencies for `apps/desktop/`.
 
 ### Other Useful Commands
 
 ```bash
 npm start              # Build and run production
-npm run build          # Build frontend for production
+npm run build          # Build for production
 npm run package        # Package for distribution
-npm run test:backend   # Run Python tests
+npm test               # Run frontend tests
 ```
 
 <details>
@@ -223,27 +183,19 @@ Auto Claude automatically downloads prebuilt binaries for Windows. If prebuilts 
 
 ## Pre-commit Hooks
 
-We use [pre-commit](https://pre-commit.com/) to run linting and formatting checks before each commit. This ensures code quality and consistency across the project.
+We use Husky + lint-staged to run Biome linting and formatting checks before each commit.
 
 ### Setup
 
-```bash
-# Install pre-commit
-pip install pre-commit
-
-# Install the git hooks (run once after cloning)
-pre-commit install
-```
+Husky is installed automatically when you run `npm install` inside `apps/desktop/`.
 
 ### What Runs on Commit
 
-When you commit, the following checks run automatically:
+When you commit, the following checks run automatically on staged files:
 
 | Check | Scope | Description |
 |-------|-------|-------------|
-| **ruff** | `apps/backend/` | Python linter with auto-fix |
-| **ruff-format** | `apps/backend/` | Python code formatter |
-| **eslint** | `apps/desktop/` | TypeScript/React linter |
+| **Biome** | `apps/desktop/` | TypeScript/React linter + formatter |
 | **typecheck** | `apps/desktop/` | TypeScript type checking |
 | **trailing-whitespace** | All files | Removes trailing whitespace |
 | **end-of-file-fixer** | All files | Ensures files end with newline |
@@ -253,50 +205,24 @@ When you commit, the following checks run automatically:
 ### Running Manually
 
 ```bash
-# Run all checks on all files
-pre-commit run --all-files
+cd apps/desktop
 
-# Run a specific hook
-pre-commit run ruff --all-files
+# Run linter (Biome)
+npm run lint
 
-# Skip hooks temporarily (not recommended)
-git commit --no-verify -m "message"
+# Auto-fix lint issues
+npm run lint:fix
+
+# Run type checking
+npm run typecheck
 ```
 
 ### If a Check Fails
 
-1. **Ruff auto-fixes**: Some issues are fixed automatically. Stage the changes and commit again.
-2. **ESLint errors**: Fix the reported issues in your code.
-3. **Type errors**: Resolve TypeScript type issues before committing.
+1. **Biome auto-fixes**: Run `npm run lint:fix` in `apps/desktop/`. Stage the changes and commit again.
+2. **Type errors**: Resolve TypeScript type issues before committing.
 
 ## Code Style
-
-### Python
-
-- Follow PEP 8 style guidelines
-- Use type hints for function signatures
-- Use docstrings for public functions and classes
-- Keep functions focused and under 50 lines when possible
-- Use meaningful variable and function names
-
-```python
-# Good
-def get_next_chunk(spec_dir: Path) -> dict | None:
-    """
-    Find the next pending chunk in the implementation plan.
-
-    Args:
-        spec_dir: Path to the spec directory
-
-    Returns:
-        The next chunk dict or None if all chunks are complete
-    """
-    ...
-
-# Avoid
-def gnc(sd):
-    ...
-```
 
 ### TypeScript/React
 
@@ -326,91 +252,7 @@ export default function(props) {
 - End files with a newline
 - Keep line length under 100 characters when practical
 
-### File Encoding (Python)
-
-**Always specify `encoding="utf-8"` for text file operations** to ensure Windows compatibility.
-
-Windows Python defaults to `cp1252` encoding instead of UTF-8, causing errors with:
-- Emoji (🚀, ✅, ❌)
-- International characters (ñ, é, 中文, العربية)
-- Special symbols (™, ©, ®)
-
-**DO:**
-
-```python
-# Reading files
-with open(path, encoding="utf-8") as f:
-    content = f.read()
-
-# Writing files
-with open(path, "w", encoding="utf-8") as f:
-    f.write(content)
-
-# Path methods
-from pathlib import Path
-content = Path(file).read_text(encoding="utf-8")
-Path(file).write_text(content, encoding="utf-8")
-
-# JSON files - reading
-import json
-with open(path, encoding="utf-8") as f:
-    data = json.load(f)
-
-# JSON files - writing
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-```
-
-**DON'T:**
-
-```python
-# Wrong - platform-dependent encoding
-with open(path) as f:
-    content = f.read()
-
-# Wrong - Path methods without encoding
-content = Path(file).read_text()
-
-# Wrong - encoding on json.dump (not open!)
-json.dump(data, f, encoding="utf-8")  # ERROR
-```
-
-**Binary files - NO encoding:**
-
-```python
-with open(path, "rb") as f:  # Correct
-    data = f.read()
-```
-
-Our pre-commit hooks automatically check for missing encoding parameters. See [PR #782](https://github.com/AndyMik90/Auto-Claude/pull/782) for the comprehensive encoding fix and [guides/windows-development.md](guides/windows-development.md) for Windows-specific development guidance.
-
 ## Testing
-
-### Python Tests
-
-```bash
-# Run all tests (from repository root)
-npm run test:backend
-
-# Or manually with pytest
-cd apps/backend
-.venv/Scripts/pytest.exe ../tests -v          # Windows
-.venv/bin/pytest ../tests -v                   # macOS/Linux
-
-# Run a specific test file
-npm run test:backend -- tests/test_security.py -v
-
-# Run a specific test
-npm run test:backend -- tests/test_security.py::test_bash_command_validation -v
-
-# Skip slow tests
-npm run test:backend -- -m "not slow"
-
-# Run with coverage
-pytest tests/ --cov=apps/backend --cov-report=html
-```
-
-Test configuration is in `tests/pytest.ini`.
 
 ### Frontend Tests
 
@@ -454,28 +296,21 @@ All pull requests and pushes to `main` trigger automated CI checks via GitHub Ac
 
 | Workflow | Trigger | What it checks |
 |----------|---------|----------------|
-| **CI** | Push to `main`, PRs | Python tests (3.11 & 3.12), Frontend tests |
-| **Lint** | Push to `main`, PRs | Ruff (Python), ESLint + TypeScript (Frontend) |
+| **CI** | Push to `main`, PRs | Frontend tests (all 3 platforms), TypeScript type check, build |
+| **Lint** | Push to `main`, PRs | Biome (TypeScript/React) |
 
 ### PR Requirements
 
 Before a PR can be merged:
 
 1. All CI checks must pass (green checkmarks)
-2. Python tests pass on both Python 3.11 and 3.12
-3. Frontend tests pass
-4. Linting passes (no ruff or eslint errors)
-5. TypeScript type checking passes
+2. Frontend tests pass on all three platforms (Ubuntu, Windows, macOS)
+3. Linting passes (no Biome errors)
+4. TypeScript type checking passes
 
 ### Running CI Checks Locally
 
 ```bash
-# Python tests
-cd apps/backend
-source .venv/bin/activate
-pytest ../../tests/ -v
-
-# Frontend tests
 cd apps/desktop
 npm test
 npm run lint
@@ -787,7 +622,6 @@ git rebase -i origin/develop
 git push --force-with-lease
 
 # Verify everything works
-npm run test:backend
 cd apps/desktop && npm test && npm run lint && npm run typecheck
 ```
 
@@ -809,10 +643,6 @@ cd apps/desktop && npm test && npm run lint && npm run typecheck
 
 3. **Test thoroughly**:
    ```bash
-   # Python (from repository root)
-   npm run test:backend
-
-   # Frontend
    cd apps/desktop && npm test && npm run lint && npm run typecheck
    ```
 
@@ -851,8 +681,7 @@ When reporting a bug, include:
 1. **Clear title** describing the issue
 2. **Environment details**:
    - OS and version
-   - Python version
-   - Node.js version (for UI issues)
+   - Node.js version
    - Auto Claude version
 3. **Steps to reproduce** the issue
 4. **Expected behavior** vs **actual behavior**
@@ -870,25 +699,14 @@ When requesting a feature:
 
 ## Architecture Overview
 
-Auto Claude consists of two main parts:
+Auto Claude is a single Electron desktop application in `apps/desktop/`.
 
-### Python Backend (`apps/backend/`)
+### Electron Desktop (`apps/desktop/`)
 
-The core autonomous coding framework:
-
-- **Entry Points**: `run.py` (build runner), `spec_runner.py` (spec creator)
-- **Agent System**: `agent.py`, `client.py`, `prompts/`
-- **Execution**: `coordinator.py` (parallel), `worktree.py` (isolation)
-- **Memory**: `memory.py` (file-based), `graphiti_memory.py` (graph-based)
-- **QA**: `qa_loop.py`, `prompts/qa_*.md`
-
-### Electron Frontend (`apps/desktop/`)
-
-Desktop interface:
-
-- **Main Process**: `src/main/` - Electron main process, IPC handlers
-- **Renderer**: `src/renderer/` - React UI components
-- **Shared**: `src/shared/` - Types and utilities
+- **AI Agent Layer** (`src/main/ai/`) - Vercel AI SDK v6 agent runtime, providers, tools, security, orchestration
+- **Main Process** (`src/main/`) - IPC handlers, agent queue, terminal management, claude-profile
+- **Renderer** (`src/renderer/`) - React UI components and Zustand stores
+- **Shared** (`src/shared/`) - Types, i18n locales, constants, utilities
 
 For detailed architecture information, see [CLAUDE.md](CLAUDE.md).
 

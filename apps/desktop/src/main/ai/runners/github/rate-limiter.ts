@@ -3,7 +3,7 @@
  * ====================================
  *
  * Protects against GitHub API rate limits using a token bucket algorithm.
- * Ported from apps/backend/runners/github/rate_limiter.py.
+ * See apps/desktop/src/main/ai/runners/github/rate-limiter.ts for the TypeScript implementation.
  *
  * Components:
  * - TokenBucket: Classic token bucket algorithm for rate limiting

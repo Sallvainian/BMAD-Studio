@@ -3,7 +3,7 @@
  * ================
  *
  * Classifies errors from AI SDK streaming into structured SessionError objects.
- * Ported from apps/backend/core/error_utils.py.
+ * Ported from apps/desktop/src/main/ai/session/error-classifier.ts (originally from Python error_utils).
  *
  * Classification categories:
  * - rate_limit: HTTP 429 or rate limit keywords
