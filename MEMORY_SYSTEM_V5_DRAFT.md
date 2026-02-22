@@ -131,7 +131,8 @@ const db = createClient({
 | Auth, billing, team UI | Convex + Better Auth | Real-time subscriptions, multi-tenancy, per-query scoping |
 | Embeddings (local) | Qwen3-embedding 4b/8b via Ollama | 1024-dim primary |
 | Embeddings (cloud/fallback) | OpenAI `text-embedding-3-small` | Request 1024-dim to match Qwen3 |
-| Reranking (local) | Qwen3-Reranker-0.6B via Ollama | Skip in cloud mode initially |
+| Reranking (local) | Qwen3-Reranker-0.6B via Ollama | Free, ~85-380ms latency |
+| Reranking (cloud) | Cohere Rerank API | ~$1/1K queries, ~200ms latency |
 | AST parsing | tree-sitter WASM (`web-tree-sitter`) | No native rebuild on Electron updates |
 | Agent execution | Vercel AI SDK v6 `streamText()` | Worker threads in Electron |
 
@@ -156,7 +157,7 @@ MODE 3: Web App (Next.js SaaS)
       ├── Same queries as Electron
       ├── OpenAI embeddings (no Ollama in cloud)
       ├── Convex for auth, billing, real-time features
-      └── No reranking initially (add Cohere as paid fallback later)
+      └── Cohere Rerank API for cross-encoder reranking
 ```
 
 ### Convex Responsibilities (What Convex Is NOT Doing)
@@ -241,6 +242,7 @@ interface Memory {
   userVerified?: boolean;
   citationText?: string;               // Max 40 chars, for inline chips
   pinned?: boolean;                    // Pinned memories never decay
+  methodology?: string;              // Which plugin created this (for cross-plugin retrieval)
 
   // Chunking metadata (V5 new — for AST-chunked code memories)
   chunkType?: 'function' | 'class' | 'module' | 'prose';
@@ -470,6 +472,27 @@ function applyTrustGate(
 | LLM synthesis calls per session | 1 max | Counter enforced in `finalize()` |
 | Memories promoted per session | 20 (build), 5 (insights), 3 (others) | Hard cap |
 | DB writes per session | 1 batched transaction after finalize | No writes during execution |
+
+### Key Implementation Details (Reference V4)
+
+```typescript
+// Dead-end detection patterns (from agent text stream)
+const DEAD_END_LANGUAGE_PATTERNS = [
+  /this approach (won't|will not|cannot) work/i,
+  /I need to abandon this/i,
+  /let me try a different approach/i,
+  /unavailable in (test|ci|production)/i,
+  /not available in this environment/i,
+];
+
+// In-session early promotion triggers
+const EARLY_TRIGGERS = [
+  { condition: (a: ScratchpadAnalytics) => a.selfCorrectionCount >= 1, signalType: 'self_correction', priority: 0.9 },
+  { condition: (a) => [...a.grepPatternCounts.values()].some(c => c >= 3), signalType: 'repeated_grep', priority: 0.8 },
+  { condition: (a) => a.configFilesTouched.size > 0 && a.fileEditSet.size >= 2, signalType: 'config_touch', priority: 0.7 },
+  { condition: (a) => a.errorFingerprints.size >= 2, signalType: 'error_retry', priority: 0.75 },
+];
+```
 
 ### MemoryObserver Class Interface
 
@@ -767,7 +790,7 @@ Stage 2b: GRAPH NEIGHBORHOOD BOOST (~5ms) ← FREE LUNCH, UNIQUE ADVANTAGE
 Stage 3: CROSS-ENCODER RERANKING (~85-380ms, local Electron only)
 ├── Qwen3-Reranker-0.6B via Ollama
 ├── Top 20 candidates → final top 8
-└── Skip in cloud/web mode (no Ollama); add Cohere Rerank API as paid cloud option later
+└── In cloud/web mode, use Cohere Rerank API (~$1/1K queries)
 
 Stage 4: CONTEXT PACKING (~1ms)
 ├── Deduplicate overlapping chunks
@@ -960,6 +983,15 @@ if (topResults.filter(r => r.score > 0.5).length < 3) {
   });
   return denseSearch(embed(hypoMemory.text), filters);
 }
+```
+
+### File Staleness Detection (4 Layers)
+
+```
+1. `memory.staleAt` explicitly set (manual deprecation or file deletion)
+2. `memory.lastAccessedAt` older than `memory.decayHalfLifeDays` — confidence penalty applied
+3. `relatedFiles` changed in git log since `memory.commitSha` — confidence reduced proportionally
+4. File modification time newer than `memory.createdAt` by more than 30 days — trigger review flag
 ```
 
 ---
@@ -1165,6 +1197,19 @@ export class StepInjectionDecider {
 
     return null;
   }
+}
+```
+
+### Memory-Aware Step Limits
+
+```typescript
+export function buildMemoryAwareStopCondition(
+  baseMaxSteps: number,
+  calibrationFactor: number | undefined,
+): StopCondition {
+  const factor = Math.min(calibrationFactor ?? 1.0, 2.0);  // Cap at 2x
+  const adjusted = Math.min(Math.ceil(baseMaxSteps * factor), MAX_ABSOLUTE_STEPS);
+  return stepCountIs(adjusted);
 }
 ```
 
@@ -1455,7 +1500,7 @@ Web App (Next.js SaaS, same repo/OSS)
 └── Cloud hosted (auto-claude.app): Turso Cloud + Convex
     ├── Pure cloud libSQL (no local file)
     ├── OpenAI embeddings (no Ollama)
-    └── No reranking initially
+    └── Cohere Rerank API
 ```
 
 ### Cloud Sync Flow
@@ -1477,7 +1522,7 @@ Conflict (same memory edited on two devices before sync):
 |---------|-----------------|-----------------|
 | Database | libSQL in-process file | libSQL → Turso Cloud |
 | Embeddings | Qwen3 via Ollama | OpenAI text-embedding-3-small |
-| Reranking | Qwen3-Reranker-0.6B via Ollama | Skip (add Cohere later) |
+| Reranking | Qwen3-Reranker-0.6B via Ollama | Cohere Rerank API |
 | Graph indexing | tree-sitter WASM | tree-sitter WASM (in Node.js worker) |
 | Auth | Convex Better Auth | Convex Better Auth |
 | Agent execution | Worker threads | Next.js API routes + queue |
@@ -1940,9 +1985,14 @@ export async function getMemoryClient(
   // Initialize schema (idempotent)
   await _client.executeMultiple(MEMORY_SCHEMA_SQL);
 
-  // Load sqlite-vec extension (needed for vector_distance_cos)
-  // Note: sqlite-vec must be compiled for libSQL, or use libsql-vector
-  await _client.execute("SELECT load_extension('path/to/vec0')");
+  // Load sqlite-vec extension for local mode only
+  // Cloud Turso has built-in vector support (DiskANN) — no extension needed
+  if (!tursoSyncUrl) {
+    const vecExtPath = app.isPackaged
+      ? join(process.resourcesPath, 'extensions', 'vec0')
+      : join(__dirname, '..', '..', 'node_modules', 'sqlite-vec', 'vec0');
+    await _client.execute(`SELECT load_extension('${vecExtPath}')`);
+  }
 
   return _client;
 }
@@ -2089,7 +2139,7 @@ export class EmbeddingService {
 
 5. **Tree-sitter vs. ts-morph for TypeScript**: tree-sitter extracts syntactic call sites but cannot resolve cross-module which function is being called. ts-morph has full TypeScript compiler resolution but is much slower. Use tree-sitter for Phases 1-5 (speed), add SCIP integration for precision in later phases. Mark edges with `source: 'ast'` vs `source: 'scip'`.
 
-6. **Reranking in cloud/web mode**: Qwen3-Reranker-0.6B is not available without Ollama. Initially skip reranking in cloud mode. When revenue allows, add Cohere Rerank API (~$1/1K queries) as optional cloud reranking tier. Gate behind a paid plan.
+6. **Reranking in cloud/web mode**: Qwen3-Reranker-0.6B is not available without Ollama. In cloud/web mode, Cohere Rerank API (~$1/1K queries) is used from the start as the cross-encoder reranking tier. Monitor Cohere costs and evaluate alternatives (e.g., self-hosted reranker on VPS) if costs become significant at scale.
 
 7. **Graph neighborhood boost in cloud mode**: The boost queries the `graph_closure` table which lives in libSQL/Turso. This works in all modes (local and cloud) with the same SQL. Confirm there's no cold-start state where graph_closure is empty but memories exist — if so, fall back gracefully to 2-path retrieval.
 
@@ -2103,4 +2153,4 @@ export class EmbeddingService {
 
 *Document version: V5.0 — 2026-02-22*
 *Built on: V4 Draft + Hackathon Teams 1-5 + Infrastructure Research*
-*Key V4→V5 changes: Turso/libSQL replaces better-sqlite3, Convex for auth/team/UI only, OpenAI text-embedding-3-small replaces Voyage, Graphiti Python sidecar removed (replaced by TS Knowledge Graph), AST chunking + contextual embeddings + graph neighborhood boost built in from day one, complete retrieval pipeline from day one (no phases), FTS5 everywhere (not Tantivy), cloud reranking skipped initially*
+*Key V4→V5 changes: Turso/libSQL replaces better-sqlite3, Convex for auth/team/UI only, OpenAI text-embedding-3-small replaces Voyage, Graphiti Python sidecar removed (replaced by TS Knowledge Graph), AST chunking + contextual embeddings + graph neighborhood boost built in from day one, complete retrieval pipeline from day one (no phases), FTS5 everywhere (not Tantivy), Cohere Rerank API for cloud reranking*

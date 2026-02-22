@@ -35,7 +35,7 @@ interface MemoriesTabProps {
   onSearch: (query: string) => void;
 }
 
-// Get the effective category for a memory based on V5 types
+// Get the effective category for a memory based on its type
 function getMemoryCategory(memory: RendererMemory): MemoryFilterCategory {
   const type = memory.type;
 

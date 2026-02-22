@@ -55,7 +55,7 @@ export const serviceTypeColors: Record<string, string> = {
   unknown: 'bg-muted text-muted-foreground border-muted'
 };
 
-// Memory type icon mapping (V5 — 16 types)
+// Memory type icon mapping (16 types)
 export const memoryTypeIcons: Record<MemoryType, React.ElementType> = {
   gotcha: AlertTriangle,
   decision: GitMerge,
@@ -75,7 +75,7 @@ export const memoryTypeIcons: Record<MemoryType, React.ElementType> = {
   context_cost: DollarSign
 };
 
-// Memory type colors for badges and styling (V5 — 16 types)
+// Memory type colors for badges and styling (16 types)
 export const memoryTypeColors: Record<MemoryType, string> = {
   gotcha: 'bg-red-500/10 text-red-400 border-red-500/30',
   decision: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
@@ -95,7 +95,7 @@ export const memoryTypeColors: Record<MemoryType, string> = {
   context_cost: 'bg-pink-500/10 text-pink-400 border-pink-500/30'
 };
 
-// Memory type labels for display (V5 — 16 types)
+// Memory type labels for display (16 types)
 export const memoryTypeLabels: Record<MemoryType, string> = {
   gotcha: 'Gotcha',
   decision: 'Decision',
@@ -115,7 +115,7 @@ export const memoryTypeLabels: Record<MemoryType, string> = {
   context_cost: 'Context Cost'
 };
 
-// Filter categories for grouping V5 memory types
+// Filter categories for grouping memory types
 export const memoryFilterCategories = [
   { key: 'all', label: 'All', types: [] as MemoryType[] },
   { key: 'patterns', label: 'Patterns', types: ['pattern', 'workflow_recipe', 'prefetch_pattern'] as MemoryType[] },

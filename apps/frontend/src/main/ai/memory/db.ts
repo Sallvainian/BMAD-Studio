@@ -9,7 +9,8 @@
 
 import { createClient } from '@libsql/client';
 import type { Client } from '@libsql/client';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { MEMORY_SCHEMA_SQL, MEMORY_PRAGMA_SQL } from './schema';
 
 let _client: Client | null = null;
@@ -55,9 +56,11 @@ export async function getMemoryClient(
   if (!tursoSyncUrl) {
     try {
       // Determine vec0 extension path
+      // In ESM bundles __dirname is not available; derive from import.meta.url
+      const currentDir = dirname(fileURLToPath(import.meta.url));
       const vecExtPath = app.isPackaged
         ? join(process.resourcesPath, 'extensions', 'vec0')
-        : join(__dirname, '..', '..', 'node_modules', 'sqlite-vec', 'vec0');
+        : join(currentDir, '..', '..', 'node_modules', 'sqlite-vec', 'vec0');
       await _client.execute(`SELECT load_extension('${vecExtPath}')`);
     } catch (err) {
       // sqlite-vec may not be bundled yet — log warning but don't crash

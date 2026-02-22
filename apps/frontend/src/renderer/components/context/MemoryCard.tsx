@@ -27,8 +27,8 @@ interface MemoryCardProps {
   memory: RendererMemory;
 }
 
-interface ParsedV5Memory {
-  // V5 structured fields
+interface ParsedMemoryContent {
+  // Structured fields
   approach_tried?: string;
   why_it_failed?: string;
   alternative_used?: string;
@@ -56,7 +56,7 @@ interface ParsedV5Memory {
   };
 }
 
-function parseMemoryContent(content: string): ParsedV5Memory | null {
+function parseMemoryContent(content: string): ParsedMemoryContent | null {
   try {
     const parsed = JSON.parse(content);
     if (typeof parsed === 'object' && parsed !== null) {
@@ -138,7 +138,7 @@ function isPRReviewMemory(memory: RendererMemory): boolean {
 }
 
 // Dead-end memory: parse structured approach/failure info
-function DeadEndContent({ parsed, sections }: { parsed: ParsedV5Memory; sections: Record<string, string> }) {
+function DeadEndContent({ parsed, sections }: { parsed: ParsedMemoryContent; sections: Record<string, string> }) {
   const approachTried = parsed.approach_tried;
   const whyItFailed = parsed.why_it_failed;
   const alternativeUsed = parsed.alternative_used;
