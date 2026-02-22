@@ -865,7 +865,7 @@ export function registerMemoryHandlers(): void {
   );
 
   // ============================================
-  // Memory System V5 (libSQL-backed) Handlers
+  // Memory System (libSQL-backed) Handlers
   // ============================================
 
   // Search memories

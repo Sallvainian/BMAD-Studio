@@ -731,6 +731,92 @@
     "lastActivityPrefix": "dernière activité",
     "lastProgressUpdateTooltip": "Dernière mise à jour de progression reçue"
   },
+  "memory": {
+    "types": {
+      "gotcha": "Piège",
+      "decision": "Décision",
+      "preference": "Préférence",
+      "pattern": "Modèle",
+      "requirement": "Exigence",
+      "error_pattern": "Modèle d'erreur",
+      "module_insight": "Insight de module",
+      "prefetch_pattern": "Modèle de prérécupération",
+      "work_state": "État de travail",
+      "causal_dependency": "Dépendance causale",
+      "task_calibration": "Calibration de tâche",
+      "e2e_observation": "Observation E2E",
+      "dead_end": "Impasse",
+      "work_unit_outcome": "Résultat d'unité de travail",
+      "workflow_recipe": "Recette de workflow",
+      "context_cost": "Coût de contexte"
+    },
+    "filters": {
+      "all": "Tous",
+      "patterns": "Modèles",
+      "errors": "Erreurs & Pièges",
+      "decisions": "Décisions",
+      "insights": "Insights de code",
+      "calibration": "Calibration"
+    },
+    "badges": {
+      "needsReview": "À réviser",
+      "verified": "Vérifié",
+      "pinned": "Épinglé",
+      "confidence": "Confiance"
+    },
+    "sources": {
+      "agent_explicit": "Agent",
+      "observer_inferred": "Observateur",
+      "qa_auto": "QA",
+      "mcp_auto": "MCP",
+      "commit_auto": "Commit",
+      "user_taught": "Utilisateur"
+    },
+    "health": {
+      "totalMemories": "Total mémoires",
+      "avgConfidence": "Confiance moyenne",
+      "verified": "Vérifié"
+    },
+    "status": {
+      "title": "Statut de la mémoire",
+      "connected": "Connecté",
+      "notAvailable": "Non disponible",
+      "notConfigured": "Le système de mémoire n'est pas configuré",
+      "enableInSettings": "Pour activer la mémoire, configurez-la dans les paramètres du projet."
+    },
+    "search": {
+      "title": "Rechercher dans les mémoires",
+      "placeholder": "Rechercher des mémoires...",
+      "resultsCount": "{{count}} résultat trouvé",
+      "resultsCount_plural": "{{count}} résultats trouvés"
+    },
+    "browser": {
+      "title": "Explorateur de mémoires",
+      "countOf": "{{filtered}} sur {{total}} mémoires"
+    },
+    "empty": "Aucune mémoire pour l'instant. Les mémoires sont créées automatiquement lorsque les agents travaillent sur des tâches.",
+    "emptyFilter": "Aucune mémoire ne correspond au filtre sélectionné.",
+    "showAll": "Afficher toutes les mémoires",
+    "expand": "Développer",
+    "collapse": "Réduire",
+    "sections": {
+      "whatWorked": "Ce qui a fonctionné",
+      "whatFailed": "Ce qui a échoué",
+      "approach": "Approche",
+      "recommendations": "Recommandations",
+      "patterns": "Modèles",
+      "gotchas": "Pièges",
+      "changedFiles": "Fichiers modifiés",
+      "fileInsights": "Insights de fichiers",
+      "subtasksCompleted": "Sous-tâches terminées",
+      "relatedFiles": "Fichiers associés",
+      "tags": "Étiquettes",
+      "approachTried": "Approche essayée",
+      "whyItFailed": "Pourquoi ça a échoué",
+      "alternativeUsed": "Alternative utilisée",
+      "steps": "Étapes"
+    }
+  },
   "prStatus": {
     "ci": {
       "success": "CI réussie",

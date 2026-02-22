@@ -14,9 +14,9 @@ import type {
   FileNode,
   ProjectContextData,
   ProjectIndex,
-  GraphitiMemoryStatus,
+  MemorySystemStatus,
   ContextSearchResult,
-  MemoryEpisode,
+  RendererMemory,
   ProjectEnvConfig,
   InfrastructureStatus,
   GraphitiValidationResult,
@@ -451,9 +451,9 @@ export interface ElectronAPI {
   // Context operations
   getProjectContext: (projectId: string) => Promise<IPCResult<ProjectContextData>>;
   refreshProjectIndex: (projectId: string) => Promise<IPCResult<ProjectIndex>>;
-  getMemoryStatus: (projectId: string) => Promise<IPCResult<GraphitiMemoryStatus>>;
+  getMemoryStatus: (projectId: string) => Promise<IPCResult<MemorySystemStatus>>;
   searchMemories: (projectId: string, query: string) => Promise<IPCResult<ContextSearchResult[]>>;
-  getRecentMemories: (projectId: string, limit?: number) => Promise<IPCResult<MemoryEpisode[]>>;
+  getRecentMemories: (projectId: string, limit?: number) => Promise<IPCResult<RendererMemory[]>>;
 
   // Environment configuration operations
   getProjectEnv: (projectId: string) => Promise<IPCResult<ProjectEnvConfig>>;

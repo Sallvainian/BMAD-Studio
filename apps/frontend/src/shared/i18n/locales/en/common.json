@@ -731,6 +731,92 @@
     "lastActivityPrefix": "last activity",
     "lastProgressUpdateTooltip": "Last progress update received"
   },
+  "memory": {
+    "types": {
+      "gotcha": "Gotcha",
+      "decision": "Decision",
+      "preference": "Preference",
+      "pattern": "Pattern",
+      "requirement": "Requirement",
+      "error_pattern": "Error Pattern",
+      "module_insight": "Module Insight",
+      "prefetch_pattern": "Prefetch Pattern",
+      "work_state": "Work State",
+      "causal_dependency": "Causal Dependency",
+      "task_calibration": "Task Calibration",
+      "e2e_observation": "E2E Observation",
+      "dead_end": "Dead End",
+      "work_unit_outcome": "Work Unit Outcome",
+      "workflow_recipe": "Workflow Recipe",
+      "context_cost": "Context Cost"
+    },
+    "filters": {
+      "all": "All",
+      "patterns": "Patterns",
+      "errors": "Errors & Gotchas",
+      "decisions": "Decisions",
+      "insights": "Code Insights",
+      "calibration": "Calibration"
+    },
+    "badges": {
+      "needsReview": "Needs Review",
+      "verified": "Verified",
+      "pinned": "Pinned",
+      "confidence": "Confidence"
+    },
+    "sources": {
+      "agent_explicit": "Agent",
+      "observer_inferred": "Observer",
+      "qa_auto": "QA",
+      "mcp_auto": "MCP",
+      "commit_auto": "Commit",
+      "user_taught": "User"
+    },
+    "health": {
+      "totalMemories": "Total Memories",
+      "avgConfidence": "Avg Confidence",
+      "verified": "Verified"
+    },
+    "status": {
+      "title": "Memory Status",
+      "connected": "Connected",
+      "notAvailable": "Not Available",
+      "notConfigured": "Memory system is not configured",
+      "enableInSettings": "To enable memory, configure it in project settings."
+    },
+    "search": {
+      "title": "Search Memories",
+      "placeholder": "Search memories...",
+      "resultsCount": "{{count}} result found",
+      "resultsCount_plural": "{{count}} results found"
+    },
+    "browser": {
+      "title": "Memory Browser",
+      "countOf": "{{filtered}} of {{total}} memories"
+    },
+    "empty": "No memories yet. Memories are automatically created as agents work on tasks.",
+    "emptyFilter": "No memories match the selected filter.",
+    "showAll": "Show all memories",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "sections": {
+      "whatWorked": "What Worked",
+      "whatFailed": "What Failed",
+      "approach": "Approach",
+      "recommendations": "Recommendations",
+      "patterns": "Patterns",
+      "gotchas": "Gotchas",
+      "changedFiles": "Changed Files",
+      "fileInsights": "File Insights",
+      "subtasksCompleted": "Subtasks Completed",
+      "relatedFiles": "Related Files",
+      "tags": "Tags",
+      "approachTried": "Approach Tried",
+      "whyItFailed": "Why It Failed",
+      "alternativeUsed": "Alternative Used",
+      "steps": "Steps"
+    }
+  },
   "prStatus": {
     "ci": {
       "success": "CI Passed",

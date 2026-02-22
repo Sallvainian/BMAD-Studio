@@ -19,3 +19,4 @@ export * from './utils';
 export * from './memory-status-handlers';
 export * from './memory-data-handlers';
 export * from './project-context-handlers';
+export * from './memory-service-factory';

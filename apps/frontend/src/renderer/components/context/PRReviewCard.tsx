@@ -118,7 +118,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
           <div className="flex items-center gap-2">
             <GitPullRequest className="h-4 w-4 text-cyan-400" />
             <Badge variant="outline">PR Review</Badge>
-            <span className="text-xs text-muted-foreground">{formatDate(memory.timestamp)}</span>
+            <span className="text-xs text-muted-foreground">{formatDate(memory.createdAt)}</span>
           </div>
           <pre className="mt-3 text-xs text-muted-foreground whitespace-pre-wrap font-mono">
             {memory.content}
@@ -184,7 +184,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
               {/* Timestamp */}
               <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
-                {formatDate(memory.timestamp)}
+                {formatDate(memory.createdAt)}
               </div>
             </div>
           </div>

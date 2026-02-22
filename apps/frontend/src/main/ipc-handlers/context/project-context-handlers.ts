@@ -2,21 +2,46 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync } from 'fs';
-import { IPC_CHANNELS, getSpecsDir, AUTO_BUILD_PATHS } from '../../../shared/constants';
+import { IPC_CHANNELS, AUTO_BUILD_PATHS } from '../../../shared/constants';
 import type {
   IPCResult,
   ProjectContextData,
   ProjectIndex,
-  MemoryEpisode
+  RendererMemory,
+  MemoryType,
 } from '../../../shared/types';
 import { projectStore } from '../../project-store';
-import { getMemoryService, isKuzuAvailable } from '../../memory-service';
-import {
-  loadGraphitiStateFromSpecs,
-  buildMemoryStatus
-} from './memory-status-handlers';
-import { loadFileBasedMemories } from './memory-data-handlers';
+import { buildMemoryStatus } from './memory-status-handlers';
+import { getMemoryService } from './memory-service-factory';
 import { runProjectIndexer } from '../../ai/project/project-indexer';
+import type { Memory } from '../../ai/memory/types';
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function toRendererMemory(m: Memory): RendererMemory {
+  return {
+    id: m.id,
+    type: m.type as MemoryType,
+    content: m.content,
+    confidence: m.confidence,
+    tags: m.tags,
+    relatedFiles: m.relatedFiles,
+    relatedModules: m.relatedModules,
+    createdAt: m.createdAt,
+    lastAccessedAt: m.lastAccessedAt,
+    accessCount: m.accessCount,
+    scope: m.scope as RendererMemory['scope'],
+    source: m.source as RendererMemory['source'],
+    needsReview: m.needsReview,
+    userVerified: m.userVerified,
+    citationText: m.citationText,
+    pinned: m.pinned,
+    methodology: m.methodology,
+    deprecated: m.deprecated,
+  };
+}
 
 /**
  * Load project index from file
@@ -36,42 +61,27 @@ function loadProjectIndex(projectPath: string): ProjectIndex | null {
 }
 
 /**
- * Load recent memories from LadybugDB with file-based fallback
+ * Load recent memories from the MemoryService with graceful degradation.
  */
-async function loadRecentMemories(
-  projectPath: string,
-  autoBuildPath: string | undefined,
-  memoryStatusAvailable: boolean,
-  dbPath?: string,
-  database?: string
-): Promise<MemoryEpisode[]> {
-  let recentMemories: MemoryEpisode[] = [];
-
-  // Try to load from LadybugDB first if Graphiti is available and Kuzu is installed
-  if (memoryStatusAvailable && isKuzuAvailable() && dbPath && database) {
-    try {
-      const memoryService = getMemoryService({
-        dbPath,
-        database,
-      });
-      const graphMemories = await memoryService.getEpisodicMemories(20);
-      if (graphMemories.length > 0) {
-        recentMemories = graphMemories;
-      }
-    } catch (error) {
-      console.warn('Failed to load memories from LadybugDB, falling back to file-based:', error);
-    }
+async function loadRecentMemories(projectId: string): Promise<RendererMemory[]> {
+  try {
+    const service = await getMemoryService();
+    const memories = await service.search({
+      projectId,
+      limit: 20,
+      sort: 'recency',
+      excludeDeprecated: true,
+    });
+    return memories.map(toRendererMemory);
+  } catch {
+    // Memory service unavailable — return empty list
+    return [];
   }
-
-  // Fall back to file-based memory if no graph memories found
-  if (recentMemories.length === 0) {
-    const specsBaseDir = getSpecsDir(autoBuildPath);
-    const specsDir = path.join(projectPath, specsBaseDir);
-    recentMemories = loadFileBasedMemories(specsDir, 20);
-  }
-
-  return recentMemories;
 }
+
+// ============================================================
+// REGISTER HANDLERS
+// ============================================================
 
 /**
  * Register project context handlers
@@ -92,31 +102,18 @@ export function registerProjectContextHandlers(
         // Load project index
         const projectIndex = loadProjectIndex(project.path);
 
-        // Load graphiti state from most recent spec
-        const memoryState = loadGraphitiStateFromSpecs(project.path, project.autoBuildPath);
+        // Build memory status (libSQL-based)
+        const memoryStatus = await buildMemoryStatus();
 
-        // Build memory status
-        const memoryStatus = buildMemoryStatus(
-          project.path,
-          project.autoBuildPath,
-          memoryState
-        );
-
-        // Load recent memories
-        const recentMemories = await loadRecentMemories(
-          project.path,
-          project.autoBuildPath,
-          memoryStatus.available,
-          memoryStatus.dbPath,
-          memoryStatus.database
-        );
+        // Load recent memories from memory service
+        const recentMemories = await loadRecentMemories(projectId);
 
         return {
           success: true,
           data: {
             projectIndex,
             memoryStatus,
-            memoryState,
+            memoryState: null,
             recentMemories,
             isLoading: false
           }

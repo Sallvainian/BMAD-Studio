@@ -143,13 +143,17 @@ export interface ConventionsInfo {
   git_hooks?: string;
 }
 
-export interface GraphitiMemoryStatus {
+export interface MemorySystemStatus {
   enabled: boolean;
   available: boolean;
   database?: string;
   dbPath?: string;
+  embeddingProvider?: string;
   reason?: string;
 }
+
+// Backward compatibility alias
+export type GraphitiMemoryStatus = MemorySystemStatus;
 
 // Memory Infrastructure Types
 export interface MemoryDatabaseStatus {
@@ -238,40 +242,61 @@ export interface GraphitiProviderInfo {
   supportedModels: string[];
 }
 
-export interface GraphitiMemoryState {
+export interface MemorySystemState {
   initialized: boolean;
   database?: string;
-  indices_built: boolean;
-  created_at?: string;
-  last_session?: number;
-  episode_count: number;
-  error_log: Array<{ timestamp: string; error: string }>;
+  episodeCount: number;
+  lastSessionAt?: string;
+  createdAt?: string;
+  errorLog: Array<{ timestamp: string; error: string }>;
 }
+
+// Backward compatibility alias
+export type GraphitiMemoryState = MemorySystemState;
 
 export type MemoryType =
-  | 'session_insight'
-  | 'codebase_discovery'
-  | 'codebase_map'
-  | 'pattern'
   | 'gotcha'
-  | 'task_outcome'
-  | 'pr_review'
-  | 'pr_finding'
-  | 'pr_pattern'
-  | 'pr_gotcha';
+  | 'decision'
+  | 'preference'
+  | 'pattern'
+  | 'requirement'
+  | 'error_pattern'
+  | 'module_insight'
+  | 'prefetch_pattern'
+  | 'work_state'
+  | 'causal_dependency'
+  | 'task_calibration'
+  | 'e2e_observation'
+  | 'dead_end'
+  | 'work_unit_outcome'
+  | 'workflow_recipe'
+  | 'context_cost';
 
-export interface MemoryEpisode {
+export interface RendererMemory {
   id: string;
   type: MemoryType;
-  timestamp: string;
   content: string;
-  session_number?: number;
+  confidence: number;
+  tags: string[];
+  relatedFiles: string[];
+  relatedModules: string[];
+  createdAt: string;
+  lastAccessedAt: string;
+  accessCount: number;
+  scope: 'global' | 'module' | 'work_unit' | 'session';
+  source: 'agent_explicit' | 'observer_inferred' | 'qa_auto' | 'mcp_auto' | 'commit_auto' | 'user_taught';
+  needsReview?: boolean;
+  userVerified?: boolean;
+  citationText?: string;
+  pinned?: boolean;
+  methodology?: string;
+  deprecated?: boolean;
+  // Search score (added by search results)
   score?: number;
-  // For PR reviews - extracted from content for quick access
-  prNumber?: number;
-  repo?: string;
-  verdict?: 'approve' | 'request_changes' | 'comment';
 }
+
+// Backward compatibility alias
+export type MemoryEpisode = RendererMemory;
 
 export interface ContextSearchResult {
   content: string;
@@ -281,9 +306,9 @@ export interface ContextSearchResult {
 
 export interface ProjectContextData {
   projectIndex: ProjectIndex | null;
-  memoryStatus: GraphitiMemoryStatus | null;
-  memoryState: GraphitiMemoryState | null;
-  recentMemories: MemoryEpisode[];
+  memoryStatus: MemorySystemStatus | null;
+  memoryState: MemorySystemState | null;
+  recentMemories: RendererMemory[];
   isLoading: boolean;
   error?: string;
 }

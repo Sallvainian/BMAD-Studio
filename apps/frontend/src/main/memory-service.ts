@@ -20,7 +20,7 @@ import { findPythonCommand, parsePythonCommand } from './python-detector';
 import { getConfiguredPythonPath, pythonEnvManager } from './python-env-manager';
 import { getMemoriesDir } from './config-paths';
 import { isWindows } from './platform';
-import type { MemoryEpisode } from '../shared/types';
+import type { RendererMemory } from '../shared/types';
 
 interface MemoryServiceConfig {
   dbPath: string;
@@ -478,7 +478,7 @@ export class MemoryService {
   /**
    * Query episodic memories from the database
    */
-  async getEpisodicMemories(limit: number = 20): Promise<MemoryEpisode[]> {
+  async getEpisodicMemories(limit: number = 20): Promise<RendererMemory[]> {
     const result = await executeQuery('get-memories', [
       this.config.dbPath,
       this.config.database,
@@ -492,19 +492,13 @@ export class MemoryService {
     }
 
     const data = result.data as MemoryQueryResult;
-    return data.memories.map((m) => ({
-      id: m.id,
-      type: this.mapMemoryType(m.type),
-      timestamp: m.timestamp,
-      content: m.content,
-      session_number: m.session_number,
-    }));
+    return data.memories.map((m) => this.mapToRendererMemory(m));
   }
 
   /**
    * Query entity memories (patterns, gotchas, etc.) from the database
    */
-  async getEntityMemories(limit: number = 20): Promise<MemoryEpisode[]> {
+  async getEntityMemories(limit: number = 20): Promise<RendererMemory[]> {
     const result = await executeQuery('get-entities', [
       this.config.dbPath,
       this.config.database,
@@ -518,18 +512,13 @@ export class MemoryService {
     }
 
     const data = result.data as { entities: MemoryQueryResult['memories']; count: number };
-    return data.entities.map((e) => ({
-      id: e.id,
-      type: this.mapMemoryType(e.type),
-      timestamp: e.timestamp,
-      content: e.content,
-    }));
+    return data.entities.map((e) => this.mapToRendererMemory(e));
   }
 
   /**
    * Get all memories from the database
    */
-  async getAllMemories(limit: number = 20): Promise<MemoryEpisode[]> {
+  async getAllMemories(limit: number = 20): Promise<RendererMemory[]> {
     const [episodic, entities] = await Promise.all([
       this.getEpisodicMemories(limit),
       this.getEntityMemories(limit),
@@ -537,8 +526,8 @@ export class MemoryService {
 
     const memories = [...episodic, ...entities];
 
-    // Sort by timestamp descending
-    memories.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // Sort by createdAt descending
+    memories.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return memories.slice(0, limit);
   }
@@ -546,7 +535,7 @@ export class MemoryService {
   /**
    * Search memories in the database (keyword search)
    */
-  async searchMemories(searchQuery: string, limit: number = 20): Promise<MemoryEpisode[]> {
+  async searchMemories(searchQuery: string, limit: number = 20): Promise<RendererMemory[]> {
     const result = await executeQuery('search', [
       this.config.dbPath,
       this.config.database,
@@ -561,14 +550,7 @@ export class MemoryService {
     }
 
     const data = result.data as MemoryQueryResult;
-    return data.memories.map((m) => ({
-      id: m.id,
-      type: this.mapMemoryType(m.type),
-      timestamp: m.timestamp,
-      content: m.content,
-      session_number: m.session_number,
-      score: m.score,
-    }));
+    return data.memories.map((m) => this.mapToRendererMemory(m));
   }
 
   /**
@@ -586,7 +568,7 @@ export class MemoryService {
     searchQuery: string,
     embedderConfig: EmbedderConfig,
     limit: number = 20
-  ): Promise<{ memories: MemoryEpisode[]; searchType: 'semantic' | 'keyword' }> {
+  ): Promise<{ memories: RendererMemory[]; searchType: 'semantic' | 'keyword' }> {
     const result = await executeSemanticQuery(
       [this.config.dbPath, this.config.database, searchQuery, '--limit', String(limit)],
       embedderConfig
@@ -600,14 +582,7 @@ export class MemoryService {
     }
 
     const data = result.data as SemanticSearchResult;
-    const memories = data.memories.map((m) => ({
-      id: m.id,
-      type: this.mapMemoryType(m.type),
-      timestamp: m.timestamp,
-      content: m.content,
-      session_number: m.session_number,
-      score: m.score,
-    }));
+    const memories = data.memories.map((m) => this.mapToRendererMemory(m));
 
     return {
       memories,
@@ -710,22 +685,58 @@ export class MemoryService {
   }
 
   /**
-   * Map string type to MemoryEpisode type
+   * Map a raw memory query result to RendererMemory
    */
-  private mapMemoryType(type: string): MemoryEpisode['type'] {
+  private mapToRendererMemory(m: MemoryQueryResult['memories'][number]): RendererMemory {
+    return {
+      id: m.id,
+      type: this.mapMemoryType(m.type),
+      content: m.content,
+      confidence: 1.0,
+      tags: [],
+      relatedFiles: [],
+      relatedModules: [],
+      createdAt: m.timestamp,
+      lastAccessedAt: m.timestamp,
+      accessCount: 0,
+      scope: 'session',
+      source: 'agent_explicit',
+      score: m.score,
+    };
+  }
+
+  /**
+   * Map legacy string type to MemoryType
+   */
+  private mapMemoryType(type: string): RendererMemory['type'] {
     switch (type) {
-      case 'session_insight':
-        return 'session_insight';
       case 'pattern':
+      case 'pr_pattern':
         return 'pattern';
       case 'gotcha':
+      case 'pr_gotcha':
         return 'gotcha';
-      case 'codebase_discovery':
-        return 'codebase_discovery';
       case 'task_outcome':
-        return 'task_outcome';
+      case 'work_unit_outcome':
+        return 'work_unit_outcome';
+      case 'decision':
+        return 'decision';
+      case 'error_pattern':
+        return 'error_pattern';
+      case 'module_insight':
+      case 'codebase_discovery':
+      case 'codebase_map':
+        return 'module_insight';
+      case 'requirement':
+        return 'requirement';
+      case 'dead_end':
+        return 'dead_end';
+      // Legacy fallbacks mapped to closest equivalent
+      case 'session_insight':
+      case 'pr_review':
+      case 'pr_finding':
       default:
-        return 'session_insight';
+        return 'module_insight';
     }
   }
 }

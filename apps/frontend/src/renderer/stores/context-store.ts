@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import type {
   ProjectIndex,
-  GraphitiMemoryStatus,
-  GraphitiMemoryState,
-  MemoryEpisode,
+  MemorySystemStatus,
+  MemorySystemState,
+  RendererMemory,
   ContextSearchResult
 } from '../../shared/types';
 
@@ -14,13 +14,13 @@ interface ContextState {
   indexError: string | null;
 
   // Memory Status
-  memoryStatus: GraphitiMemoryStatus | null;
-  memoryState: GraphitiMemoryState | null;
+  memoryStatus: MemorySystemStatus | null;
+  memoryState: MemorySystemState | null;
   memoryLoading: boolean;
   memoryError: string | null;
 
   // Recent Memories
-  recentMemories: MemoryEpisode[];
+  recentMemories: RendererMemory[];
   memoriesLoading: boolean;
 
   // Search
@@ -32,11 +32,11 @@ interface ContextState {
   setProjectIndex: (index: ProjectIndex | null) => void;
   setIndexLoading: (loading: boolean) => void;
   setIndexError: (error: string | null) => void;
-  setMemoryStatus: (status: GraphitiMemoryStatus | null) => void;
-  setMemoryState: (state: GraphitiMemoryState | null) => void;
+  setMemoryStatus: (status: MemorySystemStatus | null) => void;
+  setMemoryState: (state: MemorySystemState | null) => void;
   setMemoryLoading: (loading: boolean) => void;
   setMemoryError: (error: string | null) => void;
-  setRecentMemories: (memories: MemoryEpisode[]) => void;
+  setRecentMemories: (memories: RendererMemory[]) => void;
   setMemoriesLoading: (loading: boolean) => void;
   setSearchResults: (results: ContextSearchResult[]) => void;
   setSearchLoading: (loading: boolean) => void;
