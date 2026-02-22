@@ -1,3 +1,52 @@
+## 2.7.13 - Code Signing
+
+### 🛠️ Improvements
+
+- **Code signing** — macOS builds are now signed with Developer ID Application certificate and notarized with Apple
+- **Auto-update** — Removed unsigned-app workarounds; auto-update installs cleanly on macOS
+
+## 2.7.12 - Upstream Sync
+
+### 🛠️ Improvements
+
+- **Upstream sync** — Merged upstream Auto-Claude v2.7.6 stable release (PR #1880)
+
+## 2.7.11 - Fix Release Build
+
+### 🐛 Bug Fixes
+
+- **Release workflow** — Removed invalid `verifyUpdateCodeSignature` property from electron-builder mac config that caused ValidationError and broke packaging
+
+## 2.7.10 - Auto-Update Fix (Runtime)
+
+### 🐛 Bug Fixes
+
+- **Auto-update** — Set verifyUpdateCodeSignature=false at runtime so the running app skips macOS code signature validation on install
+
+## 2.7.9 - Auto-Update Fix
+
+### 🐛 Bug Fixes
+
+- **Auto-update** — Fixed code signature validation error on macOS that prevented updates from installing
+- **Update checker** — Fixed GitHub API calls pointing at wrong repository
+
+## 2.7.7 - Model Updates & PR Tab Fixes
+
+### ✨ New Features
+
+- **Sonnet 4.6 models** — Added Claude Sonnet 4.6 and Sonnet 4.6 (1M) to model selection, with Sonnet 4.5 preserved as a legacy option
+
+### 🐛 Bug Fixes
+
+- **PR description rendering** — PR descriptions now render markdown and HTML properly instead of showing raw text
+- **AI Analysis Results** — Review summaries now display formatted headings, tables, and bullet lists instead of a single unformatted line
+- **Rerun Review button** — Added a visible "Rerun Review" button in the PR action bar so reviews can be easily re-triggered
+- **Horizontal scroll** — Fixed content clipping in resizable split panels by enabling horizontal scrolling
+
+### 🛠️ Improvements
+
+- **CI fixes** — Disabled CSC_IDENTITY_AUTO_DISCOVERY to prevent signing crashes, upgraded pip for Python dep bundling
+
 ## 2.7.6 - Stability & Feature Enhancements
 
 ### ✨ New Features
