@@ -132,7 +132,7 @@ export function ResizablePanels({
     >
       {/* Left panel */}
       <div
-        className="flex flex-col min-w-0 overflow-hidden"
+        className="flex flex-col min-w-0 overflow-auto"
         style={{ width: `${leftWidth}%` }}
       >
         {leftPanel}
@@ -155,7 +155,7 @@ export function ResizablePanels({
 
       {/* Right panel */}
       <div
-        className="flex flex-col min-w-0 overflow-hidden"
+        className="flex flex-col min-w-0 overflow-auto"
         style={{ width: `${100 - leftWidth}%` }}
       >
         {rightPanel}

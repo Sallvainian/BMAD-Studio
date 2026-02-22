@@ -20,7 +20,9 @@ MODEL_ID_MAP: dict[str, str] = {
     "opus": "claude-opus-4-6",
     "opus-1m": "claude-opus-4-6",
     "opus-4.5": "claude-opus-4-5-20251101",
-    "sonnet": "claude-sonnet-4-5-20250929",
+    "sonnet": "claude-sonnet-4-6",
+    "sonnet-1m": "claude-sonnet-4-6",
+    "sonnet-4.5": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
 }
 
@@ -28,6 +30,7 @@ MODEL_ID_MAP: dict[str, str] = {
 # Maps model shorthands that need special beta flags (e.g., 1M context window)
 MODEL_BETAS_MAP: dict[str, list[str]] = {
     "opus-1m": ["context-1m-2025-08-07"],
+    "sonnet-1m": ["context-1m-2025-08-07"],
 }
 
 # Thinking level to budget tokens mapping
@@ -143,6 +146,9 @@ def resolve_model_id(model: str) -> str:
             "opus-1m": "ANTHROPIC_DEFAULT_OPUS_MODEL",
             # opus-4.5 intentionally omitted — always resolves to its hardcoded
             # model ID (claude-opus-4-5-20251101) regardless of env var overrides.
+            "sonnet-1m": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            # sonnet-4.5 intentionally omitted — always resolves to its hardcoded
+            # model ID (claude-sonnet-4-5-20250929) regardless of env var overrides.
         }
         env_var = env_var_map.get(model)
         if env_var:
