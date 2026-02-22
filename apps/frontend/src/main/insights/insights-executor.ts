@@ -4,7 +4,8 @@ import type {
   InsightsChatStatus,
   InsightsStreamChunk,
   InsightsToolUsage,
-  InsightsModelConfig
+  InsightsModelConfig,
+  ImageAttachment
 } from '../../shared/types';
 import type { TaskCategory, TaskComplexity, TaskMetadata } from '../../shared/types/task';
 import { InsightsConfig } from './config';
@@ -61,7 +62,8 @@ export class InsightsExecutor extends EventEmitter {
     projectPath: string,
     message: string,
     conversationHistory: Array<{ role: string; content: string }>,
-    modelConfig?: InsightsModelConfig
+    modelConfig?: InsightsModelConfig,
+    images?: ImageAttachment[]
   ): Promise<ProcessorResult> {
     // Cancel any existing session
     this.cancelSession(projectId);
