@@ -17,7 +17,7 @@ import type {
   TaskPriority
 } from '../../../shared/types';
 import { projectStore } from '../../project-store';
-import { readIdeationFile, writeIdeationFile, updateIdeationTimestamp } from './file-utils';
+import { readIdeationFile, writeIdeationFile, updateIdeationTimestamp, rebuildIdeationFromTypeFiles } from './file-utils';
 import type { RawIdea } from './types';
 import { withSpecNumberLock } from '../../utils/spec-number-lock';
 
@@ -189,14 +189,11 @@ export async function convertIdeaToTask(
     return { success: false, error: 'Project not found' };
   }
 
-  const ideationPath = path.join(
-    project.path,
-    AUTO_BUILD_PATHS.IDEATION_DIR,
-    AUTO_BUILD_PATHS.IDEATION_FILE
-  );
+  const ideationDir = path.join(project.path, AUTO_BUILD_PATHS.IDEATION_DIR);
+  const ideationPath = path.join(ideationDir, AUTO_BUILD_PATHS.IDEATION_FILE);
 
-  // Quick check that ideation file exists (actual read happens inside lock)
-  if (!existsSync(ideationPath)) {
+  // Check that the ideation directory exists (type files or ideation.json)
+  if (!existsSync(ideationDir)) {
     return { success: false, error: 'Ideation not found' };
   }
 
@@ -214,13 +211,27 @@ export async function convertIdeaToTask(
     // CRITICAL: All state checks must happen INSIDE the lock to prevent TOCTOU race conditions
     return await withSpecNumberLock(project.path, async (lock) => {
       // Re-read ideation file INSIDE the lock to get fresh state
-      const ideation = readIdeationFile(ideationPath);
+      let ideation = readIdeationFile(ideationPath);
+
+      // Find the idea (inside lock for fresh state)
+      let idea = ideation?.ideas?.find((i) => i.id === ideaId);
+
+      // Fallback: if ideation.json is missing or stale (idea not found),
+      // rebuild from individual type files written during streaming generation.
+      // This handles the case where generation was stopped/timed out before the
+      // Python backend wrote the final merged ideation.json.
+      if (!idea) {
+        const rebuilt = rebuildIdeationFromTypeFiles(ideationDir, ideationPath);
+        if (rebuilt) {
+          ideation = rebuilt;
+          idea = ideation.ideas?.find((i) => i.id === ideaId);
+        }
+      }
+
       if (!ideation) {
         return { success: false, error: 'Ideation not found' };
       }
 
-      // Find the idea (inside lock for fresh state)
-      const idea = ideation.ideas?.find((i) => i.id === ideaId);
       if (!idea) {
         return { success: false, error: 'Idea not found' };
       }

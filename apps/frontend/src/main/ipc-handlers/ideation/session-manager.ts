@@ -3,12 +3,13 @@
  */
 
 import path from 'path';
+import { existsSync } from 'fs';
 import type { IpcMainInvokeEvent } from 'electron';
 import { AUTO_BUILD_PATHS } from '../../../shared/constants';
 import type { IPCResult, IdeationSession } from '../../../shared/types';
 import { projectStore } from '../../project-store';
 import { transformIdeaFromSnakeCase } from './transformers';
-import { readIdeationFile } from './file-utils';
+import { readIdeationFile, rebuildIdeationFromTypeFiles } from './file-utils';
 
 /**
  * Get ideation session for a project
@@ -22,13 +23,21 @@ export async function getIdeationSession(
     return { success: false, error: 'Project not found' };
   }
 
-  const ideationPath = path.join(
-    project.path,
-    AUTO_BUILD_PATHS.IDEATION_DIR,
-    AUTO_BUILD_PATHS.IDEATION_FILE
-  );
+  const ideationDir = path.join(project.path, AUTO_BUILD_PATHS.IDEATION_DIR);
+  const ideationPath = path.join(ideationDir, AUTO_BUILD_PATHS.IDEATION_FILE);
 
-  const rawIdeation = readIdeationFile(ideationPath);
+  let rawIdeation = readIdeationFile(ideationPath);
+
+  // Fallback: if ideation.json is missing or has no ideas, rebuild from type files.
+  // This handles the case where generation was stopped/timed out before the
+  // Python backend wrote the final merged ideation.json.
+  if ((!rawIdeation || !rawIdeation.ideas?.length) && existsSync(ideationDir)) {
+    const rebuilt = rebuildIdeationFromTypeFiles(ideationDir, ideationPath);
+    if (rebuilt) {
+      rawIdeation = rebuilt;
+    }
+  }
+
   if (!rawIdeation) {
     return { success: true, data: null };
   }
