@@ -29,8 +29,8 @@ import { compareVersions } from './updater/version-manager';
 import { isMacOS } from './platform';
 
 // GitHub repo info for API calls
-const GITHUB_OWNER = 'AndyMik90';
-const GITHUB_REPO = 'Auto-Claude';
+const GITHUB_OWNER = 'Sallvainian';
+const GITHUB_REPO = 'BMAD-Studio';
 
 // Debug mode - DEBUG_UPDATER=true or development mode
 const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_ENV === 'development';
@@ -38,6 +38,8 @@ const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_E
 // Configure electron-updater
 autoUpdater.autoDownload = false;  // We control downloads manually to prevent downgrades
 autoUpdater.autoInstallOnAppQuit = true;  // Automatically install on app quit
+// Note: verifyUpdateCodeSignature does not bypass Squirrel.Mac/ShipIt's native code-signature checks.
+// macOS auto-update installation still requires a valid, stable signing identity across releases.
 
 // Update channels: 'latest' for stable, 'beta' for pre-release
 type UpdateChannel = 'latest' | 'beta';
