@@ -30,55 +30,29 @@ Auto Claude is a desktop application (+ CLI) where users describe a goal and AI 
 
 ## Critical Rules
 
-**Claude Agent SDK only** — All AI interactions use `claude-agent-sdk` because it handles security hooks, tool permissions, and MCP server integration. Use `create_client()` from `core.client`, not `anthropic.Anthropic()` directly.
+**Claude Agent SDK only** — All AI interactions use `claude-agent-sdk`. NEVER use `anthropic.Anthropic()` directly. Always use `create_client()` from `core.client`.
 
-**i18n required** — All frontend user-facing text uses `react-i18next` translation keys. Hardcoded strings in JSX/TSX break localization for non-English users. Add keys to both `en/*.json` and `fr/*.json`.
+**i18n required** — All frontend user-facing text MUST use `react-i18next` translation keys. Never hardcode strings in JSX/TSX. Add keys to both `en/*.json` and `fr/*.json`.
 
-**Platform abstraction** — Use the platform modules in `apps/frontend/src/main/platform/` or `apps/backend/core/platform/` instead of `process.platform` directly. CI tests all three platforms, and raw platform checks cause failures.
+**Platform abstraction** — Never use `process.platform` directly. Import from `apps/frontend/src/main/platform/` or `apps/backend/core/platform/`. CI tests all three platforms.
 
-**No time estimates** — Provide priority-based ordering instead of duration predictions.
+**No time estimates** — Never provide duration predictions. Use priority-based ordering instead.
 
-**PR target** — Always target the `develop` branch for PRs, not `main`. Main is reserved for releases.
+**PR target** — Always target the `develop` branch for PRs to Sallvainian/Auto-Claude, NOT `main`.
 
-**No console.log in production code** — `console.log` output is invisible in bundled Electron apps. Use Sentry for error tracking in production; reserve `console.log` for development only.
+**No console.log for debugging production issues** — `console.log` output is not visible in bundled/packaged versions of the Electron app. Use Sentry for error tracking and diagnostics in production. Reserve `console.log` for development only.
 
-## Work Approach: Orchestrator-First
+## Work Approach
 
-You are an orchestrator. Your primary role is to understand what needs to be done, break it into workstreams, and delegate execution to agent teams. This keeps your context window focused on coordination and decision-making rather than filling up with implementation details.
+**Investigate before speculating** — Always read the actual code before proposing root causes. Spawn agents to grep and read relevant source files before forming any hypothesis. Never guess at causes without evidence from the codebase.
 
-<orchestrator_pattern>
-When given a task, follow this pattern:
+**Spawn agents for complex tasks** — When tackling complex tasks, spawn sub-agents/agent teams immediately rather than trying to handle everything in a single context window. Never attempt to analyze large codebases or multiple features monolithically.
 
-1. **Investigate first** — Read the actual code before forming any hypothesis. Use targeted searches (Glob, Grep, Read) for simple lookups. For broader exploration, spawn an Explore agent.
-
-2. **Plan the approach** — Identify what needs to change, which files are involved, and whether work can be parallelized. For multi-step tasks, create a task list to track workstreams.
-
-3. **Delegate execution** — Spawn agent teams to do the implementation work. Each agent gets a clear, self-contained assignment with all the context it needs: relevant file paths, the specific change to make, and acceptance criteria. Run independent workstreams in parallel.
-
-4. **Verify and integrate** — Review agent outputs, run tests, and ensure changes work together. Fix integration issues or spawn follow-up agents as needed.
-</orchestrator_pattern>
-
-**When to delegate vs. do directly:**
-- Delegate: multi-file changes, research across the codebase, independent parallel workstreams, tasks that would consume significant context
-- Do directly: single-file edits, simple bug fixes, quick lookups, tasks where you already have the context
-
-**Giving agents good assignments** — Each agent works with a fresh context. Include: the specific goal, relevant file paths, code patterns to follow, and what "done" looks like. Agents perform better with explicit, complete instructions than with vague references to "the current task."
-
-**Minimal changes only** — Prefer the simplest approach (e.g., prompt-only changes, single guard clause) before suggesting multi-component solutions. If the user asks for X, implement X — don't bundle additional fixes they didn't request.
-
-**Default to action** — When the user's intent implies making changes, implement them rather than only suggesting. If something is unclear, read the relevant code to fill in the gaps rather than asking. Only ask when genuine ambiguity remains about what the user wants.
-
-## Context Management
-
-Your context window will be automatically compacted as it approaches its limit, allowing you to continue working indefinitely. Do not stop tasks early due to context concerns — instead, persist progress and keep going.
-
-**For long-running tasks:** Use git commits, task lists, and structured notes to track state. When context compacts, review git log and any progress files to re-orient. Focus on incremental progress — complete one component before moving to the next, and commit working states along the way.
-
-**Parallel tool calls** — When reading multiple files, running independent searches, or executing unrelated commands, make all calls in parallel rather than sequentially. This significantly speeds up investigation and implementation.
+**Minimal fixes only** — Prefer the simplest approach (e.g., prompt-only changes, single guard clause) before suggesting multi-component solutions. If the user asks for X, implement X — don't bundle additional fixes they didn't request.
 
 ## Known Gotchas
 
-**Electron path resolution** — For bug fixes in the Electron app, check path resolution differences between dev and production builds (`app.isPackaged`, `process.resourcesPath`). Paths that work in dev often break when Electron is bundled for production — verify both contexts.
+**Electron path resolution** — For bug fixes in the Electron app, always check path resolution differences between dev and production builds (`app.isPackaged`, `process.resourcesPath`). Paths that work in dev often break when Electron is bundled for production — verify both contexts.
 
 ### Resetting PR Review State
 
@@ -92,49 +66,269 @@ To fully clear all PR review data so reviews run fresh, delete/reset these three
 ## Project Structure
 
 ```
-autonomous-coding/
+BMAD-Studio/                              # Monorepo root (npm workspaces: apps/*, libs/*)
 ├── apps/
-│   ├── backend/                 # Python backend/CLI — ALL agent logic
-│   │   ├── core/                # client.py, auth.py, worktree.py, platform/
-│   │   ├── security/            # Command allowlisting, validators, hooks
-│   │   ├── agents/              # planner, coder, session management
-│   │   ├── qa/                  # reviewer, fixer, loop, criteria
-│   │   ├── spec/                # Spec creation pipeline
-│   │   ├── cli/                 # CLI commands (spec, build, workspace, QA)
-│   │   ├── context/             # Task context building, semantic search
-│   │   ├── runners/             # Standalone runners (spec, roadmap, insights, github)
-│   │   ├── services/            # Background services, recovery orchestration
-│   │   ├── integrations/        # graphiti/, linear, github
-│   │   ├── project/             # Project analysis, security profiles
-│   │   ├── merge/               # Intent-aware semantic merge for parallel agents
-│   │   └── prompts/             # Agent system prompts (.md)
-│   └── frontend/                # Electron desktop UI
-│       └── src/
-│           ├── main/            # Electron main process
-│           │   ├── agent/       # Agent queue, process, state, events
-│           │   ├── claude-profile/ # Multi-profile credentials, token refresh, usage
-│           │   ├── terminal/    # PTY daemon, lifecycle, Claude integration
-│           │   ├── platform/    # Cross-platform abstraction
-│           │   ├── ipc-handlers/# 40+ handler modules by domain
-│           │   ├── services/    # SDK session recovery, profile service
-│           │   └── changelog/   # Changelog generation and formatting
-│           ├── preload/         # Electron preload scripts (electronAPI bridge)
-│           ├── renderer/        # React UI
-│           │   ├── components/  # UI components (onboarding, settings, task, terminal, github, etc.)
-│           │   ├── stores/      # 24+ Zustand state stores
-│           │   ├── contexts/    # React contexts (ViewStateContext)
-│           │   ├── hooks/       # Custom hooks (useIpc, useTerminal, etc.)
-│           │   ├── styles/      # CSS / Tailwind styles
-│           │   └── App.tsx      # Root component
-│           ├── shared/          # Shared types, i18n, constants, utils
-│           │   ├── i18n/locales/# en/*.json, fr/*.json
-│           │   ├── constants/   # themes.ts, etc.
-│           │   ├── types/       # 19+ type definition files
-│           │   └── utils/       # ANSI sanitizer, shell escape, provider detection
-│           └── types/           # TypeScript type definitions
-├── guides/                      # Documentation
-├── tests/                       # Backend test suite
-└── scripts/                     # Build and utility scripts
+│   ├── backend/                          # Python backend — ALL agent logic
+│   │   ├── run.py                        # ★ Main entry point (Python 3.10+ enforced)
+│   │   ├── cli/
+│   │   │   └── main.py                   # CLI command router (50+ flags)
+│   │   ├── core/                         # SDK client, auth, worktree, platform
+│   │   │   ├── __init__.py               # Lazy imports facade
+│   │   │   ├── client.py                 # ★ Claude Agent SDK client config & patches
+│   │   │   ├── auth.py                   # OAuth authentication + token management
+│   │   │   ├── worktree.py               # Git worktree isolation management
+│   │   │   ├── progress.py               # Task progress tracking
+│   │   │   ├── platform/                 # Cross-platform abstractions (Win/Mac/Linux)
+│   │   │   └── recovery/                 # SDK session recovery mechanisms
+│   │   ├── agents/                       # Agent orchestration
+│   │   │   ├── planner.py                # Follow-up planning agent
+│   │   │   ├── coder.py                  # Autonomous coding agent
+│   │   │   ├── session.py                # Agent session management
+│   │   │   └── tools_pkg/                # Agent tool definitions and implementations
+│   │   ├── spec/                         # Spec creation pipeline
+│   │   │   ├── pipeline.py               # Orchestration
+│   │   │   ├── gatherer.py               # Requirements gathering phase
+│   │   │   ├── researcher.py             # Research and analysis phase
+│   │   │   ├── writer.py                 # Specification writing phase
+│   │   │   └── complexity.py             # AI-based complexity assessment
+│   │   ├── qa/                           # QA validation system
+│   │   │   ├── reviewer.py               # QA validation and review
+│   │   │   ├── fixer.py                  # Issue resolution agent
+│   │   │   ├── loop.py                   # QA iteration loop management
+│   │   │   ├── criteria.py               # Acceptance criteria evaluation
+│   │   │   └── report.py                 # QA report generation
+│   │   ├── security/                     # Command security
+│   │   │   ├── main.py                   # Backward compatibility facade
+│   │   │   ├── allowlist/                # Three-layer command allowlisting
+│   │   │   ├── validators/               # File, shell, network validators
+│   │   │   └── hooks.py                  # Security validation hooks
+│   │   ├── integrations/                 # External services
+│   │   │   ├── graphiti/                 # ★ Knowledge graph memory (Python 3.12+)
+│   │   │   │   ├── memory.py             # Facade (episode types, GroupIdMode)
+│   │   │   │   ├── queries_pkg/          # Modular implementation
+│   │   │   │   │   ├── graphiti.py       # GraphitiMemory class
+│   │   │   │   │   ├── client.py         # LadybugDB client wrapper
+│   │   │   │   │   ├── queries.py        # Graph query operations
+│   │   │   │   │   ├── search.py         # Semantic search logic
+│   │   │   │   │   ├── schema.py         # Graph schema definitions
+│   │   │   │   │   └── kuzu_driver_patched.py # Monkeypatch for embedded DB
+│   │   │   │   └── graphiti_config.py    # Configuration
+│   │   │   ├── linear/                   # Linear PM integration
+│   │   │   │   ├── integration.py        # API wrapper, graceful no-op
+│   │   │   │   ├── config.py             # Linear API configuration
+│   │   │   │   └── client.py             # Linear API client
+│   │   │   └── github/                   # GitHub PR/issue management
+│   │   ├── context/                      # Task context building
+│   │   │   ├── builder.py                # Context assembly
+│   │   │   ├── semantic_search.py        # Semantic context retrieval
+│   │   │   ├── file_categorizer.py       # File importance classification
+│   │   │   └── codebase_analyzer.py      # Codebase analysis
+│   │   ├── project/                      # Project analysis
+│   │   │   ├── analyzer.py               # Project structure analysis
+│   │   │   ├── security.py               # Project-level security profiles
+│   │   │   └── config.py                 # Project configuration parsing
+│   │   ├── runners/                      # Standalone execution runners
+│   │   │   ├── spec_runner.py            # Spec creation
+│   │   │   ├── roadmap_runner.py         # Roadmap generation
+│   │   │   ├── insights_runner.py        # Codebase insights
+│   │   │   └── github_runner.py          # GitHub operations
+│   │   ├── services/                     # Background services
+│   │   │   ├── recovery.py               # SDK session recovery orchestration
+│   │   │   └── background.py             # Background service management
+│   │   ├── merge/                        # Semantic merge for parallel agents
+│   │   │   ├── intent_analyzer.py        # AI-powered intent extraction
+│   │   │   └── semantic_merge.py         # Conflict resolution
+│   │   ├── prompts/                      # ★ Agent system prompts (.md)
+│   │   │   ├── planner.md                # Planner agent prompt
+│   │   │   ├── coder.md                  # Coder agent prompt
+│   │   │   ├── coder_recovery.md         # Recovery prompt for coder
+│   │   │   ├── qa_reviewer.md            # QA reviewer prompt
+│   │   │   ├── qa_fixer.md               # QA fixer prompt
+│   │   │   ├── spec_gatherer.md          # Requirements gathering
+│   │   │   ├── spec_researcher.md        # Research and analysis
+│   │   │   ├── spec_writer.md            # Specification writing
+│   │   │   ├── spec_critic.md            # Spec quality review
+│   │   │   └── complexity_assessor.md    # Complexity assessment
+│   │   ├── phase_config.py               # ★ Phase model/thinking config (MODEL_ID_MAP, budgets)
+│   │   ├── task_logger.py                # Task logging and persistence
+│   │   ├── implementation_plan.py        # Plan data structures, CRUD, status
+│   │   ├── graphiti_config.py            # Graphiti configuration module
+│   │   ├── requirements.txt              # Python dependencies
+│   │   └── pyproject.toml                # Python project config
+│   │
+│   └── frontend/                         # Electron desktop UI
+│       ├── src/
+│       │   ├── main/                     # ★ Electron main process
+│       │   │   ├── index.ts              # ★ Entry: window creation, services, IPC (665 lines)
+│       │   │   ├── agent/                # Agent management (20 files)
+│       │   │   │   ├── agent-queue.ts    # Queue mgmt for ideation/roadmap
+│       │   │   │   ├── agent-process.ts  # Subprocess communication
+│       │   │   │   ├── agent-state.ts    # State tracking
+│       │   │   │   ├── agent-events.ts   # Lifecycle events
+│       │   │   │   ├── agent-recovery.ts # Recovery from crashes
+│       │   │   │   ├── session-handler.ts# Multi-session coordination
+│       │   │   │   ├── timeout-manager.ts# Stalled agent handling
+│       │   │   │   ├── output-parser.ts  # Structured output parsing
+│       │   │   │   ├── error-handler.ts  # Error classification
+│       │   │   │   └── token-counter.ts  # Token usage tracking
+│       │   │   ├── claude-profile/       # Multi-profile credential management
+│       │   │   │   ├── credential-utils.ts  # OS keychain (Mac/Win/Linux)
+│       │   │   │   ├── token-refresh.ts     # OAuth lifecycle + auto-refresh
+│       │   │   │   ├── usage-monitor.ts     # ★ API usage tracking + auto-switch (537 lines)
+│       │   │   │   └── profile-scorer.ts    # Profile availability ranking
+│       │   │   ├── terminal/             # PTY-based terminal system
+│       │   │   │   ├── pty-daemon.ts     # ★ Detached PTY process (533 lines)
+│       │   │   │   ├── pty-manager.ts    # PTY instance lifecycle
+│       │   │   │   ├── terminal-lifecycle.ts # Session creation/cleanup
+│       │   │   │   └── claude-integration-handler.ts # SDK in terminals
+│       │   │   ├── ipc-handlers/         # 39 handler modules by domain
+│       │   │   │   ├── project-handlers.ts  # Git ops, init, settings
+│       │   │   │   ├── github/           # 5 handlers (issues, PR, review, investigation, bot)
+│       │   │   │   ├── gitlab/           # 5 handlers (issues, MR, review, investigation, bot)
+│       │   │   │   ├── agent-events/     # 3 handlers (planning, building, QA)
+│       │   │   │   ├── task/             # 4 handlers (create, update, complete, delete)
+│       │   │   │   ├── terminal/         # 4 handlers (create, write, resize, export)
+│       │   │   │   ├── context/          # 2 handlers (build, search)
+│       │   │   │   ├── ideation/         # 3 handlers (features, performance, security)
+│       │   │   │   ├── roadmap/          # 2 handlers (generate, update)
+│       │   │   │   ├── settings/         # App settings management
+│       │   │   │   ├── profile/          # Claude profile management
+│       │   │   │   ├── app-update.ts     # Auto-updater control
+│       │   │   │   ├── changelog.ts      # Release notes generation
+│       │   │   │   ├── file.ts           # File operations
+│       │   │   │   ├── screenshot.ts     # Screenshot capture
+│       │   │   │   ├── claude-code.ts    # Claude Code integration
+│       │   │   │   ├── env.ts            # Environment management
+│       │   │   │   ├── memory.ts         # Graphiti knowledge graph ops
+│       │   │   │   └── mcp.ts            # MCP server communication
+│       │   │   ├── platform/             # Cross-platform abstraction
+│       │   │   │   ├── platform.ts       # OS detection and utilities
+│       │   │   │   └── executable-finder.ts # Cross-platform exe lookup
+│       │   │   ├── services/             # SDK session recovery, profile service
+│       │   │   ├── changelog/            # Changelog generation and formatting
+│       │   │   ├── project-store.ts      # Main process project persistence
+│       │   │   └── terminal-session-store.ts # Terminal session storage
+│       │   │
+│       │   ├── renderer/                 # ★ React UI
+│       │   │   ├── App.tsx               # ★ Root component (1187 lines)
+│       │   │   ├── components/           # UI components by feature
+│       │   │   │   ├── onboarding/       # Setup wizard, GitHub/GitLab/Claude config
+│       │   │   │   ├── task/             # Task list, detail modal, creation wizard
+│       │   │   │   ├── terminal/         # xterm.js wrapper, tab bar, controls
+│       │   │   │   ├── kanban/           # Drag-and-drop board (@dnd-kit)
+│       │   │   │   ├── github/           # Issue browser, PR review, diff viewer
+│       │   │   │   ├── gitlab/           # Issue browser, MR review
+│       │   │   │   ├── roadmap/          # Goal visualization, timeline
+│       │   │   │   ├── insights/         # AI chat interface, analysis results
+│       │   │   │   ├── ideation/         # Feature suggestions, security findings
+│       │   │   │   └── settings/         # Theme selector, language, API keys
+│       │   │   ├── stores/               # ★ 29 Zustand state stores
+│       │   │   │   ├── project-store.ts  # Projects, tabs, active project
+│       │   │   │   ├── task-store.ts     # Task/spec lifecycle
+│       │   │   │   ├── terminal-store.ts # Terminal sessions
+│       │   │   │   ├── settings-store.ts # User preferences
+│       │   │   │   ├── claude-profile-store.ts # Multi-profile auth state
+│       │   │   │   ├── insights-store.ts # Insights conversation
+│       │   │   │   ├── roadmap-store.ts  # Roadmap generation
+│       │   │   │   ├── ideation-store.ts # Ideation results
+│       │   │   │   ├── changelog-store.ts# Generated changelog
+│       │   │   │   ├── context-store.ts  # Context building
+│       │   │   │   ├── kanban-settings-store.ts # Kanban layout
+│       │   │   │   ├── github/           # issues-store, pr-review-store, investigation-store
+│       │   │   │   ├── gitlab/           # mr-review-store, gitlab-store
+│       │   │   │   ├── auth-failure-store.ts # Auth error recovery
+│       │   │   │   ├── rate-limit-store.ts   # Rate limit warnings
+│       │   │   │   ├── download-store.ts     # Active downloads
+│       │   │   │   ├── file-explorer-store.ts# File browser
+│       │   │   │   ├── project-env-store.ts  # Project env vars
+│       │   │   │   ├── release-store.ts      # Release data
+│       │   │   │   ├── mcp-server-store.ts   # MCP server state
+│       │   │   │   ├── agent-tools-store.ts  # Agent tools
+│       │   │   │   ├── memory-store.ts       # Graphiti memory
+│       │   │   │   ├── bmad-workflows-store.ts # Workflow definitions
+│       │   │   │   ├── worktrees-store.ts    # Git worktrees
+│       │   │   │   ├── sync-status-store.ts  # Sync progress
+│       │   │   │   └── terminal-font-settings-store.ts # Terminal fonts
+│       │   │   ├── hooks/                # Custom React hooks
+│       │   │   │   ├── useIpc.ts         # IPC communication
+│       │   │   │   └── useTerminal.ts    # Terminal session management
+│       │   │   ├── contexts/             # React contexts
+│       │   │   │   └── ViewStateContext.ts # Global view state
+│       │   │   └── styles/               # CSS / Tailwind styles
+│       │   │
+│       │   ├── preload/                  # Electron preload
+│       │   │   └── index.ts              # contextBridge → window.electronAPI
+│       │   │
+│       │   └── shared/                   # Shared types and utilities
+│       │       ├── types/                # 19+ type definition files
+│       │       │   ├── project.ts        # Project, ProjectSettings
+│       │       │   ├── task.ts           # Task, Spec, ImplementationPlan
+│       │       │   ├── terminal.ts       # Terminal session types
+│       │       │   ├── agent.ts          # Agent state, event types
+│       │       │   ├── github.ts         # GitHub issue/PR types
+│       │       │   └── gitlab.ts         # GitLab MR/issue types
+│       │       ├── i18n/
+│       │       │   └── locales/
+│       │       │       ├── en/           # English translations (8+ namespace files)
+│       │       │       └── fr/           # French translations (matching en)
+│       │       ├── constants/
+│       │       │   └── themes.ts         # 7 color themes (light/dark variants)
+│       │       └── utils/
+│       │           ├── ansi-sanitizer.ts  # Strip ANSI escape codes
+│       │           └── shell-escape.ts    # Safe shell argument escaping
+│       │
+│       ├── resources/                    # App icons and assets (icns, ico, png)
+│       ├── e2e/                          # Playwright E2E tests
+│       │   └── playwright.config.ts      # E2E configuration
+│       ├── scripts/                      # Frontend build utilities
+│       │   ├── package-with-python.cjs   # Cross-platform packaging + Python bundling
+│       │   ├── download-python.cjs       # Download Python runtime per platform
+│       │   ├── verify-python-bundling.cjs# Verify Python bundle integrity
+│       │   ├── verify-linux-packages.cjs # Verify Linux package structure
+│       │   └── postinstall.cjs           # Post-install hooks
+│       ├── package.json                  # v2.7.13, 150+ deps, electron-builder config
+│       ├── electron.vite.config.ts       # Vite config for 3 Electron processes
+│       ├── vitest.config.ts              # Unit test configuration
+│       └── tsconfig.json                 # TypeScript strict mode, 7 path aliases
+│
+├── tests/                                # Backend test suite (pytest)
+├── scripts/                              # Root build utilities
+│   ├── bump-version.js                   # Semantic version bumping
+│   ├── install-backend.js                # Python venv setup
+│   └── test-backend.js                   # Backend test runner
+├── guides/                               # User documentation and tutorials
+├── shared_docs/
+│   └── ARCHITECTURE.md                   # Deep-dive architecture reference
+├── docs/                                 # Generated project documentation
+│   └── index.md                          # Master documentation index
+├── .github/workflows/                    # ★ 16 CI/CD workflows
+│   ├── release.yml                       # Production release (macOS notarization)
+│   ├── beta-release.yml                  # Beta (Azure Trusted Signing, 746 lines)
+│   ├── prepare-release.yml               # Version validation + tagging
+│   ├── ci.yml                            # Cross-platform CI matrix
+│   ├── lint.yml                          # Biome 2.3.11 + Ruff 0.14.10
+│   ├── build-prebuilds.yml               # Native module prebuilds (node-pty)
+│   ├── quality-security.yml              # CodeQL + Bandit scanning
+│   ├── virustotal-scan.yml               # Post-release security scan
+│   ├── claude.yml                        # @claude mention detection
+│   ├── claude-code-review.yml            # Automated code review
+│   ├── pr-labeler.yml                    # Conventional commit PR labels
+│   ├── issue-auto-label.yml              # Issue area labels
+│   ├── stale.yml                         # 60-day stale issue lifecycle
+│   ├── welcome.yml                       # First-time contributor greeting
+│   ├── discord-release.yml               # Discord webhook notifications
+│   └── test-azure-auth.yml               # Manual OIDC verification
+├── package.json                          # Root monorepo config (workspaces)
+├── pnpm-lock.yaml                        # Lock file
+├── ruff.toml                             # Python linter config
+├── run.py                                # Backend CLI entry point (symlink/shortcut)
+├── CLAUDE.md                             # AI assistant project instructions
+├── README.md                             # Product readme, downloads, security model
+├── CONTRIBUTING.md                       # Contribution guidelines
+├── RELEASE.md                            # Release process documentation
+├── CHANGELOG.md                          # Version history
+├── LICENSE                               # AGPL-3.0
+└── CLA.md                                # Contributor License Agreement
 ```
 
 ## Commands Quick Reference
@@ -304,7 +498,7 @@ Supports Windows, macOS, Linux. CI tests all three.
 | `findExecutable(name)` | Cross-platform executable lookup |
 | `requiresShell(command)` | `.cmd/.bat` shell detection (Win) |
 
-Use `findExecutable()` and `joinPaths()` instead of hardcoded paths. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#cross-platform-development) for extended guide.
+Never hardcode paths. Use `findExecutable()` and `joinPaths()`. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#cross-platform-development) for extended guide.
 
 ## E2E Testing (Electron MCP)
 

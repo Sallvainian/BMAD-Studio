@@ -103,7 +103,7 @@ export function EnvConfigModal({
         // Handle Claude profiles
         if (profilesResult.success && profilesResult.data) {
           const authenticatedProfiles = profilesResult.data.profiles.filter(
-            (p: ClaudeProfile) => p.oauthToken || (p.isDefault && p.configDir)
+            (p: ClaudeProfile) => !!p.oauthToken
           );
           setClaudeProfiles(authenticatedProfiles);
 
@@ -201,8 +201,18 @@ export function EnvConfigModal({
       if (!result.success) {
         setError(result.error || 'Failed to start authentication');
         setIsAuthenticating(false);
+      } else {
+        // claude setup-token exits code 0 only after OAuth is fully complete.
+        // TERMINAL_OAUTH_TOKEN is not emitted for this flow (it's PTY-only),
+        // so handle success directly here.
+        setSuccess(true);
+        setHasExistingToken(true);
+        setIsAuthenticating(false);
+        setTimeout(() => {
+          onConfigured?.();
+          onOpenChange(false);
+        }, 1500);
       }
-      // Keep isAuthenticating true - will be cleared when token is received
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start authentication');
       setIsAuthenticating(false);
