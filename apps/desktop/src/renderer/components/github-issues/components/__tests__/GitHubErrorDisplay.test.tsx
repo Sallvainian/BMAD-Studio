@@ -6,7 +6,7 @@
  * Tests error display, icon rendering, button visibility, and countdown functionality.
  */
 import { describe, it, expect, vi } from 'vitest';
-import '@testing-library/jest-dom/vitest';
+import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GitHubErrorDisplay } from '../GitHubErrorDisplay';
 import type { GitHubErrorInfo } from '../../types';

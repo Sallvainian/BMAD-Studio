@@ -8,7 +8,7 @@
  * input validation, and user interactions
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import '@testing-library/jest-dom/vitest';
+import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { FontConfigPanel } from '../FontConfigPanel';

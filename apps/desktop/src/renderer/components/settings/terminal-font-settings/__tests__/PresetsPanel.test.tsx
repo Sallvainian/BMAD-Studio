@@ -8,7 +8,7 @@
  * (save, apply, delete), and localStorage persistence
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import '@testing-library/jest-dom/vitest';
+import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { PresetsPanel } from '../PresetsPanel';
