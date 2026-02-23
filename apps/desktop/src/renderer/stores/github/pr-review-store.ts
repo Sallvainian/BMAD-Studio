@@ -310,6 +310,87 @@ export function initializePRReviewListeners(): void {
   );
   cleanupFunctions.push(cleanupStateChange);
 
+  // Also listen for legacy progress/complete/error events from the main process.
+  // The PR handler sends these directly (not via PRReviewStateManager/XState),
+  // so we translate them into handlePRReviewStateChange calls.
+  const cleanupProgress = window.electronAPI.github.onPRReviewProgress(
+    (projectId: string, progress: PRReviewProgress) => {
+      const key = `${projectId}:${progress.prNumber}`;
+      store.handlePRReviewStateChange(key, {
+        state: 'reviewing',
+        prNumber: progress.prNumber,
+        projectId,
+        isReviewing: true,
+        startedAt: usePRReviewStore.getState().prReviews[key]?.startedAt ?? new Date().toISOString(),
+        progress,
+        result: null,
+        previousResult: usePRReviewStore.getState().prReviews[key]?.previousResult ?? null,
+        error: null,
+        isExternalReview: false,
+        isFollowup: false,
+      });
+    }
+  );
+  cleanupFunctions.push(cleanupProgress);
+
+  const cleanupComplete = window.electronAPI.github.onPRReviewComplete(
+    (projectId: string, result: PRReviewResult) => {
+      const key = `${projectId}:${result.prNumber}`;
+      const existing = usePRReviewStore.getState().prReviews[key];
+      // External review detection: result with in_progress status
+      if (result.overallStatus === 'in_progress') {
+        store.handlePRReviewStateChange(key, {
+          state: 'externalReview',
+          prNumber: result.prNumber,
+          projectId,
+          isReviewing: true,
+          startedAt: existing?.startedAt ?? new Date().toISOString(),
+          progress: null,
+          result,
+          previousResult: existing?.previousResult ?? null,
+          error: null,
+          isExternalReview: true,
+          isFollowup: false,
+        });
+      } else {
+        store.handlePRReviewStateChange(key, {
+          state: 'completed',
+          prNumber: result.prNumber,
+          projectId,
+          isReviewing: false,
+          startedAt: null,
+          progress: null,
+          result,
+          previousResult: existing?.previousResult ?? null,
+          error: null,
+          isExternalReview: false,
+          isFollowup: false,
+        });
+      }
+    }
+  );
+  cleanupFunctions.push(cleanupComplete);
+
+  const cleanupError = window.electronAPI.github.onPRReviewError(
+    (projectId: string, error: { prNumber: number; error: string }) => {
+      const key = `${projectId}:${error.prNumber}`;
+      store.handlePRReviewStateChange(key, {
+        state: 'error',
+        prNumber: error.prNumber,
+        projectId,
+        isReviewing: false,
+        startedAt: null,
+        progress: null,
+        result: null,
+        previousResult: usePRReviewStore.getState().prReviews[key]?.previousResult ?? null,
+        error: error.error,
+        isExternalReview: false,
+        isFollowup: false,
+      });
+    }
+  );
+  cleanupFunctions.push(cleanupError);
+
   // Listen for GitHub auth changes - clear all PR review state when account changes
   const cleanupAuthChanged = window.electronAPI.github.onGitHubAuthChanged(
     (data: { oldUsername: string | null; newUsername: string }) => {

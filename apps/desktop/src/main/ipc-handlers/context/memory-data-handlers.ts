@@ -73,6 +73,62 @@ export function registerMemoryDataHandlers(
     }
   );
 
+  // Verify a memory (mark as user-verified)
+  ipcMain.handle(
+    IPC_CHANNELS.CONTEXT_MEMORY_VERIFY,
+    async (_, memoryId: string): Promise<IPCResult<void>> => {
+      try {
+        const service = await getMemoryService();
+        await service.verifyMemory(memoryId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to verify memory' };
+      }
+    }
+  );
+
+  // Pin/unpin a memory
+  ipcMain.handle(
+    IPC_CHANNELS.CONTEXT_MEMORY_PIN,
+    async (_, memoryId: string, pinned: boolean): Promise<IPCResult<void>> => {
+      try {
+        const service = await getMemoryService();
+        await service.pinMemory(memoryId, pinned);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to pin memory' };
+      }
+    }
+  );
+
+  // Deprecate a memory (soft delete)
+  ipcMain.handle(
+    IPC_CHANNELS.CONTEXT_MEMORY_DEPRECATE,
+    async (_, memoryId: string): Promise<IPCResult<void>> => {
+      try {
+        const service = await getMemoryService();
+        await service.deprecateMemory(memoryId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to deprecate memory' };
+      }
+    }
+  );
+
+  // Delete a memory permanently
+  ipcMain.handle(
+    IPC_CHANNELS.CONTEXT_MEMORY_DELETE,
+    async (_, memoryId: string): Promise<IPCResult<void>> => {
+      try {
+        const service = await getMemoryService();
+        await service.deleteMemory(memoryId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Failed to delete memory' };
+      }
+    }
+  );
+
   // Search memories
   ipcMain.handle(
     IPC_CHANNELS.CONTEXT_SEARCH_MEMORIES,

@@ -51,9 +51,7 @@ function EmptyState({ message }: { message: string }) {
 
 export function GitHubPRs({ onOpenSettings, isActive = false }: GitHubPRsProps) {
   const { t } = useTranslation("common");
-  const projects = useProjectStore((state) => state.projects);
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   const {
     prs,
@@ -86,7 +84,7 @@ export function GitHubPRs({ onOpenSettings, isActive = false }: GitHubPRsProps) 
     repoFullName,
     getReviewStateForPR,
     selectedPR,
-  } = useGitHubPRs(selectedProject?.id, { isActive });
+  } = useGitHubPRs(selectedProjectId || undefined, { isActive });
 
   // Get newCommitsCheck for the selected PR (other values come from hook to ensure consistency)
   const selectedPRReviewState = selectedPRNumber ? getReviewStateForPR(selectedPRNumber) : null;

@@ -882,6 +882,18 @@
       "whyItFailed": "Why It Failed",
       "alternativeUsed": "Alternative Used",
       "steps": "Steps"
+    },
+    "actions": {
+      "verify": "Verify",
+      "pin": "Pin",
+      "unpin": "Unpin",
+      "deprecate": "Remove"
+    }
+  },
+  "context": {
+    "tabs": {
+      "projectIndex": "Project Index",
+      "memories": "Memories"
     }
   },
   "prStatus": {

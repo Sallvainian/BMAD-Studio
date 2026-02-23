@@ -19,6 +19,10 @@ export async function buildMemoryStatus(): Promise<MemorySystemStatus> {
       enabled: true,
       available: true,
       embeddingProvider,
+      ...(embeddingProvider === 'none' && {
+        reason:
+          'No embedding provider found. Install Ollama with an embedding model or set OPENAI_API_KEY.',
+      }),
     };
   } catch {
     return {

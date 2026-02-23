@@ -882,6 +882,18 @@
       "whyItFailed": "Pourquoi ça a échoué",
       "alternativeUsed": "Alternative utilisée",
       "steps": "Étapes"
+    },
+    "actions": {
+      "verify": "Vérifier",
+      "pin": "Épingler",
+      "unpin": "Désépingler",
+      "deprecate": "Supprimer"
+    }
+  },
+  "context": {
+    "tabs": {
+      "projectIndex": "Index du projet",
+      "memories": "Mémoires"
     }
   },
   "prStatus": {

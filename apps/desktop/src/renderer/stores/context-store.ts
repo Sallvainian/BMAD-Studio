@@ -197,3 +197,79 @@ export async function loadRecentMemories(
     store.setMemoriesLoading(false);
   }
 }
+
+/**
+ * Verify a memory (mark as user-verified)
+ */
+export async function verifyMemory(memoryId: string): Promise<boolean> {
+  try {
+    const result = await window.electronAPI.verifyMemory(memoryId);
+    if (result.success) {
+      const store = useContextStore.getState();
+      store.setRecentMemories(
+        store.recentMemories.map((m) =>
+          m.id === memoryId ? { ...m, userVerified: true, needsReview: false } : m
+        )
+      );
+    }
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pin/unpin a memory
+ */
+export async function pinMemory(memoryId: string, pinned: boolean): Promise<boolean> {
+  try {
+    const result = await window.electronAPI.pinMemory(memoryId, pinned);
+    if (result.success) {
+      const store = useContextStore.getState();
+      store.setRecentMemories(
+        store.recentMemories.map((m) =>
+          m.id === memoryId ? { ...m, pinned } : m
+        )
+      );
+    }
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deprecate a memory (soft delete)
+ */
+export async function deprecateMemory(memoryId: string): Promise<boolean> {
+  try {
+    const result = await window.electronAPI.deprecateMemory(memoryId);
+    if (result.success) {
+      const store = useContextStore.getState();
+      store.setRecentMemories(
+        store.recentMemories.filter((m) => m.id !== memoryId)
+      );
+    }
+    return result.success;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delete a memory permanently
+ */
+export async function deleteMemory(memoryId: string): Promise<boolean> {
+  try {
+    const result = await window.electronAPI.deleteMemory(memoryId);
+    if (result.success) {
+      const store = useContextStore.getState();
+      store.setRecentMemories(
+        store.recentMemories.filter((m) => m.id !== memoryId)
+      );
+    }
+    return result.success;
+  } catch {
+    return false;
+  }
+}

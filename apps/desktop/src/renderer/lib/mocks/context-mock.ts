@@ -36,5 +36,22 @@ export const contextMock = {
   getRecentMemories: async () => ({
     success: true,
     data: []
+  }),
+
+  // Memory Management
+  verifyMemory: async (_memoryId: string) => ({
+    success: true
+  }),
+
+  pinMemory: async (_memoryId: string, _pinned: boolean) => ({
+    success: true
+  }),
+
+  deprecateMemory: async (_memoryId: string) => ({
+    success: true
+  }),
+
+  deleteMemory: async (_memoryId: string) => ({
+    success: true
   })
 };

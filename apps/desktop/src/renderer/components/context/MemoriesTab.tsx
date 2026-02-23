@@ -33,6 +33,9 @@ interface MemoriesTabProps {
   searchResults: Array<{ type: string; content: string; score: number }>;
   searchLoading: boolean;
   onSearch: (query: string) => void;
+  onVerify?: (memoryId: string) => void;
+  onPin?: (memoryId: string, pinned: boolean) => void;
+  onDeprecate?: (memoryId: string) => void;
 }
 
 // Get the effective category for a memory based on its type
@@ -75,7 +78,10 @@ export function MemoriesTab({
   memoriesLoading,
   searchResults,
   searchLoading,
-  onSearch
+  onSearch,
+  onVerify,
+  onPin,
+  onDeprecate
 }: MemoriesTabProps) {
   const { t } = useTranslation('common');
   const [localSearchQuery, setLocalSearchQuery] = useState('');
@@ -394,7 +400,13 @@ export function MemoriesTab({
           {filteredMemories.length > 0 && (
             <div className="space-y-3">
               {filteredMemories.map((memory) => (
-                <MemoryCard key={memory.id} memory={memory} />
+                <MemoryCard
+                  key={memory.id}
+                  memory={memory}
+                  onVerify={onVerify}
+                  onPin={onPin}
+                  onDeprecate={onDeprecate}
+                />
               ))}
             </div>
           )}

@@ -376,6 +376,37 @@ export class MemoryServiceImpl implements MemoryService {
     }
   }
 
+  /**
+   * Mark a memory as user-verified and clear the needs_review flag.
+   */
+  async verifyMemory(memoryId: string): Promise<void> {
+    await this.db.execute({
+      sql: `UPDATE memories SET user_verified = 1, needs_review = 0 WHERE id = ?`,
+      args: [memoryId],
+    });
+  }
+
+  /**
+   * Pin or unpin a memory.
+   */
+  async pinMemory(memoryId: string, pinned: boolean): Promise<void> {
+    await this.db.execute({
+      sql: `UPDATE memories SET pinned = ? WHERE id = ?`,
+      args: [pinned ? 1 : 0, memoryId],
+    });
+  }
+
+  /**
+   * Permanently delete a memory and all associated records.
+   */
+  async deleteMemory(memoryId: string): Promise<void> {
+    await this.db.batch([
+      { sql: 'DELETE FROM memory_embeddings WHERE memory_id = ?', args: [memoryId] },
+      { sql: 'DELETE FROM memories_fts WHERE memory_id = ?', args: [memoryId] },
+      { sql: 'DELETE FROM memories WHERE id = ?', args: [memoryId] },
+    ]);
+  }
+
   // ============================================================
   // PRIVATE HELPERS
   // ============================================================

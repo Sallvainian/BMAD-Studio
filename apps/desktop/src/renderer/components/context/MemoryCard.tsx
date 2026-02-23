@@ -11,7 +11,8 @@ import {
   ChevronUp,
   Flag,
   Pin,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
@@ -25,6 +26,9 @@ import { cn } from '../../lib/utils';
 
 interface MemoryCardProps {
   memory: RendererMemory;
+  onVerify?: (memoryId: string) => void;
+  onPin?: (memoryId: string, pinned: boolean) => void;
+  onDeprecate?: (memoryId: string) => void;
 }
 
 interface ParsedMemoryContent {
@@ -196,7 +200,7 @@ function WorkflowSteps({ steps, label }: { steps: string[]; label: string }) {
   );
 }
 
-export function MemoryCard({ memory }: MemoryCardProps) {
+export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardProps) {
   const { t } = useTranslation('common');
   const [expanded, setExpanded] = useState(false);
   const [filesExpanded, setFilesExpanded] = useState(false);
@@ -358,6 +362,51 @@ export function MemoryCard({ memory }: MemoryCardProps) {
             </Button>
           )}
         </div>
+
+        {/* Actions */}
+        {(onVerify || onPin || onDeprecate) && (
+          <div className="flex items-center gap-1 mt-2">
+            {!memory.userVerified && onVerify && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-green-400"
+                onClick={() => onVerify(memory.id)}
+                title={t('memory.actions.verify')}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {t('memory.actions.verify')}
+              </Button>
+            )}
+            {onPin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'h-7 gap-1 text-xs',
+                  memory.pinned ? 'text-accent' : 'text-muted-foreground hover:text-accent'
+                )}
+                onClick={() => onPin(memory.id, !memory.pinned)}
+                title={memory.pinned ? t('memory.actions.unpin') : t('memory.actions.pin')}
+              >
+                <Pin className="h-3.5 w-3.5" />
+                {memory.pinned ? t('memory.actions.unpin') : t('memory.actions.pin')}
+              </Button>
+            )}
+            {onDeprecate && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => onDeprecate(memory.id)}
+                title={t('memory.actions.deprecate')}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t('memory.actions.deprecate')}
+              </Button>
+            )}
+          </div>
+        )}
 
         {/* Expanded Content */}
         {expanded && (

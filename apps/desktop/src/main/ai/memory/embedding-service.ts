@@ -1,12 +1,13 @@
 /**
  * EmbeddingService
  *
- * Five-tier provider auto-detection:
+ * Six-tier provider auto-detection:
  *   1. qwen3-embedding:8b via Ollama (>32GB RAM)
  *   2. qwen3-embedding:4b via Ollama (recommended default)
  *   3. qwen3-embedding:0.6b via Ollama (low-memory)
- *   4. OpenAI text-embedding-3-small via @ai-sdk/openai (API key configured)
- *   5. Stub fallback with TODO for ONNX bundled bge-small-en-v1.5 (zero-config)
+ *   4. Any other Ollama embedding model (nomic-embed-text, all-minilm, bge-*, etc.)
+ *   5. OpenAI text-embedding-3-small via @ai-sdk/openai (API key configured)
+ *   6. Degraded hash-based fallback (no semantic similarity — install Ollama model to improve)
  *
  * Uses contextual embeddings: file/module context prepended to every embed call.
  * Supports MRL (Matryoshka) dimensions: 256-dim for candidate gen, 1024-dim for storage.
@@ -23,7 +24,7 @@ import type { Memory } from './types';
 // TYPES
 // ============================================================
 
-export type EmbeddingProvider = 'ollama-8b' | 'ollama-4b' | 'ollama-0.6b' | 'openai' | 'onnx';
+export type EmbeddingProvider = 'ollama-8b' | 'ollama-4b' | 'ollama-0.6b' | 'ollama-generic' | 'openai' | 'none';
 
 /** Contextual text prefix for AST chunks before embedding */
 export interface ASTChunk {
@@ -223,7 +224,7 @@ function truncateToDim(embedding: number[], targetDim: number): number[] {
 // ============================================================
 
 export class EmbeddingService {
-  private provider: EmbeddingProvider = 'onnx';
+  private provider: EmbeddingProvider = 'none';
   private readonly cache: EmbeddingCache;
   private ollamaModel = 'qwen3-embedding:4b';
   private initialized = false;
@@ -264,6 +265,16 @@ export class EmbeddingService {
         this.ollamaModel = 'qwen3-embedding:0.6b';
         return;
       }
+
+      // Check for any other embedding model on Ollama
+      const embeddingModels = modelNames.filter(
+        (n) => n.includes('embed') || n.includes('minilm') || n.includes('bge'),
+      );
+      if (embeddingModels.length > 0) {
+        this.provider = 'ollama-generic';
+        this.ollamaModel = embeddingModels[0];
+        return;
+      }
     }
 
     // Try OpenAI fallback
@@ -273,11 +284,8 @@ export class EmbeddingService {
       return;
     }
 
-    // Final fallback: ONNX stub
-    // TODO: Implement bundled bge-small-en-v1.5 via @xenova/transformers or onnxruntime-node
-    // When implemented: produces 384-dim embeddings (different from Qwen3/OpenAI 1024-dim)
-    // Track model_id per embedding to prevent cross-model similarity comparisons
-    this.provider = 'onnx';
+    // Final fallback: degraded hash-based embeddings (no semantic similarity)
+    this.provider = 'none';
   }
 
   getProvider(): EmbeddingProvider {
@@ -376,10 +384,12 @@ export class EmbeddingService {
         return `qwen3-embedding:4b-d${dims}`;
       case 'ollama-0.6b':
         return `qwen3-embedding:0.6b-d${dims}`;
+      case 'ollama-generic':
+        return `${this.ollamaModel}-d${dims}`;
       case 'openai':
         return `text-embedding-3-small-d${dims}`;
-      case 'onnx':
-        return 'bge-small-en-v1.5-d384';
+      case 'none':
+        return 'none-degraded';
     }
   }
 
@@ -387,7 +397,8 @@ export class EmbeddingService {
     switch (this.provider) {
       case 'ollama-8b':
       case 'ollama-4b':
-      case 'ollama-0.6b': {
+      case 'ollama-0.6b':
+      case 'ollama-generic': {
         const raw = await ollamaEmbed(this.ollamaModel, text);
         return dims === 256 ? truncateToDim(raw, 256) : raw;
       }
@@ -404,11 +415,8 @@ export class EmbeddingService {
         return result.embedding;
       }
 
-      case 'onnx': {
-        // TODO: Implement ONNX bundled bge-small-en-v1.5 fallback
-        // Use @xenova/transformers or onnxruntime-node when bundled model is available
-        // Note: bge-small-en-v1.5 produces 384-dim (not 1024) — model_id tracks this
-        return this.stubOnnxEmbed(text);
+      case 'none': {
+        return this.degradedEmbed(text);
       }
     }
   }
@@ -417,7 +425,8 @@ export class EmbeddingService {
     switch (this.provider) {
       case 'ollama-8b':
       case 'ollama-4b':
-      case 'ollama-0.6b': {
+      case 'ollama-0.6b':
+      case 'ollama-generic': {
         const raws = await ollamaEmbedBatch(this.ollamaModel, texts);
         return dims === 256 ? raws.map((r) => truncateToDim(r, 256)) : raws;
       }
@@ -433,28 +442,36 @@ export class EmbeddingService {
         return result.embeddings;
       }
 
-      case 'onnx': {
-        // TODO: Implement ONNX batch embedding
-        return Promise.all(texts.map((t) => this.stubOnnxEmbed(t)));
+      case 'none': {
+        return Promise.all(texts.map((t) => this.degradedEmbed(t)));
       }
     }
   }
 
+  private degradedEmbedWarned = false;
+
   /**
-   * Stub ONNX implementation that returns deterministic pseudo-embeddings.
-   * Replace with actual onnxruntime-node / @xenova/transformers when bundled model available.
-   * Note: real bge-small-en-v1.5 produces 384-dim embeddings.
+   * Degraded fallback that returns deterministic hash-based pseudo-embeddings.
+   * NOT suitable for semantic search — similar texts will NOT have similar embeddings.
+   * Users should install an Ollama embedding model or set OPENAI_API_KEY for real search.
    */
-  private stubOnnxEmbed(text: string): number[] {
-    // Deterministic stub: hash text to produce consistent pseudo-embedding
-    // NOT suitable for semantic search — replace with real ONNX inference
+  private degradedEmbed(text: string): number[] {
+    if (!this.degradedEmbedWarned) {
+      console.warn(
+        '[EmbeddingService] No embedding provider available. ' +
+          'Install Ollama with an embedding model (e.g., `ollama pull nomic-embed-text`) ' +
+          'or set OPENAI_API_KEY for semantic search. Using hash-based fallback (no semantic similarity).',
+      );
+      this.degradedEmbedWarned = true;
+    }
+    // Deterministic fallback: hash text to produce consistent pseudo-embedding
+    // NOT suitable for semantic search — similar texts won't have similar embeddings
     const hash = createHash('sha256').update(text).digest();
-    const dims = 384; // bge-small-en-v1.5 native dimension
+    const dims = 384;
     const embedding: number[] = [];
     for (let i = 0; i < dims; i++) {
       embedding.push((hash[i % hash.length] / 255) * 2 - 1);
     }
-    // L2-normalize
     const norm = Math.sqrt(embedding.reduce((s, v) => s + v * v, 0));
     return norm > 0 ? embedding.map((v) => v / norm) : embedding;
   }

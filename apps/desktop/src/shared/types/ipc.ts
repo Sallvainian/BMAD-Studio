@@ -457,6 +457,12 @@ export interface ElectronAPI {
   searchMemories: (projectId: string, query: string) => Promise<IPCResult<ContextSearchResult[]>>;
   getRecentMemories: (projectId: string, limit?: number) => Promise<IPCResult<RendererMemory[]>>;
 
+  // Memory Management
+  verifyMemory: (memoryId: string) => Promise<IPCResult<void>>;
+  pinMemory: (memoryId: string, pinned: boolean) => Promise<IPCResult<void>>;
+  deprecateMemory: (memoryId: string) => Promise<IPCResult<void>>;
+  deleteMemory: (memoryId: string) => Promise<IPCResult<void>>;
+
   // Environment configuration operations
   getProjectEnv: (projectId: string) => Promise<IPCResult<ProjectEnvConfig>>;
   updateProjectEnv: (projectId: string, config: Partial<ProjectEnvConfig>) => Promise<IPCResult>;

@@ -229,6 +229,11 @@ export interface MemoryService {
   searchByPattern(pattern: string): Promise<Memory | null>;
   insertUserTaught(content: string, projectId: string, tags: string[]): Promise<string>;
   searchWorkflowRecipe(taskDescription: string, opts?: { limit?: number }): Promise<Memory[]>;
+  updateAccessCount(memoryId: string): Promise<void>;
+  deprecateMemory(memoryId: string): Promise<void>;
+  verifyMemory(memoryId: string): Promise<void>;
+  pinMemory(memoryId: string, pinned: boolean): Promise<void>;
+  deleteMemory(memoryId: string): Promise<void>;
 }
 
 export interface MemoryMethodologyPlugin {

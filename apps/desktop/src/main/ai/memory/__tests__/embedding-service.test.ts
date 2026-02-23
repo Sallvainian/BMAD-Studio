@@ -122,10 +122,10 @@ describe('buildMemoryContextualText', () => {
 });
 
 // ============================================================
-// UNIT TESTS — EmbeddingService (ONNX stub / offline mode)
+// UNIT TESTS — EmbeddingService (none / offline mode)
 // ============================================================
 
-describe('EmbeddingService (ONNX stub)', () => {
+describe('EmbeddingService (none / degraded fallback)', () => {
   let client: Client;
   let service: EmbeddingService;
 
@@ -144,8 +144,8 @@ describe('EmbeddingService (ONNX stub)', () => {
     vi.clearAllMocks();
   });
 
-  it('selects onnx provider when Ollama and OpenAI are unavailable', () => {
-    expect(service.getProvider()).toBe('onnx');
+  it('selects none provider when Ollama and OpenAI are unavailable', () => {
+    expect(service.getProvider()).toBe('none');
   });
 
   it('embed returns a number array of length 384', async () => {
@@ -379,6 +379,66 @@ describe('EmbeddingService (Ollama 8b with high RAM)', () => {
 });
 
 // ============================================================
+// UNIT TESTS — Ollama generic embedding model
+// ============================================================
+
+describe('EmbeddingService (Ollama generic embedding model)', () => {
+  let client: Client;
+  let service: EmbeddingService;
+
+  beforeEach(async () => {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/api/tags')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              models: [{ name: 'nomic-embed-text' }, { name: 'llama3.2' }],
+            }),
+        });
+      }
+      if (url.includes('/api/embeddings')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ embedding: new Array(768).fill(0.1) }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    delete process.env.OPENAI_API_KEY;
+    client = await getInMemoryClient();
+    service = new EmbeddingService(client);
+    await service.initialize();
+  });
+
+  afterEach(() => {
+    client.close();
+    vi.clearAllMocks();
+  });
+
+  it('selects ollama-generic provider when a non-qwen3 embedding model is available', () => {
+    expect(service.getProvider()).toBe('ollama-generic');
+  });
+
+  it('calls Ollama API with the detected generic model name', async () => {
+    await service.embed('hello world');
+    const embedCalls = mockFetch.mock.calls.filter((c) =>
+      (c[0] as string).includes('/api/embeddings'),
+    );
+    expect(embedCalls.length).toBeGreaterThan(0);
+    const body = JSON.parse((embedCalls[0][1] as RequestInit).body as string);
+    expect(body.model).toBe('nomic-embed-text');
+  });
+
+  it('returns embeddings from Ollama', async () => {
+    const embedding = await service.embed('test text');
+    expect(Array.isArray(embedding)).toBe(true);
+    expect(embedding.length).toBeGreaterThan(0);
+  });
+});
+
+// ============================================================
 // UNIT TESTS — OpenAI provider selection
 // ============================================================
 
@@ -431,6 +491,6 @@ describe('EmbeddingService.initialize idempotence', () => {
     await service.initialize();
     await service.initialize();
     await service.initialize();
-    expect(service.getProvider()).toBe('onnx');
+    expect(service.getProvider()).toBe('none');
   });
 });

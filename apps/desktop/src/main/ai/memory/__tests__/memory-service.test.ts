@@ -23,7 +23,7 @@ const mockDb = {
 
 const mockEmbed = vi.fn().mockResolvedValue(new Array(1024).fill(0.1));
 const mockEmbedBatch = vi.fn().mockResolvedValue([new Array(1024).fill(0.1)]);
-const mockGetProvider = vi.fn().mockReturnValue('onnx');
+const mockGetProvider = vi.fn().mockReturnValue('none');
 
 const mockEmbeddingService = {
   embed: mockEmbed,

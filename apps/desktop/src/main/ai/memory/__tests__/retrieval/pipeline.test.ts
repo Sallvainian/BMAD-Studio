@@ -43,7 +43,7 @@ function makeMockEmbeddingService(): EmbeddingService {
     embedMemory: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
     embedChunk: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
     initialize: vi.fn().mockResolvedValue(undefined),
-    getProvider: vi.fn().mockReturnValue('onnx'),
+    getProvider: vi.fn().mockReturnValue('none'),
   } as unknown as EmbeddingService;
 }
 
