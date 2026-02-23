@@ -590,10 +590,10 @@ class TestRunCliBuildCommands:
                 with patch("builtins.print") as mock_print:
                     _run_cli()
 
-            # Should print JSON output
-            mock_print.assert_called_once()
-            printed_arg = mock_print.call_args[0][0]
-            result = json.loads(printed_arg)
+            # Find the print call containing our JSON result (ignore status warnings)
+            json_calls = [c for c in mock_print.call_args_list if '{"conflicts"' in str(c)]
+            assert len(json_calls) == 1
+            result = json.loads(json_calls[0][0][0])
             assert result == preview_result
 
     def test_review_command(self, mock_utils, mock_debug):
