@@ -95,6 +95,10 @@ export function safeSendToRenderer(
     const mainWindow = getMainWindow();
 
     if (!mainWindow) {
+      if (!isWithinCooldown(`${channel}:null-window`)) {
+        console.warn(`[safeSendToRenderer] Window is null, cannot send: ${channel}`);
+        recordWarning(`${channel}:null-window`);
+      }
       return false;
     }
 

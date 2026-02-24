@@ -181,6 +181,10 @@ export class TaskStateManager {
     this.lastSequenceByTask.delete(taskId);
   }
 
+  hasTerminalEvent(taskId: string): boolean {
+    return this.terminalEventSeen.has(taskId);
+  }
+
   clearTask(taskId: string): void {
     this.lastSequenceByTask.delete(taskId);
     this.lastStateByTask.delete(taskId);
@@ -339,7 +343,7 @@ export class TaskStateManager {
       return;
     }
     console.debug(`[TaskStateManager] emitStatus: Sending TASK_STATUS_CHANGE for ${taskId}:`, { status, reviewReason, projectId });
-    safeSendToRenderer(
+    const sent = safeSendToRenderer(
       this.getMainWindow,
       IPC_CHANNELS.TASK_STATUS_CHANGE,
       taskId,
@@ -347,6 +351,9 @@ export class TaskStateManager {
       projectId,
       reviewReason
     );
+    if (!sent) {
+      console.warn(`[TaskStateManager] emitStatus FAILED for ${taskId}: status=${status}, reviewReason=${reviewReason}`);
+    }
   }
 
   /**

@@ -96,6 +96,9 @@ export function registerAgenteventsHandlers(
   });
 
   agentManager.on("exit", (taskId: string, code: number | null, processType: ProcessType, projectId?: string) => {
+    console.log(`[agent-events-handlers] Process exited: taskId=${taskId}, code=${code}, type=${processType}, ` +
+      `terminalEventSeen=${taskStateManager.hasTerminalEvent(taskId)}`);
+
     // Use projectId from event to scope the lookup (prevents cross-project contamination)
     const { task: exitTask, project: exitProject } = findTaskAndProject(taskId, projectId);
     const exitProjectId = exitProject?.id || projectId;
