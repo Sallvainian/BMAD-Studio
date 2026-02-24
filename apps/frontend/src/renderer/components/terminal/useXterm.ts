@@ -276,30 +276,24 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       ? requestAnimationFrame
       : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0) as unknown as number;
 
-    const performInitialFit = () => {
-      raf(() => {
-        if (fitAddonRef.current && xtermRef.current && terminalRef.current) {
-          // Check if container has valid dimensions
-          const rect = terminalRef.current.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            fitAddonRef.current.fit();
-            const cols = xtermRef.current.cols;
-            const rows = xtermRef.current.rows;
-            setDimensions({ cols, rows });
-            // Call onDimensionsReady once when we have valid dimensions
-            if (!dimensionsReadyCalledRef.current && cols > 0 && rows > 0) {
-              dimensionsReadyCalledRef.current = true;
-              debugLog(`[useXterm] Dimensions ready for terminal: ${terminalId}, cols: ${cols}, rows: ${rows}, containerWidth: ${rect.width}, containerHeight: ${rect.height}`);
-              onDimensionsReady?.(cols, rows);
-            }
-          } else {
-            // Container not ready yet, retry after a short delay
-            setTimeout(performInitialFit, 50);
+    // Try to fit once on mount. If the container is hidden (0x0 dimensions),
+    // don't retry — the ResizeObserver will call onDimensionsReady when
+    // the container becomes visible (e.g., user opens the terminals tab).
+    raf(() => {
+      if (fitAddonRef.current && xtermRef.current && terminalRef.current) {
+        const rect = terminalRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          fitAddonRef.current.fit();
+          const cols = xtermRef.current.cols;
+          const rows = xtermRef.current.rows;
+          setDimensions({ cols, rows });
+          if (!dimensionsReadyCalledRef.current && cols > 0 && rows > 0) {
+            dimensionsReadyCalledRef.current = true;
+            onDimensionsReady?.(cols, rows);
           }
         }
-      });
-    };
-    performInitialFit();
+      }
+    });
 
     // Replay buffered output if this is a remount or restored session
     // This now includes ANSI codes for proper formatting/colors/prompt

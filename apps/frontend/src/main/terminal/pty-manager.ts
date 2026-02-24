@@ -177,7 +177,7 @@ export function spawnPtyProcess(
   // (CLAUDE_CODE_OAUTH_TOKEN from profileEnv) instead of API keys that may
   // be present in the shell environment. Without this, Claude Code would
   // show "Claude API" instead of "Claude Max" when ANTHROPIC_API_KEY is set.
-  const { DEBUG: _DEBUG, ANTHROPIC_API_KEY: _ANTHROPIC_API_KEY, ...cleanEnv } = process.env;
+  const { DEBUG: _DEBUG, ANTHROPIC_API_KEY: _ANTHROPIC_API_KEY, CLAUDECODE: _CLAUDECODE, ...cleanEnv } = process.env;
 
   const ptyProcess = pty.spawn(shell, shellArgs, {
     name: 'xterm-256color',

@@ -184,6 +184,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   // Callback when xterm has measured valid dimensions
   const handleDimensionsReady = useCallback((cols: number, rows: number) => {
+    debugLog(`[Terminal] onDimensionsReady called: cols=${cols}, rows=${rows}, min check: cols>=${MIN_COLS}=${cols >= MIN_COLS}, rows>=${MIN_ROWS}=${rows >= MIN_ROWS}`);
     // Only set dimensions if they're valid (above minimum thresholds)
     if (cols >= MIN_COLS && rows >= MIN_ROWS) {
       debugLog(`[Terminal ${id}] handleDimensionsReady: cols=${cols}, rows=${rows} - setting readyDimensions`);

@@ -77,6 +77,14 @@ export async function createTerminal(
     // 3. Custom env from TerminalCreateOptions
     const mergedEnv = { ...claudeCodeEnv, ...profileEnv, ...(customEnv || {}) };
 
+    // Temporary diagnostic: log env being passed to PTY
+    console.warn('[TerminalLifecycle] Profile env keys:', Object.keys(profileEnv));
+    console.warn('[TerminalLifecycle] Merged env auth keys:', {
+      CLAUDE_CONFIG_DIR: mergedEnv.CLAUDE_CONFIG_DIR || 'NOT SET',
+      CLAUDE_CODE_OAUTH_TOKEN: mergedEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'SET (redacted)' : 'NOT SET',
+      skipOAuthToken,
+    });
+
     if (mergedEnv.CLAUDE_CODE_OAUTH_TOKEN) {
       debugLog('[TerminalLifecycle] Injecting OAuth token from active profile');
     } else if (skipOAuthToken) {

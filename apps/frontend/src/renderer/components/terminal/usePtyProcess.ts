@@ -124,7 +124,7 @@ export function usePtyProcess({
 
     // Normal skip (not during recreation) - just return
     if (skipCreation) {
-      debugLog(`[usePtyProcess] Skipping PTY creation for terminal: ${terminalId} - dimensions not ready (skipCreation=true)`);
+      debugLog(`[usePtyProcess] SKIPPING PTY creation for ${terminalId} - skipCreation=true (dimensions not ready)`);
       return;
     }
     if (isCreatingRef.current || isCreatedRef.current) {
@@ -132,6 +132,7 @@ export function usePtyProcess({
       return;
     }
 
+    debugLog(`[usePtyProcess] CREATING PTY for ${terminalId}`);
     // Clear retry counter since we're proceeding with creation
     recreationRetryCountRef.current = 0;
 
