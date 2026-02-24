@@ -145,20 +145,22 @@ class TestPhasesToRun:
     """Tests for ComplexityAssessment.phases_to_run()."""
 
     def test_simple_phases(self):
-        """SIMPLE complexity returns minimal phases."""
+        """SIMPLE complexity returns minimal phases (non-BMAD)."""
         assessment = ComplexityAssessment(
             complexity=Complexity.SIMPLE,
             confidence=0.9,
+            use_bmad=False,
         )
         phases = assessment.phases_to_run()
         assert phases == ["discovery", "historical_context", "quick_spec", "validation"]
 
     def test_standard_phases_without_research(self):
-        """STANDARD complexity without research flag."""
+        """STANDARD complexity without research flag (non-BMAD)."""
         assessment = ComplexityAssessment(
             complexity=Complexity.STANDARD,
             confidence=0.8,
             needs_research=False,
+            use_bmad=False,
         )
         phases = assessment.phases_to_run()
         assert phases == [
@@ -167,11 +169,12 @@ class TestPhasesToRun:
         ]
 
     def test_standard_phases_with_research(self):
-        """STANDARD complexity with research flag includes research phase."""
+        """STANDARD complexity with research flag includes research phase (non-BMAD)."""
         assessment = ComplexityAssessment(
             complexity=Complexity.STANDARD,
             confidence=0.8,
             needs_research=True,
+            use_bmad=False,
         )
         phases = assessment.phases_to_run()
         assert "research" in phases
@@ -181,15 +184,56 @@ class TestPhasesToRun:
         ]
 
     def test_complex_phases(self):
-        """COMPLEX complexity returns full phase list."""
+        """COMPLEX complexity returns full phase list (non-BMAD)."""
+        assessment = ComplexityAssessment(
+            complexity=Complexity.COMPLEX,
+            confidence=0.85,
+            use_bmad=False,
+        )
+        phases = assessment.phases_to_run()
+        assert phases == [
+            "discovery", "historical_context", "requirements", "research",
+            "context", "spec_writing", "self_critique", "planning", "validation"
+        ]
+
+    def test_bmad_simple_phases(self):
+        """SIMPLE complexity returns BMAD quick spec phases (default)."""
+        assessment = ComplexityAssessment(
+            complexity=Complexity.SIMPLE,
+            confidence=0.9,
+        )
+        phases = assessment.phases_to_run()
+        assert phases == [
+            "discovery", "historical_context", "bmad_quick_spec", "validation"
+        ]
+
+    def test_bmad_standard_phases(self):
+        """STANDARD complexity returns BMAD-enhanced phases (default)."""
+        assessment = ComplexityAssessment(
+            complexity=Complexity.STANDARD,
+            confidence=0.8,
+            needs_research=False,
+        )
+        phases = assessment.phases_to_run()
+        assert phases == [
+            "discovery", "historical_context", "requirements",
+            "bmad_analysis", "context", "bmad_prd_writing",
+            "planning", "bmad_story_planning", "validation"
+        ]
+
+    def test_bmad_complex_phases(self):
+        """COMPLEX complexity returns extended BMAD phases (default)."""
         assessment = ComplexityAssessment(
             complexity=Complexity.COMPLEX,
             confidence=0.85,
         )
         phases = assessment.phases_to_run()
         assert phases == [
-            "discovery", "historical_context", "requirements", "research",
-            "context", "spec_writing", "self_critique", "planning", "validation"
+            "discovery", "historical_context", "requirements",
+            "bmad_analysis", "research", "context",
+            "bmad_prd_writing", "bmad_architecture",
+            "self_critique", "bmad_story_planning",
+            "planning", "validation"
         ]
 
     def test_recommended_phases_override(self):
