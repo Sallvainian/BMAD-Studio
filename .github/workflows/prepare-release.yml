@@ -1,6 +1,6 @@
 name: Prepare Release
 
-# Triggers when code is pushed to main (e.g., merging develop → main)
+# Triggers when code is pushed to develop (this fork has no main branch)
 # If package.json version is newer than the latest tag:
 # 1. Validates CHANGELOG.md has an entry for this version (FAILS if missing)
 # 2. Extracts release notes from CHANGELOG.md
@@ -8,7 +8,7 @@ name: Prepare Release
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
     paths:
       - 'apps/frontend/package.json'
       - 'package.json'
