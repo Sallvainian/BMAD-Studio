@@ -202,7 +202,10 @@ non-functional requirements, success metrics, and scope.
                     save_artifact(self.spec_dir, "prd", content)
                     self.ui.print_status("BMAD PRD created", "success")
                     return PhaseResult(
-                        "bmad_planning", True, [str(spec_file), str(prd_file)], [],
+                        "bmad_planning",
+                        True,
+                        [str(spec_file), str(prd_file)],
+                        [],
                         attempt,
                     )
 
@@ -216,7 +219,7 @@ non-functional requirements, success metrics, and scope.
         Creates architecture decisions and epic/story breakdown, then converts
         BMAD stories into Auto-Claude's implementation_plan.json format.
         """
-        from bmad.artifacts import save_artifact, stories_to_implementation_plan
+        from bmad.artifacts import stories_to_implementation_plan
         from bmad.config import PHASE_AGENT_MAP
         from bmad.personas import format_persona_block, load_persona
         from bmad.workflows import get_instructions, load_workflow
@@ -225,12 +228,13 @@ non-functional requirements, success metrics, and scope.
         plan_file = self.spec_dir / "implementation_plan.json"
 
         if arch_file.exists() and plan_file.exists():
-            self.ui.print_status(
-                "BMAD architecture and plan already exist", "success"
-            )
+            self.ui.print_status("BMAD architecture and plan already exist", "success")
             return PhaseResult(
-                "bmad_solutioning", True,
-                [str(arch_file), str(plan_file)], [], 0,
+                "bmad_solutioning",
+                True,
+                [str(arch_file), str(plan_file)],
+                [],
+                0,
             )
 
         # Load Architect persona and architecture workflow
@@ -302,8 +306,11 @@ Create TWO outputs:
                         "BMAD architecture and plan created", "success"
                     )
                     return PhaseResult(
-                        "bmad_solutioning", True,
-                        [str(arch_file), str(plan_file)], [], attempt,
+                        "bmad_solutioning",
+                        True,
+                        [str(arch_file), str(plan_file)],
+                        [],
+                        attempt,
                     )
 
                 # Try converting BMAD stories to implementation plan
@@ -315,8 +322,11 @@ Create TWO outputs:
                             "Converted BMAD stories to implementation plan", "success"
                         )
                         return PhaseResult(
-                            "bmad_solutioning", True,
-                            [str(plan_file)], [], attempt,
+                            "bmad_solutioning",
+                            True,
+                            [str(plan_file)],
+                            [],
+                            attempt,
                         )
 
             errors.append(f"Attempt {attempt + 1}: BMAD solutioning agent failed")
@@ -406,8 +416,11 @@ non-functional requirements, success metrics, and scope.
                     save_artifact(self.spec_dir, "prd", content)
                     self.ui.print_status("BMAD PRD created", "success")
                     return PhaseResult(
-                        "bmad_prd_writing", True,
-                        [str(spec_file), str(prd_file)], [], attempt,
+                        "bmad_prd_writing",
+                        True,
+                        [str(spec_file), str(prd_file)],
+                        [],
+                        attempt,
                     )
 
             errors.append(f"Attempt {attempt + 1}: BMAD PRD writing failed")
@@ -512,7 +525,7 @@ Cover:
         Breaks down the PRD and architecture into epics and stories,
         then converts BMAD stories into Auto-Claude's implementation_plan.json.
         """
-        from bmad.artifacts import create_bmad_structure, save_artifact, stories_to_implementation_plan
+        from bmad.artifacts import create_bmad_structure, stories_to_implementation_plan
         from bmad.config import PHASE_AGENT_MAP
         from bmad.personas import format_persona_block, load_persona
         from bmad.workflows import get_instructions, load_workflow
@@ -523,8 +536,11 @@ Cover:
         if stories_file.exists() and plan_file.exists():
             self.ui.print_status("BMAD stories and plan already exist", "success")
             return PhaseResult(
-                "bmad_story_planning", True,
-                [str(stories_file), str(plan_file)], [], 0,
+                "bmad_story_planning",
+                True,
+                [str(stories_file), str(plan_file)],
+                [],
+                0,
             )
 
         create_bmad_structure(self.spec_dir)
@@ -590,8 +606,11 @@ files_to_create, patterns_from, acceptance_criteria.
                 if plan_file.exists():
                     self.ui.print_status("BMAD stories and plan created", "success")
                     return PhaseResult(
-                        "bmad_story_planning", True,
-                        [str(stories_file), str(plan_file)], [], attempt,
+                        "bmad_story_planning",
+                        True,
+                        [str(stories_file), str(plan_file)],
+                        [],
+                        attempt,
                     )
 
                 # Try converting BMAD stories to implementation plan
@@ -602,8 +621,11 @@ files_to_create, patterns_from, acceptance_criteria.
                             "Converted BMAD stories to implementation plan", "success"
                         )
                         return PhaseResult(
-                            "bmad_story_planning", True,
-                            [str(stories_file), str(plan_file)], [], attempt,
+                            "bmad_story_planning",
+                            True,
+                            [str(stories_file), str(plan_file)],
+                            [],
+                            attempt,
                         )
 
             errors.append(f"Attempt {attempt + 1}: BMAD story planning failed")
@@ -683,8 +705,11 @@ No heavy analysis or research needed. Ship the smallest thing that works.
 
                 self.ui.print_status("BMAD quick spec created", "success")
                 return PhaseResult(
-                    "bmad_quick_spec", True,
-                    [str(spec_file), str(plan_file)], [], attempt,
+                    "bmad_quick_spec",
+                    True,
+                    [str(spec_file), str(plan_file)],
+                    [],
+                    attempt,
                 )
 
             errors.append(f"Attempt {attempt + 1}: BMAD quick spec failed")

@@ -23,9 +23,9 @@ from .config import (
     BMAD_ARTIFACTS_SUBDIR,
     BMAD_SOURCE_DIR,
     BMAD_WORKFLOWS_DIR,
-    BMADTrack,
     PHASE_AGENT_MAP,
     PHASE_WORKFLOW_MAP,
+    BMADTrack,
     get_bmad_track,
 )
 from .personas import (
