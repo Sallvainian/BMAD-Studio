@@ -31,7 +31,8 @@ import {
   JSON_ERROR_PREFIX,
   JSON_ERROR_TITLE_SUFFIX
 } from '../../shared/constants';
-import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
+import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, archiveTasks, hasRecentActivity, startTaskOrQueue, reconcileTasks, useTaskStore } from '../stores/task-store';
+import { useProjectStore } from '../stores/project-store';
 import { useToast } from '../hooks/use-toast';
 import type { Task, TaskCategory, ReviewReason, TaskStatus } from '../../shared/types';
 
@@ -191,6 +192,7 @@ export const TaskCard = memo(function TaskCard({
   // Catastrophic stuck detection — last-resort safety net.
   // XState handles all normal transitions via PROCESS_EXITED events.
   // This only fires if XState somehow fails to transition after 60s with no activity.
+  // When stuck is detected, we auto-reconcile from disk before showing the badge.
   useEffect(() => {
     if (!isRunning) {
       setIsStuck(false);
@@ -209,12 +211,35 @@ export const TaskCard = memo(function TaskCard({
       }
 
       // No activity for 60s — verify process is actually gone
-      checkTaskRunning(task.id).then((actuallyRunning) => {
+      checkTaskRunning(task.id).then(async (actuallyRunning) => {
         // Re-check activity in case something arrived while the IPC was in flight
         if (hasRecentActivity(task.id)) {
           setIsStuck(false);
-        } else {
-          setIsStuck(!actuallyRunning);
+          return;
+        }
+
+        if (actuallyRunning) {
+          setIsStuck(false);
+          return;
+        }
+
+        // Process is dead but status still shows in_progress.
+        // Auto-reconcile from disk — the main process may have already
+        // persisted the correct status but the IPC event was lost.
+        const projectId = useProjectStore.getState().activeProjectId
+          || useProjectStore.getState().selectedProjectId;
+        if (projectId) {
+          await reconcileTasks(projectId);
+        }
+
+        // After reconciliation, re-check: if loadTasks corrected the status,
+        // this task card will re-render naturally and isRunning will be false.
+        // Only show stuck badge if the task is STILL in_progress after disk read.
+        const freshTask = useTaskStore.getState().tasks.find(
+          (t) => t.id === task.id || t.specId === task.id
+        );
+        if (freshTask && freshTask.status === 'in_progress') {
+          setIsStuck(true);
         }
       });
     }, STUCK_CHECK_INTERVAL_MS);

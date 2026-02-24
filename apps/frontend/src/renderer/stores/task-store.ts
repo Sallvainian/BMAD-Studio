@@ -674,6 +674,27 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 }));
 
 /**
+ * Coalescing wrapper around loadTasks for reconciliation.
+ * Deduplicates concurrent calls and enforces a cooldown to prevent
+ * multiple stuck TaskCards from firing concurrent loadTasks() calls.
+ */
+const RECONCILE_COOLDOWN_MS = 3_000;
+let lastReconcileTime = 0;
+let activeReconcilePromise: Promise<void> | null = null;
+
+export function reconcileTasks(projectId: string): Promise<void> {
+  const now = Date.now();
+  if (activeReconcilePromise) return activeReconcilePromise;
+  if (now - lastReconcileTime < RECONCILE_COOLDOWN_MS) return Promise.resolve();
+
+  lastReconcileTime = now;
+  activeReconcilePromise = loadTasks(projectId).finally(() => {
+    activeReconcilePromise = null;
+  });
+  return activeReconcilePromise;
+}
+
+/**
  * Load tasks for a project
  * @param projectId - The project ID to load tasks for
  * @param options - Optional parameters

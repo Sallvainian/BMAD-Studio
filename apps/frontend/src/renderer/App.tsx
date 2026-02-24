@@ -65,6 +65,7 @@ import { initializeGitHubListeners, cleanupGitHubListeners } from './stores/gith
 import { initDownloadProgressListener } from './stores/download-store';
 import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
+import { useTaskReconciliation } from './hooks/useTaskReconciliation';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
 import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
@@ -109,6 +110,9 @@ function ProjectTabBarWithContext({
 export function App() {
   // Load IPC listeners for real-time updates
   useIpcListeners();
+
+  // Reconcile task state from disk when window regains focus after being hidden
+  useTaskReconciliation();
 
   // Load global terminal output listeners to buffer output across project switches
   // This ensures terminal output is captured even when the terminal component is not rendered
