@@ -19,6 +19,7 @@ export interface EventHandlerCallbacks {
   onOnboardingComplete: (terminal: TerminalProcess, data: string) => void;
   onClaudeBusyChange: (terminal: TerminalProcess, isBusy: boolean) => void;
   onClaudeExit: (terminal: TerminalProcess) => void;
+  onWorktreeSwitch: (terminal: TerminalProcess, branchName: string, path: string) => void;
 }
 
 // Track the last known busy state per terminal to avoid duplicate events
@@ -43,6 +44,14 @@ export function handleTerminalData(
   // Check for rate limit messages
   if (terminal.isClaudeMode) {
     callbacks.onRateLimit(terminal, data);
+  }
+
+  // Check for worktree switch (Claude Code entered a worktree)
+  if (terminal.isClaudeMode) {
+    const worktreeInfo = OutputParser.extractWorktreeSwitch(data);
+    if (worktreeInfo) {
+      callbacks.onWorktreeSwitch(terminal, worktreeInfo.branchName, worktreeInfo.path);
+    }
   }
 
   // Check for OAuth token
@@ -114,6 +123,9 @@ export function createEventCallbacks(
     },
     onClaudeExit: (terminal) => {
       ClaudeIntegration.handleClaudeExit(terminal, getWindow);
+    },
+    onWorktreeSwitch: (terminal, branchName, worktreePath) => {
+      ClaudeIntegration.handleWorktreeSwitch(terminal, branchName, worktreePath, getWindow);
     }
   };
 }

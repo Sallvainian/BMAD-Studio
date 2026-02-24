@@ -839,6 +839,50 @@ export function handleClaudeSessionId(
 }
 
 /**
+ * Handle worktree switch detection (Claude Code entered a git worktree)
+ *
+ * When Claude Code's EnterWorktree tool creates and switches to a git worktree,
+ * the PTY's working directory changes. This syncs BMAD Studio's terminal state
+ * with that change so cwd tracking, worktree labels, and session persistence
+ * stay accurate.
+ */
+export function handleWorktreeSwitch(
+  terminal: TerminalProcess,
+  branchName: string,
+  worktreePath: string,
+  getWindow: WindowGetter
+): void {
+  const worktreeName = worktreePath.split('/').pop() || branchName;
+
+  debugLog('[ClaudeIntegration] Worktree switch detected:', {
+    terminalId: terminal.id,
+    branchName,
+    worktreePath,
+    worktreeName
+  });
+
+  const config: import('../../shared/types').TerminalWorktreeConfig = {
+    name: worktreeName,
+    worktreePath,
+    branchName,
+    baseBranch: '',
+    hasGitBranch: true,
+    createdAt: new Date().toISOString(),
+    terminalId: terminal.id
+  };
+
+  terminal.worktreeConfig = config;
+  terminal.cwd = worktreePath;
+
+  if (terminal.projectPath) {
+    SessionHandler.persistSession(terminal);
+  }
+
+  safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_WORKTREE_CONFIG_CHANGE, terminal.id, config);
+  safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_TITLE_CHANGE, terminal.id, worktreeName);
+}
+
+/**
  * Handle Claude exit detection (user closed Claude, returned to shell)
  *
  * This is called when we detect that Claude has exited and the terminal
@@ -859,6 +903,14 @@ export function handleClaudeExit(
   // Reset Claude mode state
   terminal.isClaudeMode = false;
   terminal.claudeSessionId = undefined;
+
+  // If terminal was in a worktree via Claude Code, clear the association
+  // Shell returns to original directory when Claude exits
+  if (terminal.worktreeConfig) {
+    terminal.worktreeConfig = undefined;
+    terminal.cwd = terminal.projectPath || terminal.cwd;
+    safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_WORKTREE_CONFIG_CHANGE, terminal.id, undefined);
+  }
 
   // Persist the session state change
   if (terminal.projectPath) {

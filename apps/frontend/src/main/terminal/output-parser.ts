@@ -34,6 +34,13 @@ const OAUTH_TOKEN_PATTERN = /(sk-ant-oat01-[A-Za-z0-9_-]+)/;
 const OAUTH_URL_PATTERN = /https:\/\/claude\.ai\/oauth\/authorize\?[^\s\x1b\]]+/;
 
 /**
+ * Regex pattern to detect Claude Code worktree switch output
+ * Matches: "Switched to worktree on branch {branchName}\n{path}"
+ * The EnterWorktree tool emits this when Claude Code enters a git worktree
+ */
+const WORKTREE_SWITCH_PATTERN = /Switched to worktree on branch\s+(\S+)\s*\n\s*(.+)/;
+
+/**
  * Patterns to detect email in Claude output
  * Multiple patterns to handle different output formats:
  * - "Authenticated as user@example.com" or "Logged in as user@example.com"
@@ -97,6 +104,20 @@ export function extractOAuthUrl(data: string): string | null {
  */
 export function hasOAuthUrl(data: string): boolean {
   return OAUTH_URL_PATTERN.test(data);
+}
+
+/**
+ * Extract worktree switch info from output
+ * Detects when Claude Code's EnterWorktree tool switches to a git worktree
+ * Strips ANSI escape codes before matching
+ */
+export function extractWorktreeSwitch(data: string): { branchName: string; path: string } | null {
+  const cleanData = stripAnsi(data);
+  const match = cleanData.match(WORKTREE_SWITCH_PATTERN);
+  if (match?.[1] && match[2]) {
+    return { branchName: match[1], path: match[2].trim() };
+  }
+  return null;
 }
 
 /**
