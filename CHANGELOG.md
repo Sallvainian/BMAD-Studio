@@ -1,3 +1,24 @@
+## 2.7.15 - Kanban Reconciliation & Terminal Worktrees
+
+### ✨ New Features
+
+- **Worktree switch detection** — Terminal automatically detects when Claude Code switches git worktrees and syncs the cwd, title, and worktree label in the UI
+
+### 🐛 Bug Fixes
+
+- **Kanban stuck tasks** — Tasks no longer get stuck showing "running" after the agent finishes; added disk-based reconciliation that catches missed IPC events on window focus and during stuck detection
+- **Terminal PTY env filtering** — Improved environment variable filtering when spawning PTY processes and xterm fit/resize logic
+
+### 🛠️ Improvements
+
+- **Diagnostic logging** — Added breadcrumb logging when `safeSendToRenderer` drops events due to null window and when `emitStatus` fails to deliver task status changes
+- **CI workflows** — Updated GitHub Actions to latest versions (checkout v6, codeql v4)
+- **Backend cleanup** — Removed unused imports in BMAD modules
+- **BMAD agent skills** — Added skill definition files for all BMAD methodology agents
+- **Test coverage** — Added BMAD phase routing tests and fixed non-BMAD parameter handling
+
+---
+
 ## 2.7.14 - Fork Cleanup
 
 ### ✨ New Features
