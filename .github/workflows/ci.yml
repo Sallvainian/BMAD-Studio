@@ -3,8 +3,7 @@
 # Tests on all target platforms (Linux, Windows, macOS) to catch
 # platform-specific bugs before they merge. ALL platforms must pass.
 #
-# Optimized: Reduced matrix (4 jobs vs 6), merged integration tests,
-# coverage on Linux only, path filters to skip on docs-only changes.
+# Optimized: Frontend-only matrix, path filters to skip on docs-only changes.
 
 name: CI
 
@@ -13,10 +12,7 @@ on:
     branches: [main, develop]
     paths:
       - 'apps/**'
-      - 'tests/**'
       - 'package*.json'
-      - 'requirements*.txt'
-      - 'pyproject.toml'
       - 'tsconfig*.json'
       - 'biome.jsonc'
       - '.github/workflows/ci.yml'
@@ -25,10 +21,7 @@ on:
     branches: [main, develop]
     paths:
       - 'apps/**'
-      - 'tests/**'
       - 'package*.json'
-      - 'requirements*.txt'
-      - 'pyproject.toml'
       - 'tsconfig*.json'
       - 'biome.jsonc'
       - '.github/workflows/ci.yml'
@@ -43,70 +36,6 @@ permissions:
   actions: read
 
 jobs:
-  # --------------------------------------------------------------------------
-  # Python Backend Tests - Optimized Matrix (4 jobs instead of 6)
-  # --------------------------------------------------------------------------
-  test-python:
-    name: test-python (${{ matrix.python-version }}, ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.12 on all OS for cross-platform coverage
-        # 3.13 on Linux only for compatibility check (saves 2 jobs)
-        include:
-          - os: ubuntu-latest
-            python-version: '3.12'
-          - os: ubuntu-latest
-            python-version: '3.13'
-          - os: windows-latest
-            python-version: '3.12'
-          - os: macos-latest
-            python-version: '3.12'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python backend
-        uses: ./.github/actions/setup-python-backend
-        with:
-          python-version: ${{ matrix.python-version }}
-          install-test-deps: 'true'
-
-      - name: Run all tests (including platform-specific)
-        working-directory: apps/backend
-        shell: bash
-        env:
-          PYTHONPATH: ${{ github.workspace }}/apps/backend
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            source .venv/Scripts/activate
-          else
-            source .venv/bin/activate
-          fi
-          pytest ../../tests/ -v --tb=short -x
-
-      - name: Run coverage (Linux + Python 3.12 only)
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        working-directory: apps/backend
-        shell: bash
-        env:
-          PYTHONPATH: ${{ github.workspace }}/apps/backend
-        run: |
-          source .venv/bin/activate
-          pytest ../../tests/ -v --cov=. --cov-report=xml --cov-report=term-missing --cov-fail-under=10
-
-      - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./apps/backend/coverage.xml
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
   # --------------------------------------------------------------------------
   # Frontend Tests - All Platforms
   # --------------------------------------------------------------------------
@@ -129,15 +58,15 @@ jobs:
           ignore-scripts: 'true'
 
       - name: Run TypeScript type check
-        working-directory: apps/frontend
+        working-directory: apps/desktop
         run: npm run typecheck
 
       - name: Run unit tests
-        working-directory: apps/frontend
+        working-directory: apps/desktop
         run: npm run test
 
       - name: Build application
-        working-directory: apps/frontend
+        working-directory: apps/desktop
         run: npm run build
 
   # --------------------------------------------------------------------------
@@ -146,18 +75,16 @@ jobs:
   ci-complete:
     name: CI Complete
     runs-on: ubuntu-latest
-    needs: [test-python, test-frontend]
+    needs: [test-frontend]
     if: always()
     steps:
       - name: Check all CI jobs passed
         run: |
           echo "CI Job Results:"
-          echo "  test-python:   ${{ needs.test-python.result }}"
           echo "  test-frontend: ${{ needs.test-frontend.result }}"
           echo ""
 
-          if [[ "${{ needs.test-python.result }}" != "success" ]] || \
-             [[ "${{ needs.test-frontend.result }}" != "success" ]]; then
+          if [[ "${{ needs.test-frontend.result }}" != "success" ]]; then
             echo "❌ One or more CI jobs failed"
             exit 1
           fi

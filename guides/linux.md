@@ -26,18 +26,18 @@ flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.
 flatpak install flathub org.electronjs.Electron2.BaseApp//25.08
 
 # Build the Flatpak
-cd apps/frontend
+cd apps/desktop
 npm run package:flatpak
 ```
 
-The Flatpak will be created in `apps/frontend/dist/`.
+The Flatpak will be created in `apps/desktop/dist/`.
 
 ### Installing the Built Flatpak
 
 After building, install the Flatpak locally:
 
 ```bash
-flatpak install --user apps/frontend/dist/Auto-Claude-*.flatpak
+flatpak install --user apps/desktop/dist/Auto-Claude-*.flatpak
 ```
 
 ### Running from Flatpak

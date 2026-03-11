@@ -1246,17 +1246,17 @@
 - feat(python): bundle Python 3.12 with packaged Electron app (#284) by @Andy in 7f19c2e1
 - fix: resolve spawn python ENOENT error on Linux by using getAugmentedEnv() (#281) by @Todd W. Bucy in d98e2830
 - fix(ci): add write permissions to beta-release update-version job by @AndyMik90 in 0b874d4b
-- chore(deps): bump @xterm/xterm from 5.5.0 to 6.0.0 in /apps/frontend (#270) by @dependabot[bot] in 50dd1078
+- chore(deps): bump @xterm/xterm from 5.5.0 to 6.0.0 in /apps/desktop (#270) by @dependabot[bot] in 50dd1078
 - fix(github): resolve follow-up review API issues by @AndyMik90 in f1cc5a09
 - fix(security): resolve CodeQL file system race conditions and unused variables (#277) by @Andy in b005fa5c
 - fix(ci): use correct electron-builder arch flags (#278) by @Andy in d79f2da4
-- chore(deps): bump jsdom from 26.1.0 to 27.3.0 in /apps/frontend (#268) by @dependabot[bot] in 5ac566e2
-- chore(deps): bump typescript-eslint in /apps/frontend (#269) by @dependabot[bot] in f49d4817
+- chore(deps): bump jsdom from 26.1.0 to 27.3.0 in /apps/desktop (#268) by @dependabot[bot] in 5ac566e2
+- chore(deps): bump typescript-eslint in /apps/desktop (#269) by @dependabot[bot] in f49d4817
 - fix(ci): use develop branch for dry-run builds in beta-release workflow (#276) by @Andy in 1e1d7d9b
 - fix: accept bug_fix workflow_type alias during planning (#240) by @Daniel Frey in e74a3dff
 - fix(paths): normalize relative paths to posix (#239) by @Daniel Frey in 6ac8250b
-- chore(deps): bump @electron/rebuild in /apps/frontend (#271) by @dependabot[bot] in a2cee694
-- chore(deps): bump vitest from 4.0.15 to 4.0.16 in /apps/frontend (#272) by @dependabot[bot] in d4cad80a
+- chore(deps): bump @electron/rebuild in /apps/desktop (#271) by @dependabot[bot] in a2cee694
+- chore(deps): bump vitest from 4.0.15 to 4.0.16 in /apps/desktop (#272) by @dependabot[bot] in d4cad80a
 - feat(github): add automated PR review with follow-up support (#252) by @Andy in 596e9513
 - ci: implement enterprise-grade PR quality gates and security scanning (#266) by @Alex in d42041c5
 - fix: update path resolution for ollama_model_detector.py in memory handlers (#263) by @delyethan in a3f87540
@@ -1526,17 +1526,17 @@
 - feat(python): bundle Python 3.12 with packaged Electron app (#284) by @Andy in 7f19c2e1
 - fix: resolve spawn python ENOENT error on Linux by using getAugmentedEnv() (#281) by @Todd W. Bucy in d98e2830
 - fix(ci): add write permissions to beta-release update-version job by @AndyMik90 in 0b874d4b
-- chore(deps): bump @xterm/xterm from 5.5.0 to 6.0.0 in /apps/frontend (#270) by @dependabot[bot] in 50dd1078
+- chore(deps): bump @xterm/xterm from 5.5.0 to 6.0.0 in /apps/desktop (#270) by @dependabot[bot] in 50dd1078
 - fix(github): resolve follow-up review API issues by @AndyMik90 in f1cc5a09
 - fix(security): resolve CodeQL file system race conditions and unused variables (#277) by @Andy in b005fa5c
 - fix(ci): use correct electron-builder arch flags (#278) by @Andy in d79f2da4
-- chore(deps): bump jsdom from 26.1.0 to 27.3.0 in /apps/frontend (#268) by @dependabot[bot] in 5ac566e2
-- chore(deps): bump typescript-eslint in /apps/frontend (#269) by @dependabot[bot] in f49d4817
+- chore(deps): bump jsdom from 26.1.0 to 27.3.0 in /apps/desktop (#268) by @dependabot[bot] in 5ac566e2
+- chore(deps): bump typescript-eslint in /apps/desktop (#269) by @dependabot[bot] in f49d4817
 - fix(ci): use develop branch for dry-run builds in beta-release workflow (#276) by @Andy in 1e1d7d9b
 - fix: accept bug_fix workflow_type alias during planning (#240) by @Daniel Frey in e74a3dff
 - fix(paths): normalize relative paths to posix (#239) by @Daniel Frey in 6ac8250b
-- chore(deps): bump @electron/rebuild in /apps/frontend (#271) by @dependabot[bot] in a2cee694
-- chore(deps): bump vitest from 4.0.15 to 4.0.16 in /apps/frontend (#272) by @dependabot[bot] in d4cad80a
+- chore(deps): bump @electron/rebuild in /apps/desktop (#271) by @dependabot[bot] in a2cee694
+- chore(deps): bump vitest from 4.0.15 to 4.0.16 in /apps/desktop (#272) by @dependabot[bot] in d4cad80a
 - feat(github): add automated PR review with follow-up support (#252) by @Andy in 596e9513
 - ci: implement enterprise-grade PR quality gates and security scanning (#266) by @Alex in d42041c5
 - fix: update path resolution for ollama_model_detector.py in memory handlers (#263) by @delyethan in a3f87540

@@ -66,9 +66,8 @@ node scripts/bump-version.js 2.8.0   # Set specific version
 ```
 
 This will:
-- Update `apps/frontend/package.json`
+- Update `apps/desktop/package.json`
 - Update `package.json` (root)
-- Update `apps/backend/__init__.py`
 - Check if `CHANGELOG.md` has an entry for the new version (warns if missing)
 - Create a commit with message `chore: bump version to X.Y.Z`
 
@@ -195,7 +194,7 @@ The release workflow **validates** that `CHANGELOG.md` has an entry for the vers
 1. Check if version in `package.json` is greater than latest tag:
    ```bash
    git tag -l 'v*' --sort=-version:refname | head -1
-   cat apps/frontend/package.json | grep version
+   cat apps/desktop/package.json | grep version
    ```
 
 2. Ensure the merge commit touched `package.json`:
