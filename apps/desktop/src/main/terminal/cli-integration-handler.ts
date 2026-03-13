@@ -802,6 +802,11 @@ export function handleOnboardingComplete(
     }
   }
 
+  // Persist onboarding completion so future invocations skip the wizard
+  if (profile?.configDir) {
+    ensureOnboardingComplete(profile.configDir);
+  }
+
   safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_ONBOARDING_COMPLETE, {
     terminalId: terminal.id,
     profileId,
@@ -894,6 +899,48 @@ export function handleClaudeExit(
 }
 
 /**
+ * Ensure hasCompletedOnboarding is set in profile's .claude.json.
+ * When CLAUDE_CONFIG_DIR is set, Claude Code reads .claude.json from that directory.
+ * Without this flag, it triggers the onboarding wizard even for authenticated profiles.
+ */
+function ensureOnboardingComplete(configDir: string): void {
+  try {
+    const expandedDir = path.resolve(
+      configDir.startsWith('~') ? configDir.replace(/^~/, os.homedir()) : configDir
+    );
+    const claudeJsonPath = path.join(expandedDir, '.claude.json');
+
+    // Read directly instead of existsSync + readFileSync to avoid TOCTOU race (CodeQL js/file-system-race)
+    let content: string;
+    try {
+      content = fs.readFileSync(claudeJsonPath, 'utf-8');
+    } catch (readErr) {
+      if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+        return; // No .claude.json yet — Claude Code will create it during auth
+      }
+      throw readErr;
+    }
+
+    const config = JSON.parse(content);
+
+    if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+      return; // Not a valid config object
+    }
+
+    if (config.hasCompletedOnboarding === true) {
+      return; // Already set
+    }
+
+    config.hasCompletedOnboarding = true;
+    fs.writeFileSync(claudeJsonPath, JSON.stringify(config, null, 2), { encoding: 'utf-8' });
+    debugLog(`[ClaudeIntegration] Set hasCompletedOnboarding in ${claudeJsonPath}`);
+  } catch (error) {
+    // Non-fatal — worst case the user sees onboarding once
+    debugError('[ClaudeIntegration] Failed to set hasCompletedOnboarding:', error);
+  }
+}
+
+/**
  * Shared command execution logic for profile-based invocation
  * Returns true if command was executed via configDir or temp-file method
  */
@@ -938,6 +985,9 @@ function executeProfileCommand(options: ExecuteProfileCommandOptions): boolean {
   // read full Keychain credentials including subscriptionType ("max") and rateLimitTier.
   // Using CLAUDE_CODE_OAUTH_TOKEN alone lacks tier info, causing "Claude API" display.
   if (activeProfile.configDir) {
+    // Ensure Claude Code skips onboarding for authenticated profiles
+    ensureOnboardingComplete(activeProfile.configDir);
+
     const command = buildClaudeShellCommand(
       cwdCommand,
       pathPrefix,
@@ -1016,6 +1066,9 @@ async function executeProfileCommandAsync(options: ExecuteProfileCommandOptions)
   // read full Keychain credentials including subscriptionType ("max") and rateLimitTier.
   // Using CLAUDE_CODE_OAUTH_TOKEN alone lacks tier info, causing "Claude API" display.
   if (activeProfile.configDir) {
+    // Ensure Claude Code skips onboarding for authenticated profiles
+    ensureOnboardingComplete(activeProfile.configDir);
+
     const command = buildClaudeShellCommand(
       cwdCommand,
       pathPrefix,
