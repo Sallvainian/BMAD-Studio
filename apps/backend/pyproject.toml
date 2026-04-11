@@ -24,7 +24,7 @@ dev = [
     "pytest-mock>=3.0.0",
     "coverage>=7.0.0",
     "mypy>=1.0.0",
-    "types-toml>=0.10.0",
+    "types-toml>=0.10.8.20260408",
 ]
 
 [tool.pytest.ini_options]
