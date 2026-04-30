@@ -30,7 +30,14 @@ import {
   ManifestLoadError,
 } from '../manifest-loader';
 
-const { parseDependencyList, parseBooleanLiteral, parsePipeList } = __internals;
+const {
+  normalizeLegacyAction,
+  normalizeLegacySkillId,
+  normalizeBmadPhase,
+  parseDependencyList,
+  parseBooleanLiteral,
+  parsePipeList,
+} = __internals;
 
 async function makeProject(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'bmad-manifest-loader-'));
@@ -80,6 +87,14 @@ BMad Method,bmad-validate-prd,Validate PRD,VP,Validate,,[path],2-planning,bmad-c
 BMad Method,bmad-create-story,Create Story,CS,Story start,create,,4-implementation,bmad-sprint-planning,bmad-create-story:validate,true,implementation_artifacts,story
 BMad Method,bmad-create-story,Validate Story,VS,Validate story,validate,,4-implementation,bmad-create-story:create,bmad-dev-story,false,implementation_artifacts,validation report
 BMad Method,bmad-document-project,Document Project,DP,Brownfield docs,,,anytime,,,false,project-knowledge,*
+`;
+
+const SAMPLE_LEGACY_BMAD_HELP_CSV =
+  `module,phase,name,code,sequence,workflow-file,command,required,agent-name,agent-command,agent-display-name,agent-title,options,description,output-location,outputs
+bmm,1-analysis,Create Brief,CB,30,skill:bmad-product-brief,bmad-bmm-product-brief,false,analyst,bmad:agent:analyst,Mary,📊 Business Analyst,Create Mode,A guided experience,planning_artifacts,product brief
+bmm,2-planning,Validate PRD,VP,20,skill:bmad-validate-prd,bmad-bmm-validate-prd,false,pm,bmad:agent:pm,John,📋 Product Manager,Validate Mode,Validate PRD,planning_artifacts,prd validation report
+bmm,4-implementation,Dev Story,DS,40,skill:bmad-dev-story,bmad-bmm-dev-story,true,dev,bmad:agent:dev,Amelia,💻 Developer Agent,Create Mode,Story cycle,,
+bmm,anytime,Write Document,WD,,skill:bmad-agent-tech-writer,,false,tech-writer,bmad:agent:tech-writer,Paige,📚 Technical Writer,,Write docs,project-knowledge,document
 `;
 
 const SAMPLE_FILES_MANIFEST_CSV =
@@ -234,7 +249,39 @@ describe('loadBmadHelp', () => {
     expect(documentProject?.outputs).toEqual(['*']);
   });
 
-  it('rejects rows with unknown phase', async () => {
+  it('parses legacy installer help CSV rows with phase/name/code/workflow-file columns', async () => {
+    await writeConfigFile(projectRoot, 'bmad-help.csv', SAMPLE_LEGACY_BMAD_HELP_CSV);
+    const rows = await loadBmadHelp(projectRoot);
+
+    expect(rows).toHaveLength(4);
+
+    const brief = rows.find((r) => r.skill === 'bmad-product-brief');
+    expect(brief).toMatchObject({
+      module: 'bmm',
+      displayName: 'Create Brief',
+      menuCode: 'CB',
+      phase: '1-analysis',
+      action: 'create',
+      required: false,
+      outputLocation: 'planning_artifacts',
+      outputs: ['product brief'],
+      kind: 'workflow',
+    });
+
+    const validate = rows.find((r) => r.skill === 'bmad-validate-prd');
+    expect(validate?.action).toBe('validate');
+    expect(validate?.phase).toBe('2-planning');
+
+    const devStory = rows.find((r) => r.skill === 'bmad-dev-story');
+    expect(devStory?.required).toBe(true);
+    expect(devStory?.outputs).toEqual([]);
+
+    const writeDoc = rows.find((r) => r.skill === 'bmad-agent-tech-writer');
+    expect(writeDoc?.action).toBe('');
+    expect(writeDoc?.phase).toBe('anytime');
+  });
+
+  it('normalizes custom module phases into the anytime bucket', async () => {
     await writeConfigFile(
       projectRoot,
       'bmad-help.csv',
@@ -242,9 +289,30 @@ describe('loadBmadHelp', () => {
 BMad,bmad-foo,Foo,FF,,,,99-bogus,,,false,,
 `,
     );
-    await expect(loadBmadHelp(projectRoot)).rejects.toMatchObject({
-      code: 'CSV_PARSE_ERROR',
-    });
+    const rows = await loadBmadHelp(projectRoot);
+    expect(rows[0]?.phase).toBe('anytime');
+  });
+});
+
+describe('legacy bmad-help normalization helpers', () => {
+  it('normalizes unknown phases to anytime without changing known phases', () => {
+    expect(normalizeBmadPhase('2-planning', 'workflow')).toBe('2-planning');
+    expect(normalizeBmadPhase('0-learning', 'workflow')).toBe('anytime');
+    expect(normalizeBmadPhase('_meta', 'meta')).toBe('anytime');
+  });
+
+  it('extracts skill ids from workflow-file skill: references', () => {
+    expect(normalizeLegacySkillId('skill:bmad-create-prd', 'bmad-bmm-create-prd')).toBe(
+      'bmad-create-prd',
+    );
+    expect(normalizeLegacySkillId('', 'bmad-bmm-create-prd')).toBe('bmad-bmm-create-prd');
+  });
+
+  it('normalizes legacy option labels to action ids', () => {
+    expect(normalizeLegacyAction('Create Mode')).toBe('create');
+    expect(normalizeLegacyAction('Validate Mode')).toBe('validate');
+    expect(normalizeLegacyAction('Edit Mode')).toBe('edit');
+    expect(normalizeLegacyAction('')).toBe('');
   });
 });
 

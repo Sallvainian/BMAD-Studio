@@ -1,6 +1,6 @@
-# Aperant (formerly Auto Claude)
+# BMad Studio
 
-**Autonomous multi-agent coding framework that plans, builds, and validates software for you.**
+**Visual desktop frontend for the [BMad Method](https://docs.bmad-method.org/): installed modules, persona workflows, BMad-Help, and a filesystem-synced sprint Kanban.**
 
 ![Aperant Kanban Board](.github/assets/Auto-Claude-Kanban.png)
 
@@ -67,8 +67,8 @@
 1. **Download and install** the app for your platform
 2. **Open your project** - Select a git repository folder
 3. **Connect Claude** - The app will guide you through OAuth setup
-4. **Create a task** - Describe what you want to build
-5. **Watch it work** - Agents plan, code, and validate autonomously
+4. **Install BMad** - Pick BMad modules and stream `npx bmad-method install`
+5. **Drive the method** - Ask BMad-Help what is next, talk to named personas, and move stories through `sprint-status.yaml`
 
 ---
 
@@ -76,8 +76,10 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Autonomous Tasks** | Describe your goal; agents handle planning, implementation, and validation |
-| **Parallel Execution** | Run multiple builds simultaneously with up to 12 agent terminals |
+| **BMad Module Manager** | Install/update official, community, and custom modules through the canonical BMAD installer |
+| **BMad Sprint Kanban** | Bidirectionally sync cards with `_bmad-output/implementation-artifacts/sprint-status.yaml` |
+| **Persona Chat** | Talk to Mary, Paige, John, Sally, Winston, and Amelia while workflows stream |
+| **Customization UI** | Write valid `_bmad/custom/*.toml` team or personal overrides without hand-editing |
 | **Isolated Workspaces** | All changes happen in git worktrees - your main branch stays safe |
 | **Self-Validating QA** | Built-in quality assurance loop catches issues before you review |
 | **AI-Powered Merge** | Automatic conflict resolution when integrating back to main |

@@ -8,6 +8,8 @@ import { GitHubIntegration } from '../integrations/GitHubIntegration';
 import { GitLabIntegration } from '../integrations/GitLabIntegration';
 import { InitializationGuard } from '../common/InitializationGuard';
 import type { ProjectSettingsSection } from '../ProjectSettingsContent';
+import { BmadCustomizationPanel } from '../../bmad/BmadCustomizationPanel';
+import { BmadModuleManager } from '../../bmad/BmadModuleManager';
 
 interface SectionRouterProps {
   activeSection: ProjectSettingsSection;
@@ -90,6 +92,38 @@ export function SectionRouter({
             isUpdating={isUpdating}
             handleInitialize={handleInitialize}
           />
+        </SettingsSection>
+      );
+
+    case 'bmad-customizations':
+      return (
+        <SettingsSection
+          title={t('projectSections.bmadCustomizations.title')}
+          description={t('projectSections.bmadCustomizations.description')}
+        >
+          <InitializationGuard
+            initialized={!!project.path}
+            title={t('projectSections.bmadCustomizations.title')}
+            description={t('projectSections.bmadCustomizations.description')}
+          >
+            <BmadCustomizationPanel projectRoot={project.path} />
+          </InitializationGuard>
+        </SettingsSection>
+      );
+
+    case 'bmad-modules':
+      return (
+        <SettingsSection
+          title={t('projectSections.bmadModules.title')}
+          description={t('projectSections.bmadModules.description')}
+        >
+          <InitializationGuard
+            initialized={!!project.path}
+            title={t('projectSections.bmadModules.title')}
+            description={t('projectSections.bmadModules.description')}
+          >
+            <BmadModuleManager projectRoot={project.path} />
+          </InitializationGuard>
         </SettingsSection>
       );
 

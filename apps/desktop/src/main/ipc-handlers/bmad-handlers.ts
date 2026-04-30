@@ -40,6 +40,8 @@ import {
   BMAD_TRACKS,
   type BmadHelpRecommendation,
   type BmadIpcResult,
+  type BmadMigrationPlan,
+  type BmadMigrationResult,
   type BmadModule,
   type BmadOrchestratorEvent,
   type BmadPersonaIdentity,
@@ -80,6 +82,7 @@ import {
   resolveCustomization,
   CustomizationResolverError,
 } from '../ai/bmad/customization-resolver';
+import { resolveConfig } from '../ai/bmad/config-resolver';
 import {
   InstallerError,
   listInstallerOptions,
@@ -105,6 +108,11 @@ import {
 } from '../ai/bmad/orchestrator';
 import { runHelpAI, runHelpSync, HelpRunnerError } from '../ai/bmad/help-runner';
 import { runWorkflow, WorkflowRunnerError } from '../ai/bmad/workflow-runner';
+import {
+  detectLegacySpecs,
+  migrateLegacySpecs,
+  BmadMigratorError,
+} from '../ai/bmad/migrator';
 import type { ClaudeProfile } from '../../shared/types/agent';
 import { randomUUID } from 'node:crypto';
 
@@ -297,6 +305,16 @@ function validate<T>(
   };
 }
 
+function customizationFileName(
+  skillId: string,
+  scope: (typeof BMAD_CUSTOMIZATION_SCOPES)[number],
+): string {
+  if (skillId === 'config') {
+    return scope === 'team' ? 'config.toml' : 'config.user.toml';
+  }
+  return scope === 'team' ? `${skillId}.toml` : `${skillId}.user.toml`;
+}
+
 function classifyError(err: unknown): BmadIpcResult<never> {
   if (err instanceof ManifestLoadError) {
     return bmadFail(err.code, err.message, err.details);
@@ -334,6 +352,10 @@ function classifyError(err: unknown): BmadIpcResult<never> {
   if (err instanceof WorkflowRunnerError) {
     const code = err.code === 'PERSONA_MISMATCH' ? 'INVALID_INPUT' : err.code;
     return bmadFail(code, err.message, err.details);
+  }
+  if (err instanceof BmadMigratorError) {
+    const code = err.code === 'PROJECT_NOT_FOUND' ? 'PROJECT_NOT_FOUND' : err.code;
+    return bmadFail(code, err.message);
   }
   if (err instanceof Error) {
     appLog.error('[bmad-handlers] unhandled error:', err);
@@ -493,6 +515,10 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
       const v = validate(ReadCustomizationInput, payload);
       if (!v.ok) return v.result;
       try {
+        if (v.data.skillId === 'config') {
+          const merged = await resolveConfig({ projectRoot: v.data.projectRoot });
+          return bmadOk(merged);
+        }
         const skill = await skillRegistry.load(v.data.skillId, {
           projectRoot: v.data.projectRoot,
         });
@@ -515,10 +541,7 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
       try {
         // Path containment: refuse to write outside `_bmad/custom/`.
         const projectRoot = path.resolve(v.data.projectRoot);
-        const fileName =
-          v.data.scope === 'team'
-            ? `${v.data.skillId}.toml`
-            : `${v.data.skillId}.user.toml`;
+        const fileName = customizationFileName(v.data.skillId, v.data.scope);
         const target = path.resolve(projectRoot, '_bmad', 'custom', fileName);
         const customDir = path.resolve(projectRoot, '_bmad', 'custom');
         if (!target.startsWith(customDir + path.sep)) {
@@ -531,8 +554,39 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
         const tomlText = stringifyToml(v.data.data);
         await writeFileWithRetry(target, tomlText, { encoding: 'utf-8' });
         // Invalidate any cached resolution for this skill.
-        skillRegistry.invalidate(projectRoot, v.data.skillId);
+        if (v.data.skillId === 'config') {
+          skillRegistry.invalidateProject(projectRoot);
+        } else {
+          skillRegistry.invalidate(projectRoot, v.data.skillId);
+        }
         return bmadOk({ filePath: target });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  // ───── Brownfield migration ───────────────────────────────────────────────
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_DETECT_LEGACY_MIGRATION,
+    async (_e, payload): Promise<BmadIpcResult<BmadMigrationPlan>> => {
+      const v = validate(ProjectRootInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        return bmadOk(await detectLegacySpecs(v.data.projectRoot));
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_RUN_LEGACY_MIGRATION,
+    async (_e, payload): Promise<BmadIpcResult<BmadMigrationResult>> => {
+      const v = validate(ProjectRootInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        return bmadOk(await migrateLegacySpecs(v.data.projectRoot));
       } catch (err) {
         return classifyError(err);
       }

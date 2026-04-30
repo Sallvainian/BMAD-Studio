@@ -609,6 +609,10 @@ export const IPC_CHANNELS = {
   BMAD_READ_CUSTOMIZATION: 'bmad:readCustomization',
   BMAD_WRITE_CUSTOMIZATION: 'bmad:writeCustomization',
 
+  // Phase 5: brownfield migration
+  BMAD_DETECT_LEGACY_MIGRATION: 'bmad:detectLegacyMigration',
+  BMAD_RUN_LEGACY_MIGRATION: 'bmad:runLegacyMigration',
+
   // Sprint status / story files
   BMAD_READ_SPRINT_STATUS: 'bmad:readSprintStatus',
   BMAD_READ_SPRINT_STATUS_TYPED: 'bmad:readSprintStatusTyped',  // Phase 3 (typed shape, tolerates missing)

@@ -648,3 +648,31 @@ Option 2. Implementation:
 - The renderer's `BmadAPI.respondToWorkflowMenu({ invocationId, menuId, choice })` is the response shape.
 - The renderer's `onWorkflowStream` and `onWorkflowMenuRequest` listeners are independent — stream chunks (text deltas, tool calls) flow through the former; structured menu data flows through the latter.
 - A future stretch goal could replace this with a typed RPC stream library (e.g. `electron-trpc`) but the manual implementation is small (~40 lines) and fully tested.
+
+---
+
+### D-018: Phase 5 settings surfaces reuse existing BMad IPC instead of adding a parallel settings store
+
+**Date:** 2026-04-30
+**Phase:** 5
+**Status:** Resolved
+**Author:** GPT-5.5
+
+**Context:**
+Phase 5 adds a visual customization editor and module manager. The tempting route is a new renderer-side settings store for selected modules, editable customization fields, and migration state. That would create a second state surface over BMAD data that already lives in `_bmad/`, `_bmad/custom/`, and `_bmad-output/`.
+
+**Options considered:**
+1. Add a persisted Zustand store for BMad settings.
+2. Reuse the existing BMad IPC handlers and file watcher; keep component state local.
+3. Write directly from the renderer to the filesystem.
+
+**Decision:**
+Option 2. `BmadCustomizationPanel` writes through `BMAD_WRITE_CUSTOMIZATION`; `BmadModuleManager` runs the canonical installer through `BMAD_RUN_INSTALLER`; the brownfield migration prompt calls the main-process migrator. No renderer persistence beyond component state.
+
+**Rationale:**
+KAD-2 says the filesystem is the BMAD contract, and BMAD docs § "Worked Examples" / Recipes 1-5 describe TOML override files as the durable customization surface. Reusing the existing IPC keeps validation, path containment, and TOML serialization in the main process.
+
+**Consequences:**
+- Customization edits immediately flow through `_bmad/custom/*.toml` and the existing file watcher.
+- Module update/remove keeps using `npx bmad-method install` rather than editing manifests directly, matching BMAD docs § "Updating Custom Modules".
+- The settings panels are easy to remove or rearrange without migrating stored UI state.

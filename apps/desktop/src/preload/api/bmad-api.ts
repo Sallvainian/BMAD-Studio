@@ -23,6 +23,8 @@ import type {
   BmadInstallerResult,
   BmadInstallerStreamChunk,
   BmadIpcResult,
+  BmadMigrationPlan,
+  BmadMigrationResult,
   BmadModule,
   BmadOrchestratorEvent,
   BmadPersonaIdentity,
@@ -73,6 +75,10 @@ export interface BmadAPI {
     scope: BmadCustomizationScope,
     data: Record<string, unknown>,
   ): Promise<BmadIpcResult<{ filePath: string }>>;
+
+  // Brownfield migration
+  detectLegacyMigration(projectRoot: string): Promise<BmadIpcResult<BmadMigrationPlan>>;
+  runLegacyMigration(projectRoot: string): Promise<BmadIpcResult<BmadMigrationResult>>;
 
   // Sprint status / story files (read-only in Phase 1)
   readSprintStatus(projectRoot: string): Promise<BmadIpcResult<unknown>>;
@@ -229,6 +235,11 @@ export const createBmadAPI = (): BmadAPI => ({
       scope,
       data,
     }),
+
+  detectLegacyMigration: (projectRoot) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_DETECT_LEGACY_MIGRATION, { projectRoot }),
+  runLegacyMigration: (projectRoot) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_RUN_LEGACY_MIGRATION, { projectRoot }),
 
   readSprintStatus: (projectRoot) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_READ_SPRINT_STATUS, { projectRoot }),

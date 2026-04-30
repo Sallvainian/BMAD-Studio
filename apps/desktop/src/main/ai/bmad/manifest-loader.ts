@@ -255,29 +255,7 @@ export async function loadBmadHelp(projectRoot: string): Promise<readonly BmadHe
   const issues: { row: number; reason: string }[] = [];
 
   rows.forEach((row, idx) => {
-    const phase = row.phase as BmadPhase;
-    const kind: BmadHelpRowKind = row.skill === '_meta' ? 'meta' : 'workflow';
-    if (kind === 'workflow' && !BMAD_PHASES.includes(phase)) {
-      issues.push({ row: idx + 2, reason: `unknown phase: ${row.phase}` });
-      return;
-    }
-
-    const candidate: BmadHelpRow = {
-      module: row.module,
-      skill: row.skill,
-      displayName: row['display-name'] ?? '',
-      menuCode: row['menu-code'] ?? '',
-      description: row.description ?? '',
-      action: row.action ?? '',
-      args: row.args ?? '',
-      phase: kind === 'meta' ? 'anytime' : phase,
-      after: parseDependencyList(row.after ?? ''),
-      before: parseDependencyList(row.before ?? ''),
-      required: parseBooleanLiteral(row.required ?? 'false'),
-      outputLocation: row['output-location'] ?? '',
-      outputs: parsePipeList(row.outputs ?? ''),
-      kind,
-    };
+    const candidate = normalizeBmadHelpRow(row);
 
     const validation = BmadHelpRowSchema.safeParse(candidate);
     if (validation.success) {
@@ -423,6 +401,86 @@ function parseDependencyList(raw: string): readonly BmadHelpDependency[] {
     });
 }
 
+/**
+ * BMAD 6.6 writes the canonical help CSV with `skill` / `display-name`
+ * columns. Some installed projects in the wild still carry the earlier
+ * installer schema (`phase,name,code,workflow-file,command,...`). Per KAD-2
+ * the filesystem is the contract, so we accept both shapes and normalize to
+ * the current runtime row model.
+ */
+function normalizeBmadHelpRow(row: Record<string, string>): BmadHelpRow {
+  const hasCanonicalColumns = 'skill' in row || 'display-name' in row || 'menu-code' in row;
+  if (hasCanonicalColumns) {
+    const kind: BmadHelpRowKind = row.skill === '_meta' ? 'meta' : 'workflow';
+    return {
+      module: row.module,
+      skill: row.skill,
+      displayName: row['display-name'] ?? '',
+      menuCode: row['menu-code'] ?? '',
+      description: row.description ?? '',
+      action: row.action ?? '',
+      args: row.args ?? '',
+      phase: normalizeBmadPhase(row.phase ?? '', kind),
+      after: parseDependencyList(row.after ?? ''),
+      before: parseDependencyList(row.before ?? ''),
+      required: parseBooleanLiteral(row.required ?? 'false'),
+      outputLocation: row['output-location'] ?? '',
+      outputs: parsePipeList(row.outputs ?? ''),
+      kind,
+    };
+  }
+
+  const isMeta = row.phase === '_meta';
+  const workflowFile = row['workflow-file'] ?? '';
+  const skill = isMeta ? '_meta' : normalizeLegacySkillId(workflowFile, row.command ?? '');
+
+  return {
+    module: row.module,
+    skill,
+    displayName: row.name ?? '',
+    menuCode: row.code ?? '',
+    description: row.description ?? '',
+    action: normalizeLegacyAction(row.options ?? ''),
+    args: '',
+    phase: normalizeBmadPhase(row.phase ?? '', isMeta ? 'meta' : 'workflow'),
+    after: [],
+    before: [],
+    required: parseBooleanLiteral(row.required ?? 'false'),
+    outputLocation: row['output-location'] ?? '',
+    outputs: parsePipeList(row.outputs ?? ''),
+    kind: isMeta ? 'meta' : 'workflow',
+  };
+}
+
+function normalizeLegacySkillId(workflowFile: string, command: string): string {
+  const trimmedWorkflow = workflowFile.trim();
+  if (trimmedWorkflow.startsWith('skill:')) {
+    return trimmedWorkflow.slice('skill:'.length).trim();
+  }
+  if (trimmedWorkflow) return trimmedWorkflow;
+  return command.trim();
+}
+
+function normalizeLegacyAction(options: string): string {
+  const normalized = options.trim().toLowerCase();
+  if (normalized === 'create mode') return 'create';
+  if (normalized === 'validate mode') return 'validate';
+  if (normalized === 'edit mode') return 'edit';
+  return '';
+}
+
+function normalizeBmadPhase(rawPhase: string, kind: BmadHelpRowKind): BmadPhase {
+  if (kind === 'meta') return 'anytime';
+  const phase = rawPhase.trim();
+  if (BMAD_PHASES.includes(phase as BmadPhase)) return phase as BmadPhase;
+
+  // BMAD module phases are installer-defined and may vary by module. Phase 1-5
+  // only model the BMM lifecycle, so unknown module-specific phases (for
+  // example `0-learning` from Test Architecture Enterprise) are surfaced in
+  // the cross-cutting "anytime" bucket instead of blocking the whole project.
+  return 'anytime';
+}
+
 function parseBooleanLiteral(raw: string): boolean {
   const value = raw.trim().toLowerCase();
   return value === 'true' || value === '1' || value === 'yes';
@@ -438,6 +496,10 @@ function parsePipeList(raw: string): readonly string[] {
 
 // Re-export for tests
 export const __internals = {
+  normalizeBmadHelpRow,
+  normalizeBmadPhase,
+  normalizeLegacySkillId,
+  normalizeLegacyAction,
   parseDependencyList,
   parseBooleanLiteral,
   parsePipeList,

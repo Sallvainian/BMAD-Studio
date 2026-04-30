@@ -398,6 +398,58 @@ export const BmadCustomizationOverrideSchema = z.object({
 });
 
 // =============================================================================
+// Phase 5: brownfield migration (.auto-claude/specs -> _bmad-output)
+// =============================================================================
+
+export interface BmadMigrationCandidate {
+  readonly id: string;
+  readonly title: string;
+  readonly sourceDir: string;
+  readonly hasSpec: boolean;
+  readonly hasImplementationPlan: boolean;
+  readonly hasRequirements: boolean;
+}
+
+export const BmadMigrationCandidateSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  sourceDir: z.string().min(1),
+  hasSpec: z.boolean(),
+  hasImplementationPlan: z.boolean(),
+  hasRequirements: z.boolean(),
+});
+
+export interface BmadMigrationPlan {
+  readonly projectRoot: string;
+  readonly hasLegacySpecs: boolean;
+  readonly specsDir: string;
+  readonly backupDir: string;
+  readonly candidates: readonly BmadMigrationCandidate[];
+}
+
+export const BmadMigrationPlanSchema = z.object({
+  projectRoot: z.string().min(1),
+  hasLegacySpecs: z.boolean(),
+  specsDir: z.string().min(1),
+  backupDir: z.string().min(1),
+  candidates: z.array(BmadMigrationCandidateSchema).readonly(),
+});
+
+export interface BmadMigrationResult extends BmadMigrationPlan {
+  readonly migrated: boolean;
+  readonly planningFiles: readonly string[];
+  readonly implementationFiles: readonly string[];
+  readonly sprintStatusPath: string | null;
+}
+
+export const BmadMigrationResultSchema = BmadMigrationPlanSchema.extend({
+  migrated: z.boolean(),
+  planningFiles: z.array(z.string()).readonly(),
+  implementationFiles: z.array(z.string()).readonly(),
+  sprintStatusPath: z.string().nullable(),
+});
+
+// =============================================================================
 // Sprint status (Phase 2 reads/writes; types live here for cross-phase reuse)
 // =============================================================================
 
@@ -601,6 +653,10 @@ export const BMAD_ERROR_CODES = [
   'WORKFLOW_MAX_TURNS',
   'PERSONA_NOT_FOUND',
   'PERSONA_PARSE_ERROR',
+  // Phase 5 additions
+  'MIGRATION_NOT_FOUND',
+  'MIGRATION_BACKUP_FAILED',
+  'MIGRATION_WRITE_FAILED',
   // Generic
   'IO_ERROR',
   'INVALID_INPUT',

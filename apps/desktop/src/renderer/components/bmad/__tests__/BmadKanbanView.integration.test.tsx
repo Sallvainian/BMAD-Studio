@@ -118,6 +118,16 @@ function installMock() {
     ),
     listPersonas: vi.fn().mockResolvedValue(ok([PERSONA])),
     listStoryFiles: vi.fn().mockResolvedValue(ok({ files: [] })),
+    detectLegacyMigration: vi.fn().mockResolvedValue(
+      ok({
+        projectRoot: PROJECT_ROOT,
+        hasLegacySpecs: false,
+        specsDir: `${PROJECT_ROOT}/.auto-claude/specs`,
+        backupDir: `${PROJECT_ROOT}/.auto-claude.backup`,
+        candidates: [],
+      }),
+    ),
+    runLegacyMigration: vi.fn(),
     startWatcher: vi.fn().mockResolvedValue(ok({ watching: true })),
     stopWatcher: vi.fn().mockResolvedValue(ok({ watching: false })),
     updateStoryStatus: vi.fn().mockImplementation(async (args) => {

@@ -3,6 +3,7 @@
 > **Purpose:** Bring a fresh AI assistant up to speed on the BMad Studio engine swap so they can resume the **reviewer/orchestrator role** I've been playing for Sallvain. Read this end-to-end before responding to anything.
 >
 > **Created:** 2026-04-30 (mid-Phase 2 → Phase 3 transition)
+> **Last updated:** 2026-04-30 after Phase 4 review
 > **Authoring assistant:** Claude (Cursor agent, Opus 4.7)
 > **Reason:** Conversation context was getting heavy. This file preserves the decisions, working pattern, and load-bearing knowledge so a fresh assistant can pick up without re-reading the full chat history.
 
@@ -31,14 +32,16 @@ I (the assistant) am **not the agent doing the work.** I'm the **reviewer/orches
 | 0 | Inventory + decisions log | ✅ Complete |
 | 1 | Foundation (installer, manifest, skill registry, customization resolver, file watcher) | ✅ Complete + hardened (D-008) |
 | 2 | Workflow runtime + orchestrator + personas + step loader + sprint status + IPC | ✅ Complete |
-| 3 | Kanban board (the headline differentiator) | 🔜 Next — kickoff message just sent |
-| 4 | Persona chat + bmad-help sidebar | Pending |
-| 5 | Customization UI + module manager + migration + cleanup | Pending |
-| 6 | Stretch goals (Quick Flow, IDE delegation, marketplace) | Pending |
+| 3 | Kanban board (the headline differentiator) | ✅ Complete |
+| 4 | Persona chat + bmad-help sidebar | ✅ Complete |
+| 5 | Customization UI + module manager + migration + cleanup | 🔜 Next |
+| 6 | Stretch goals (Quick Flow, IDE delegation, marketplace, Aperant feature integration) | Pending |
 
 **Branch:** `feature/bmad-engine-swap` (cut from `develop`)
 **PR:** #49 (draft, base `develop`, links #48)
-**Latest commits:** Phase 1 + Phase 1 hardening + Phase 2 (commits a71a162d, 5d2e32b2, d4271373 plus a docs follow-up the Phase 2 agent is doing right now to append D-009/D-010/D-011 to DECISIONS.md)
+**Latest pushed phase commit:** `0c449f72 feat(bmad): Phase 4 — Persona chat + bmad-help sidebar + install wizard + tutorial`
+
+**Important current state:** PR #49 is draft but reports `mergeable: CONFLICTING` because `develop` moved with dependency bumps. Conflict is in `apps/desktop/package.json` and `package-lock.json` (`i18next` 26.x on `develop` vs feature branch adding `csv-parse`/`js-yaml` while still on i18next 25.x). Resolve before final merge, likely during Phase 5 cleanup: keep `develop`'s newer `i18next`, keep feature branch's `csv-parse` + `js-yaml`.
 
 ---
 
@@ -46,8 +49,8 @@ I (the assistant) am **not the agent doing the work.** I'm the **reviewer/orches
 
 1. [`/Users/sallvain/Projects/BMAD-Studio/ENGINE_SWAP_PROMPT.md`](../../../ENGINE_SWAP_PROMPT.md) — the operating contract for every worker agent. **Read this first.** It's structured with XML-tagged sections: `<role>`, `<product_vision>`, `<key_architectural_decisions>` (KAD-1 through KAD-10), `<concept_translation>`, `<file_changes>`, `<execution_plan>` (Phases 0-6), `<engineering_standards>`, `<reference_material>`, `<docs_protocol>`, `<bmad_docs_index>`, `<acceptance_criteria>`, `<anti_patterns>`, `<output_format>`, `<self_verification>`, `<start_command>`.
 2. [`INVENTORY.md`](./INVENTORY.md) — Phase 0 deliverable. Aperant deletions, BMAD skill catalog, agent type mapping, Mermaid phase graph from `bmad-help.csv`.
-3. [`DECISIONS.md`](./DECISIONS.md) — D-001 through D-008 (D-009/D-010/D-011 being appended in a docs-only commit by the Phase 2 agent right now).
-4. [`PHASE-1-NOTES.md`](./PHASE-1-NOTES.md), [`PHASE-2-NOTES.md`](./PHASE-2-NOTES.md) — per-phase completion summaries from the worker agents.
+3. [`DECISIONS.md`](./DECISIONS.md) — D-001 through D-017.
+4. [`PHASE-1-NOTES.md`](./PHASE-1-NOTES.md), [`PHASE-2-NOTES.md`](./PHASE-2-NOTES.md), [`PHASE-3-NOTES.md`](./PHASE-3-NOTES.md), [`PHASE-4-NOTES.md`](./PHASE-4-NOTES.md) — per-phase completion summaries from worker agents.
 
 The BMAD docs canonical URL: `https://docs.bmad-method.org/llms-full.txt` (169 KB). The prompt's `<bmad_docs_index>` section maps doc sections to phases — use that to know what to re-read for each phase.
 
@@ -72,7 +75,7 @@ These are the contract. **Don't relitigate without a written counter-proposal in
 
 ---
 
-## Decisions made so far (D-001 through D-011)
+## Decisions made so far (D-001 through D-017)
 
 - **D-001:** Reference install version skew (6.6.1-next vs 6.6.0) — informational only, follow live docs
 - **D-002:** `pause-handler.ts` added to DELETE list (orphaned once subtask-iterator goes)
@@ -85,6 +88,24 @@ These are the contract. **Don't relitigate without a written counter-proposal in
 - **D-009:** Variable regex uses `(?<!\{)…(?!\})` lookaround to preserve `{{model-side}}` Mustache templates while substituting `{single-brace}` BMAD variables.
 - **D-010:** Workflow runner detects menus heuristically via patterns A `[CODE]`, B `1.`/`1)`, plus question/select fallback. BMAD docs § "Why Not Just a Menu?" establishes menus are conventional, not structured.
 - **D-011:** IPC `runWorkflow` bridges `onMenu` callbacks via a per-`(invocationId, menuId)` resolver registry with 10-min renderer-response timeout.
+- **D-012:** File-watcher integration tests use chokidar polling mode + tolerant assertions. Production remains native FS events; tests use deterministic polling.
+- **D-013:** BMad Kanban mounts as additive `bmad-kanban` SidebarView instead of replacing legacy Kanban before Phase 5.
+- **D-014:** Kanban types stay in `bmad.ts`; behavior lives in separate `bmad-kanban-helpers.ts`.
+- **D-015:** Phase 4 layout uses three persistent panels: Help left, Kanban center, Chat right.
+- **D-016:** Tutorial overlay is mounted inside `BmadKanbanView` and persists dismissal in `localStorage`.
+- **D-017:** Story-card Run button maps status → workflow heuristically; orchestrator remains canonical for project-level recommendations.
+
+## Local edits not yet pushed
+
+At the time of this handoff, `git status` shows these local edits outside the Phase 4 worker commit:
+
+- `CONTRIBUTING.md` — Sallvain's WIP, intentionally left alone.
+- `ENGINE_SWAP_PROMPT.md` — edited by reviewer to add Phase 6+:
+  - deeper Aperant feature integration layer (Roadmap, Ideation, Changelog, Context, Insights, PR/GitHub)
+  - corrected Agent Terminal boundary: Plain Terminal Mode is safe default, no Claude auth env injection; configuration UI can manage MCP/hooks/skills/rules/prompts; Claude Code Max auth stays owned by official CLI/user shell.
+- `apps/desktop/src/main/ai/bmad/manifest-loader.ts` + test — reviewer hotfix for the red BMad Sprint page error: older installed projects use legacy `bmad-help.csv` schema (`module,phase,name,code,workflow-file,...`) rather than the new schema (`module,skill,display-name,...`). Fix normalizes both schemas and buckets custom module phases like `0-learning` into `anytime`. Verified on `/Users/sallvain/Projects/My-Love`: `ok 48`; manifest-loader test `26 passed`; non-renderer BMad suite `310 passed | 4 skipped`; typecheck passed after Phase 4 landed.
+
+These should be committed or consciously deferred before clearing the migration branch for Phase 5.
 
 ---
 
@@ -140,8 +161,8 @@ When a worker agent finishes a phase, here's the checklist I run:
 |---|---|---|
 | 1 | `customization-resolver.ts` | The four shape-driven merge rules (scalar override, table deep-merge, keyed-array replace, plain-array append). Three-layer override order. `structuredClone` at the public API boundary (D-008). |
 | 2 | `workflow-runner.ts` | 8-step activation flow in `composeSystemPrompt`. Just-in-time step loading enforced. Menu detection heuristics. Variable substitution preserves `{{model-side}}`. Persona persistence model. |
-| 3 | (TBD — likely `BmadKanbanBoard.tsx` + `sprint-status.ts` interaction) | Bidirectional sync between drag-and-drop and YAML writes. Optimistic UI with rollback. File-watcher-driven re-render. Status state machine matches BMAD's 5 states + Optional lane. |
-| 4 | (TBD — `help-runner.ts` + `BmadHelpSidebar.tsx`) | Sidebar invokes the actual `bmad-help` skill, never reimplements it. Persona chat preserves icon prefix on every message. |
+| 3 | `BmadKanbanBoard.tsx`, `bmad-store.ts`, `bmad-kanban-helpers.ts` | Bidirectional sync between drag-and-drop and YAML writes. Optimistic UI with rollback. File-watcher-driven re-render. Status state machine matches BMAD's 5 states + Optional lane. |
+| 4 | `BmadKanbanView.tsx`, `BmadPersonaChat.tsx`, `BmadHelpSidebar.tsx`, `bmad-store.ts` | Run button invokes real `bmad.runWorkflow`; chat auto-opens and streams; menu bridge works; help sidebar is always-on and calls the real help path; stream listeners detach on project unload. |
 | 5 | (TBD — `BmadCustomizationPanel.tsx` + `migrator.ts`) | Visual TOML editor writes valid override files that survive next install. Migrator backs up `.auto-claude/specs/` before touching anything. |
 
 ### Common process misses to catch
@@ -158,7 +179,7 @@ When a worker agent finishes a phase, here's the checklist I run:
 
 - They run in **fresh Cursor agent chats**, one per phase
 - They read `ENGINE_SWAP_PROMPT.md` + `INVENTORY.md` + `DECISIONS.md` + prior phase notes as their entire context
-- They've been good at code quality but occasionally miss process details (the DECISIONS.md append miss in Phase 2)
+- They've been good at code quality but occasionally miss process details. Note: the Phase 2 DECISIONS miss was actually a stale local working tree read; always verify against `HEAD` before accusing.
 - They're capable of running tests, typechecks, and pushing commits autonomously
 - They follow the prompt's "stop at the gate" rule — they finish a phase, post a summary, and wait for human signoff
 - They are NOT supposed to start the next phase in the same chat (KAD-style "fresh context per phase" rule)
@@ -196,11 +217,12 @@ If Sallvain asks "where are we?" — give him a 2-3 sentence orientation per the
 
 ## Things I deliberately did NOT do (so don't try to redo them)
 
-- Edit Sallvain's WIP files: root `CONTRIBUTING.md` (he emptied it intentionally), `ENGINE_SWAP_PROMPT_LEAN.md` (his WIP)
+- Edit Sallvain's WIP files: root `CONTRIBUTING.md` (he emptied it intentionally). `ENGINE_SWAP_PROMPT_LEAN.md` was an ignored local file; reviewer deleted it because Sallvain was tired of it reappearing.
 - Touch `.auto-claude/specs/` (it's empty in this checkout; migrator handles it in Phase 5)
 - Fix the pre-existing `github-error-parser.test.ts` clock-relative bug (it's on `develop` already; separate small PR)
 - Force-push or merge to `main`
 - Add Quick Flow track to Phase 1-5 (deferred to Phase 6 per D-005)
+- Reintroduce managed Claude Code OAuth/profile injection into BMAD Agent Terminals. Phase 6 spec now says plain PTY shell is safe default; no `CLAUDE_CONFIG_DIR` / `CLAUDE_CODE_OAUTH_TOKEN` injection for BMAD terminal execution.
 
 ---
 
@@ -227,9 +249,10 @@ git log --oneline feature/bmad-engine-swap -20
 
 ## Open questions / things I'm watching
 
-- **Phase 3 file-watcher hardening:** the `file-watcher.test.ts > coalesces duplicate events` case is parallelism-flaky; Phase 3's pre-work in the prompt now includes fixing it (added by me at the end of Phase 2 review).
-- **D-009/D-010/D-011 append:** the Phase 2 agent is supposed to append these to `DECISIONS.md` in a small docs follow-up commit. Verify they land before kicking off Phase 3.
-- **Kanban performance:** Phase 3 budget is < 100ms first paint after sprint-status load. With drag-and-drop on a project with 5 epics × 10 stories, watch for re-render storms.
+- **PR conflict:** resolve dependency conflicts with latest `develop` before final merge (see note above).
+- **Manifest loader hotfix:** commit or hand to Phase 5 agent; it fixes visible red error bar (`bmad-help.csv has 48 invalid row(s)`) for legacy BMAD installs.
+- **CodeQL Quality Security:** PR has had a repo-level CodeQL config conflict (advanced config vs default setup), not migration code. Separate repo settings/workflow cleanup.
+- **Pre-existing GitHub test failure:** `github-error-parser.test.ts` hardcoded date issue, unrelated to migration.
 
 ---
 

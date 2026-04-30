@@ -45,10 +45,19 @@ import { useClaudeProfileStore } from '../../stores/claude-profile-store';
 import type {
   BmadDevelopmentStatus,
   BmadKanbanColumnId,
+  BmadMigrationPlan,
   BmadPersonaIdentity,
   BmadWorkflowAction,
 } from '../../../shared/types/bmad';
 import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
 import { cn } from '../../lib/utils';
 
 import { BmadKanbanBoard } from './BmadKanbanBoard';
@@ -123,6 +132,11 @@ export function BmadKanbanView({ projectRoot }: BmadKanbanViewProps) {
   const [helpOpen, setHelpOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [installWizardOpen, setInstallWizardOpen] = useState(false);
+  const [migrationPlan, setMigrationPlan] = useState<BmadMigrationPlan | null>(null);
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
 
   // Auto-open the chat panel when a workflow starts (activeChatId becomes
   // non-null). Don't auto-close if the user explicitly closed it after
@@ -133,6 +147,42 @@ export function BmadKanbanView({ projectRoot }: BmadKanbanViewProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeChatId]);
+
+  useEffect(() => {
+    const root = projectRoot;
+    if (!root || !project.isBmadProject) return;
+    const checkedRoot = root;
+    let cancelled = false;
+    async function detectMigration() {
+      const resp = await window.electronAPI.bmad.detectLegacyMigration(checkedRoot);
+      if (cancelled) return;
+      if (resp.success && resp.data.hasLegacySpecs) {
+        setMigrationPlan(resp.data);
+        setMigrationOpen(true);
+      }
+    }
+    void detectMigration();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectRoot, project.isBmadProject]);
+
+  const runMigration = useCallback(async () => {
+    const root = projectRoot;
+    if (!root) return;
+    setMigrationRunning(true);
+    setMigrationError(null);
+    setMigrationMessage(null);
+    const resp = await window.electronAPI.bmad.runLegacyMigration(root);
+    setMigrationRunning(false);
+    if (!resp.success) {
+      setMigrationError(resp.error.message);
+      return;
+    }
+    setMigrationMessage(t('migration.success', { backupDir: resp.data.backupDir }));
+    setMigrationOpen(false);
+    await useBmadStore.getState().loadProject(root, 'method');
+  }, [projectRoot, t]);
 
   const personasMap = useMemo<ReadonlyMap<string, BmadPersonaIdentity>>(() => {
     const map = new Map<string, BmadPersonaIdentity>();
@@ -259,6 +309,56 @@ export function BmadKanbanView({ projectRoot }: BmadKanbanViewProps) {
 
   return (
     <div className="relative flex h-full w-full flex-col" data-testid="bmad-kanban-view">
+      <Dialog open={migrationOpen} onOpenChange={setMigrationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('migration.title')}</DialogTitle>
+            <DialogDescription>
+              {t('migration.description', {
+                count: migrationPlan?.candidates.length ?? 0,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-48 space-y-1 overflow-auto rounded-md border border-border p-2 text-sm">
+            {migrationPlan?.candidates.map((candidate) => (
+              <div key={candidate.id}>
+                {t('migration.candidate', {
+                  id: candidate.id,
+                  title: candidate.title,
+                })}
+              </div>
+            ))}
+          </div>
+          {migrationError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              {migrationError}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMigrationOpen(false)}
+              disabled={migrationRunning}
+            >
+              {t('migration.dismiss')}
+            </Button>
+            <Button type="button" onClick={runMigration} disabled={migrationRunning}>
+              {migrationRunning && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+              )}
+              {migrationRunning ? t('migration.running') : t('migration.accept')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {migrationMessage && (
+        <div className="mx-3 mt-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-sm text-emerald-700 dark:text-emerald-300">
+          {migrationMessage}
+        </div>
+      )}
+
       {/* Toolbar */}
       <header
         className="flex items-center gap-2 border-b border-border bg-card/40 px-3 py-1.5"
