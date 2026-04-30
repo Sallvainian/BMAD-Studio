@@ -108,5 +108,39 @@
       "done": "Terminé",
       "optional": "Optionnel"
     }
+  },
+  "kanban": {
+    "boardAriaLabel": "Tableau Kanban du sprint BMad",
+    "columnAriaLabel": "Colonne {{name}} ({{count}} histoires)",
+    "cardAriaLabel": "Histoire {{handle}} {{title}}, statut {{status}}",
+    "phase": "Phase",
+    "phaseNavigationAriaLabel": "Progression des phases du cycle BMad",
+    "phaseState": {
+      "complete": "terminée",
+      "active": "actuelle",
+      "pending": "à venir"
+    },
+    "run": "Lancer",
+    "running": "En cours…",
+    "runActionAriaLabel": "Lancer le prochain workflow pour {{title}}",
+    "retrospectiveBadge": "Rétro",
+    "retrospectiveDescription": "Rétrospective d'épopée optionnelle. Cliquez sur Lancer pour démarrer bmad-retrospective.",
+    "optionalLaneLabel": "Optionnel · {{count}} rétro",
+    "optionalLaneLabel_one": "Optionnel · {{count}} rétrospective",
+    "optionalLaneLabel_other": "Optionnel · {{count}} rétrospectives",
+    "empty": {
+      "backlog": "Aucune histoire dans le backlog. Exécutez sprint-planning pour le remplir.",
+      "ready-for-dev": "Déposez ici les histoires prêtes pour le développement.",
+      "in-progress": "Glissez une histoire ici pour la marquer en cours.",
+      "review": "Les histoires en attente de revue de code apparaissent ici.",
+      "done": "Les histoires terminées apparaîtront ici."
+    },
+    "storyDetailAriaLabel": "Panneau de détails de l'histoire",
+    "closeStoryDetailAriaLabel": "Fermer les détails de l'histoire",
+    "storyFileMissing": "Aucun fichier d'histoire sur le disque. Exécutez bmad-create-story pour en générer un.",
+    "storyNarrative": "Histoire",
+    "acceptanceCriteria": "Critères d'acceptation",
+    "acceptanceToggleAriaLabel": "Basculer le critère d'acceptation {{index}} : {{text}}",
+    "runStoryWorkflow": "Lancer le prochain workflow"
   }
 }

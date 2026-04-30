@@ -611,9 +611,12 @@ export const IPC_CHANNELS = {
 
   // Sprint status / story files
   BMAD_READ_SPRINT_STATUS: 'bmad:readSprintStatus',
+  BMAD_READ_SPRINT_STATUS_TYPED: 'bmad:readSprintStatusTyped',  // Phase 3 (typed shape, tolerates missing)
   BMAD_WRITE_SPRINT_STATUS: 'bmad:writeSprintStatus',          // Phase 2
   BMAD_UPDATE_STORY_STATUS: 'bmad:updateStoryStatus',          // Phase 2 (drag-drop write)
   BMAD_READ_STORY_FILE: 'bmad:readStoryFile',
+  BMAD_WRITE_STORY_FILE: 'bmad:writeStoryFile',                // Phase 3 (acceptance-criteria checkboxes)
+  BMAD_LIST_STORY_FILES: 'bmad:listStoryFiles',                // Phase 3 (resolve file paths for kanban)
 
   // Installer
   BMAD_RUN_INSTALLER: 'bmad:runInstaller',

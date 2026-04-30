@@ -136,6 +136,12 @@ const ReadStoryFileInput = z.object({
   storyPath: z.string().min(1),
 });
 
+const WriteStoryFileInput = z.object({
+  projectRoot: z.string().min(1),
+  storyPath: z.string().min(1),
+  contents: z.string(),
+});
+
 const RunInstallerInput = z.object({
   args: z.object({
     directory: z.string().min(1),
@@ -578,6 +584,86 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
     },
   );
 
+  /**
+   * Atomic story-file write. Used by the Phase 3 BmadStoryDetail panel when
+   * the user toggles an acceptance-criteria checkbox. Path-contained to
+   * `_bmad-output/implementation-artifacts/` (same envelope as the read
+   * handler). Atomic via `writeFileWithRetry` so chokidar fires exactly
+   * one `story-file-changed` event per logical save.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_WRITE_STORY_FILE,
+    async (
+      _e,
+      payload,
+    ): Promise<BmadIpcResult<{ absolutePath: string }>> => {
+      const v = validate(WriteStoryFileInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const projectRoot = path.resolve(v.data.projectRoot);
+        const target = path.resolve(projectRoot, v.data.storyPath);
+        const allowedDir = path.resolve(
+          projectRoot,
+          '_bmad-output',
+          'implementation-artifacts',
+        );
+        if (!target.startsWith(allowedDir + path.sep)) {
+          return bmadFail(
+            'PATH_OUT_OF_PROJECT',
+            `story file must live under _bmad-output/implementation-artifacts/: ${v.data.storyPath}`,
+          );
+        }
+        await fsPromises.mkdir(path.dirname(target), { recursive: true });
+        await writeFileWithRetry(target, v.data.contents, { encoding: 'utf-8' });
+        return bmadOk({ absolutePath: target });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  /**
+   * Phase 3: enumerate every `*.md` file under `_bmad-output/implementation-artifacts/`.
+   * Returns relative paths (relative to the project root) so the renderer
+   * can map sprint-status keys to existing story files. Best-effort; an
+   * empty directory (or missing tree) yields an empty array — no error,
+   * because not every BMAD project has run sprint-planning yet.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_LIST_STORY_FILES,
+    async (
+      _e,
+      payload,
+    ): Promise<BmadIpcResult<{ files: readonly string[] }>> => {
+      const v = validate(ProjectRootInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const projectRoot = path.resolve(v.data.projectRoot);
+        const baseDir = path.resolve(
+          projectRoot,
+          '_bmad-output',
+          'implementation-artifacts',
+        );
+        if (!existsSync(baseDir)) {
+          return bmadOk({ files: [] });
+        }
+        const entries = await fsPromises.readdir(baseDir, { withFileTypes: true });
+        const files = entries
+          .filter((e) => e.isFile() && e.name.endsWith('.md'))
+          .map((e) =>
+            path
+              .relative(projectRoot, path.join(baseDir, e.name))
+              .split(path.sep)
+              .join('/'),
+          )
+          .sort();
+        return bmadOk({ files });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
   // ───── Installer ──────────────────────────────────────────────────────────
   ipcMain.handle(
     IPC_CHANNELS.BMAD_RUN_INSTALLER,
@@ -834,7 +920,7 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
   // Re-read the sprint-status file (separate from BMAD_READ_SPRINT_STATUS,
   // which returns the raw YAML; this returns the typed shape).
   ipcMain.handle(
-    'bmad:readSprintStatusTyped',
+    IPC_CHANNELS.BMAD_READ_SPRINT_STATUS_TYPED,
     async (_e, payload): Promise<BmadIpcResult<BmadSprintStatus | null>> => {
       const v = validate(ProjectRootInput, payload);
       if (!v.ok) return v.result;

@@ -119,7 +119,28 @@ describe('shouldIgnore', () => {
   });
 });
 
-describe('startBmadFileWatcher (integration)', () => {
+/**
+ * Phase 3 hardening (per ENGINE_SWAP_PROMPT.md Phase 3 pre-work block): the
+ * integration block exercises a real chokidar watcher against the OS file
+ * system, which is timing-sensitive under heavy Vitest parallelism. Native
+ * FSEvents (macOS) and inotify (Linux) can stall for >10s when many vitest
+ * workers fight for the OS event queue, leaving the watcher's `received`
+ * array empty even after the helper's 12s wait.
+ *
+ * Fix: opt the integration tests into chokidar's polling mode (option B in
+ * the prompt's hardening menu). Polling reads directory state every
+ * `WATCHER_POLLING_INTERVAL_MS` and emits events deterministically — slower
+ * than native FS events in absolute terms, but uniform across runs and
+ * platforms. Production code keeps native FS events as the default.
+ *
+ * Per ENGINE_SWAP_PROMPT.md `<engineering_standards>` "Cross-platform" the
+ * file-watcher already supports `usePolling` for network drives — we reuse
+ * that switch here. Test-only.
+ */
+const WATCHER_POLLING_INTERVAL_MS = 75;
+const WATCHER_TEST_TIMEOUT_MS = 30_000;
+
+describe('startBmadFileWatcher (integration)', { timeout: WATCHER_TEST_TIMEOUT_MS }, () => {
   let projectRoot: string;
   let received: BmadFileEvent[];
 
@@ -141,7 +162,9 @@ describe('startBmadFileWatcher (integration)', () => {
   it('emits customization-changed when _bmad/custom/{skill}.toml changes (Phase 1 acceptance criterion)', async () => {
     const handle = await startBmadFileWatcher({
       projectRoot,
-      debounceMs: 50,
+      debounceMs: 100,
+      usePolling: true,
+      pollingIntervalMs: WATCHER_POLLING_INTERVAL_MS,
       onEvent: (e) => received.push(e),
     });
     try {
@@ -158,7 +181,9 @@ describe('startBmadFileWatcher (integration)', () => {
   it('emits manifest-changed when _bmad/_config/manifest.yaml changes', async () => {
     const handle = await startBmadFileWatcher({
       projectRoot,
-      debounceMs: 50,
+      debounceMs: 100,
+      usePolling: true,
+      pollingIntervalMs: WATCHER_POLLING_INTERVAL_MS,
       onEvent: (e) => received.push(e),
     });
     try {
@@ -174,7 +199,9 @@ describe('startBmadFileWatcher (integration)', () => {
   it('emits sprint-status-changed when _bmad-output/implementation-artifacts/sprint-status.yaml changes', async () => {
     const handle = await startBmadFileWatcher({
       projectRoot,
-      debounceMs: 50,
+      debounceMs: 100,
+      usePolling: true,
+      pollingIntervalMs: WATCHER_POLLING_INTERVAL_MS,
       onEvent: (e) => received.push(e),
     });
     try {
@@ -192,24 +219,49 @@ describe('startBmadFileWatcher (integration)', () => {
   });
 
   it('coalesces duplicate events within the debounce window', async () => {
+    // Phase 3 hardening (per ENGINE_SWAP_PROMPT.md Phase 3 pre-work block):
+    // this case used to assert `customEvents.length < 5`, which was
+    // timing-flaky when Vitest scheduled many test files concurrently —
+    // chokidar's `awaitWriteFinish` poll could split bursty writes across
+    // multiple stability windows, producing one event per write under load.
+    //
+    // Fix combines polling mode (deterministic chokidar) with a
+    // timing-tolerant assertion (option c). The intent is "no thrash":
+    // rapid writes coalesce into far fewer events than the raw write count.
+    const debounceMs = 200;
     const handle = await startBmadFileWatcher({
       projectRoot,
-      debounceMs: 100,
+      debounceMs,
+      usePolling: true,
+      pollingIntervalMs: WATCHER_POLLING_INTERVAL_MS,
       onEvent: (e) => received.push(e),
     });
     try {
       const filePath = await writeAt(projectRoot, '_bmad/custom/bmad-agent-pm.toml', '[agent]\nicon = "🏥"\n');
+      // Drain any 'add' event emitted by chokidar for the initial create
+      // before we measure compression. Wait one full debounce window so the
+      // watcher has emitted the create-event(s), then reset the buffer.
+      await new Promise((r) => setTimeout(r, debounceMs * 2));
+      received.length = 0;
+
       // Fire several rapid writes to the same file.
-      for (let i = 0; i < 5; i += 1) {
+      const writeCount = 5;
+      for (let i = 0; i < writeCount; i += 1) {
         await writeFile(filePath, `[agent]\nicon = "${i}"\n`);
       }
-      // Wait long enough for debounce to flush.
-      await new Promise((r) => setTimeout(r, 400));
+      // Settle for ~4× the debounce window; on slow CI any straggler events
+      // land here. Faster-than-debounce writes coalesce; slower writes still
+      // produce far fewer events than `writeCount`.
+      await new Promise((r) => setTimeout(r, debounceMs * 4));
       const customEvents = received.filter((e) => e.type === 'customization-changed');
-      // Atomic writes from different chokidar event types (add/change) can
-      // emit twice but never N=5+ — the debouncer collapses them.
-      expect(customEvents.length).toBeLessThan(5);
+      // Spirit of the test: rapid writes compress. Upper bound is
+      // generous — exactly equalling `writeCount` would mean zero
+      // coalescing, which we never see in practice. We assert
+      // *strictly fewer* events than writes (compression occurred) and at
+      // least one (we did notice the writes).
       expect(customEvents.length).toBeGreaterThanOrEqual(1);
+      expect(customEvents.length).toBeLessThan(writeCount);
+      expect(customEvents.every((e) => e.path === filePath)).toBe(true);
     } finally {
       await handle.close();
     }
@@ -219,6 +271,8 @@ describe('startBmadFileWatcher (integration)', () => {
     const handle = await startBmadFileWatcher({
       projectRoot,
       debounceMs: 50,
+      usePolling: true,
+      pollingIntervalMs: WATCHER_POLLING_INTERVAL_MS,
     });
     expect(handle.supportedEvents).toContain('customization-changed');
     expect(handle.isRunning).toBe(true);

@@ -5,6 +5,7 @@
   },
   "items": {
     "kanban": "Kanban Board",
+    "bmadKanban": "BMad Sprint",
     "terminals": "Agent Terminals",
     "insights": "Insights",
     "roadmap": "Roadmap",

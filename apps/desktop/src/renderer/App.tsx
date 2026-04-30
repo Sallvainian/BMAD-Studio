@@ -29,6 +29,7 @@ import {
 } from './components/ui/dialog';
 import { Sidebar, type SidebarView } from './components/Sidebar';
 import { KanbanBoard } from './components/KanbanBoard';
+import { BmadKanbanView } from './components/bmad/BmadKanbanView';
 import { TaskDetailModal } from './components/task-detail/TaskDetailModal';
 import { TaskCreationWizard } from './components/TaskCreationWizard';
 import { AppSettingsDialog, type AppSection } from './components/settings/AppSettings';
@@ -884,6 +885,11 @@ export function App() {
                     onRefresh={handleRefreshTasks}
                     isRefreshing={isRefreshingTasks}
                   />
+                )}
+                {activeView === 'bmad-kanban' && (
+                  <ErrorBoundary>
+                    <BmadKanbanView projectRoot={selectedProject.path} />
+                  </ErrorBoundary>
                 )}
                 {/* TerminalGrid is always mounted but hidden when not active to preserve terminal state */}
                 <div className={activeView === 'terminals' ? 'h-full' : 'hidden'}>

@@ -425,6 +425,100 @@ Option 3. Three patterns:
 
 ---
 
+### D-012: File-watcher integration tests use chokidar polling mode + tolerant assertions
+
+**Date:** 2026-04-30
+**Phase:** 3
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+Phase 2 documented a flaky integration test (`file-watcher.test.ts > coalesces duplicate events within the debounce window`) that only passed reliably with `--no-file-parallelism`. The Phase 3 Kanban depends on a deterministic file-watcher (drag-drop → YAML write → watcher event → store reconcile), so the prompt's Phase 3 pre-work block folded the fix into Phase 3's foundation work.
+
+Root cause: native FSEvents (macOS) and inotify (Linux) miss writes when many Vitest workers fight for the OS event queue under `--pool=threads`. Chokidar's `awaitWriteFinish.stabilityThreshold` polls at 50ms; under load the watcher's `received` array stayed empty even past the 12s `waitForEvent` budget.
+
+The original `coalesces` assertion (`expect(customEvents.length).toBeLessThan(5)`) was also brittle — it used a magic constant rather than expressing the spirit of "no thrash."
+
+**Options considered:**
+1. Pre-replace `awaitWriteFinish.stabilityThreshold` with a higher constant — only addresses the timing assumption, not the OS event-queue starvation under load.
+2. Switch the test block to chokidar's polling mode (`usePolling: true`) — deterministic across platforms; trades absolute speed for reliability; production code keeps native FS events for performance.
+3. Rewrite the `coalesces` assertion to be timing-tolerant — acceptable but doesn't address the underlying "events never arrive" failure mode.
+
+**Decision:**
+Combined options 2 and 3. The integration block opts into polling mode at `pollingIntervalMs: 75` for sub-100ms responsiveness; the per-test timeout is bumped to 30s via `describe('...', { timeout: WATCHER_TEST_TIMEOUT_MS }, ...)` to handle slow CI runners; the `coalesces` assertion drains initial-create events first, fires N rapid writes, then asserts `1 ≤ events.length < N` plus path-equality on every received event.
+
+**Rationale:**
+- Polling chokidar is the canonical fix for tests under heavy concurrent load (per chokidar's own README on networked / Docker filesystems). The watcher already exposed `usePolling` for production network-drive support — we reuse it test-side without forking the API.
+- Production code unchanged; only the test setup uses polling. Native FS events remain the default.
+- The timing-tolerant assertion expresses what we actually care about (compression occurred, no runaway emission) without burning CPU cycles on a magic number.
+
+**Consequences:**
+- 8 consecutive `--pool=threads` runs of the full BMad test suite produced 8/8 green (`349 passed | 4 skipped (353)` each).
+- Test runtime budget is slightly higher (~70ms per integration test for the polling cycle), but absolute test wall time is still <2s for the file-watcher suite.
+- Future BMad watcher tests should opt in to `usePolling: true` if they exercise real chokidar end-to-end.
+
+---
+
+### D-013: BMad Kanban mounts as a new SidebarView (`bmad-kanban`) — additive, not a replacement
+
+**Date:** 2026-04-30
+**Phase:** 3
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+ENGINE_SWAP_PROMPT.md Phase 3 deliverable §1 ships the BMad Kanban as the headline differentiator. The existing Aperant Kanban (`KanbanBoard.tsx` consuming `task-store`) sits at `activeView === 'kanban'`. KAD-10 says Aperant strengths are preserved through Phase 4; Phase 5 cleans up the old prompts/orchestration. The question: do we replace the old kanban now or add a new view?
+
+**Options considered:**
+1. **Replace the existing `kanban` view.** Old Aperant Kanban becomes unreachable for Phase 3-4 — UX regression for legacy `.auto-claude/specs/` projects in the wild.
+2. **Add a new `bmad-kanban` view alongside the existing one.** Both visible until Phase 5 cleanup, additive integration matches KAD-10 + the prompt's minimal-changes spirit.
+3. **Auto-switch based on project shape.** A project with `_bmad/_config/manifest.yaml` shows the BMad Kanban; otherwise the Aperant Kanban. Surface tension: the kanban label in the sidebar would conditionally translate, and routing logic infects the sidebar component.
+
+**Decision:**
+Option 2. Added `bmad-kanban` to `SidebarView`, new nav item with the `Workflow` lucide icon and shortcut `J` (next to `K` for Aperant Kanban). Both nav items always show; the user picks which one to use. App.tsx mounts `<BmadKanbanView projectRoot={selectedProject.path} />` for the new view; the existing `<KanbanBoard tasks={tasks} ... />` stays put.
+
+**Rationale:**
+- Honors KAD-10 and the prompt's Phase 5 deletion plan — the old kanban's removal is explicitly Phase 5 work.
+- Avoids cross-view auto-switching logic that would couple Sidebar.tsx to BMad project detection.
+- Reviewers can A/B between the old and new kanbans during the migration without re-shimming the routing.
+- Phase 5 removes the Aperant Kanban, the entry from `SidebarView`, and the nav item in one cleanup pass.
+
+**Consequences:**
+- The sidebar grows by one nav item (10 → 11). Acceptable per the `<engineering_standards>` "Performance budgets" — sidebar paint is unaffected.
+- Two i18n keys (`navigation:items.kanban` "Kanban Board" and `navigation:items.bmadKanban` "BMad Sprint") coexist; both are translated EN + FR.
+- Phase 5 removes `bmad-kanban` and renames `kanban` to point at the new component, OR removes the duplicate altogether — the deletion plan in `<file_changes>` already captures `KanbanBoard.tsx` indirectly (it's not in the DELETE list because it's a renderer file; the removal will be a Phase 5 cleanup PR comment).
+
+---
+
+### D-014: BmadStoryView/EpicView types vs. helpers — separate modules
+
+**Date:** 2026-04-30
+**Phase:** 3
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+Phase 3 needs both new types (`BmadStoryView`, `BmadEpicView`, `BmadKanbanColumnId`) and helper functions (`groupSprintStatusIntoEpics`, `parseStoryFile`, `toggleAcceptanceCriterion`, `parseSprintStatusKey`, etc.). The shared types module `src/shared/types/bmad.ts` is the canonical home for type definitions. Should the helpers live there too, or in a separate module?
+
+**Options considered:**
+1. **Inline helpers in `bmad.ts`.** One module, easier to find. Risks bloating the type-only file and adding behavior to a "schemas" module.
+2. **Separate `bmad-kanban-helpers.ts` next to `bmad.ts`.** Pure-function module reusable by main + renderer + tests; types come from `bmad.ts`. Three files instead of one.
+3. **Helpers under `src/renderer/lib/`.** Renderer-only home. Blocks reuse by main-process unit tests that exercise the same parser semantics.
+
+**Decision:**
+Option 2. Types stay in `src/shared/types/bmad.ts`; helpers live in `src/shared/types/bmad-kanban-helpers.ts`. The helpers import their input types from `bmad.ts` and have zero `node:` imports — safe in the renderer bundle, runnable in pure-Node Vitest.
+
+**Rationale:**
+- Keeps `bmad.ts` as a Zod-first schema module — adding 200 lines of markdown-parsing logic would dilute its purpose.
+- The helpers are exercised by 27 Vitest cases in `__tests__/bmad-kanban-helpers.test.ts`; co-located with types in the same directory makes the test layout obvious.
+- Future BMad work (e.g. story-file CLI export in Phase 6) can reuse these helpers from main-process code without refactoring.
+
+**Consequences:**
+- One additional file (`bmad-kanban-helpers.ts`, ~410 lines) under `src/shared/types/`.
+- Importers reference `from '../../shared/types/bmad-kanban-helpers'` rather than the single-module `bmad.ts`. Acceptable — the imports are explicit about which slice the consumer needs.
+
+---
+
 ### D-011: IPC `runWorkflow` bridges `onMenu` callbacks via per-`(invocationId, menuId)` resolver registry
 
 **Date:** 2026-04-30

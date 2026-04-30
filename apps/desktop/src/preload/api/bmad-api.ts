@@ -80,6 +80,18 @@ export interface BmadAPI {
     projectRoot: string,
     storyPath: string,
   ): Promise<BmadIpcResult<{ contents: string; absolutePath: string }>>;
+  // Phase 3: typed sprint-status reader (tolerates missing) + story-file writer + listing
+  readSprintStatusTyped(
+    projectRoot: string,
+  ): Promise<BmadIpcResult<BmadSprintStatus | null>>;
+  writeStoryFile(
+    projectRoot: string,
+    storyPath: string,
+    contents: string,
+  ): Promise<BmadIpcResult<{ absolutePath: string }>>;
+  listStoryFiles(
+    projectRoot: string,
+  ): Promise<BmadIpcResult<{ files: readonly string[] }>>;
 
   // Installer
   runInstaller(
@@ -204,6 +216,16 @@ export const createBmadAPI = (): BmadAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_READ_SPRINT_STATUS, { projectRoot }),
   readStoryFile: (projectRoot, storyPath) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_READ_STORY_FILE, { projectRoot, storyPath }),
+  readSprintStatusTyped: (projectRoot) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_READ_SPRINT_STATUS_TYPED, { projectRoot }),
+  writeStoryFile: (projectRoot, storyPath, contents) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_WRITE_STORY_FILE, {
+      projectRoot,
+      storyPath,
+      contents,
+    }),
+  listStoryFiles: (projectRoot) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_LIST_STORY_FILES, { projectRoot }),
 
   runInstaller: (args) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_RUN_INSTALLER, { args }),

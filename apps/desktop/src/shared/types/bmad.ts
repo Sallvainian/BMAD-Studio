@@ -1108,3 +1108,119 @@ export const BmadHelpRecommendationSchema = z.object({
   completed: z.array(BmadWorkflowActionSchema).readonly(),
   track: BmadTrackSchema,
 });
+
+// =============================================================================
+// Phase 3: Kanban view shapes
+// =============================================================================
+
+/**
+ * Five Kanban columns sourced verbatim from the sprint-status template at
+ * `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml`.
+ * Per ENGINE_SWAP_PROMPT.md KAD-8 — these are the exact YAML status values
+ * for stories. Retro rows live in a separate "optional" lane below the board.
+ */
+export const BMAD_KANBAN_COLUMNS = [
+  'backlog',
+  'ready-for-dev',
+  'in-progress',
+  'review',
+  'done',
+] as const;
+
+export type BmadKanbanColumnId = (typeof BMAD_KANBAN_COLUMNS)[number];
+export const BmadKanbanColumnIdSchema = z.enum(BMAD_KANBAN_COLUMNS);
+
+/**
+ * Logical card shape for the Kanban. Built from sprint-status.yaml's
+ * `development_status` map by `groupSprintStatusIntoEpics`.
+ *
+ * - `kind: 'story'` — a developer-facing story card. The Kanban renders these
+ *   in the 5 columns and they're draggable.
+ * - `kind: 'retro'` — `epic-N-retrospective` rows; live in the bottom
+ *   "optional" lane and only have two valid statuses (`optional` / `done`).
+ */
+export const BMAD_STORY_CARD_KINDS = ['story', 'retro'] as const;
+export type BmadStoryCardKind = (typeof BMAD_STORY_CARD_KINDS)[number];
+
+export interface BmadStoryView {
+  /** Raw key from `development_status` (e.g. `1-2-account-management`). Stable. */
+  readonly key: string;
+  /** `kind: 'story'` for `N-M-name`; `kind: 'retro'` for `epic-N-retrospective`. */
+  readonly kind: BmadStoryCardKind;
+  /** Epic id this row belongs to (e.g. `epic-1`). */
+  readonly epicId: string;
+  /** Numeric epic ordinal extracted from the key (e.g. `1`). */
+  readonly epicNumber: number;
+  /** Story-within-epic ordinal — null for retro rows. */
+  readonly storyNumber: number | null;
+  /** Slug component of the key (`account-management`) — null for retro rows. */
+  readonly slug: string | null;
+  /** Human-readable title — sourced from the story file's H1, falls back to slug. */
+  readonly title: string;
+  /** Current status from sprint-status.yaml. */
+  readonly status: BmadDevelopmentStatus;
+  /** Persona who owns this card. Stories → Amelia (per BMAD docs § "Default Agents");
+   *  retros → Amelia. Null for unsupported kinds (forward-compat). */
+  readonly persona: BmadPersonaSlug | null;
+  /**
+   * Resolved relative path to the story file (relative to project root).
+   * Convention from BMAD's `bmad-create-story` skill:
+   *   `_bmad-output/implementation-artifacts/{epicNumber}-{storyNumber}-{slug}.md`
+   * Resolved opportunistically; null for retro rows + epic rows.
+   */
+  readonly storyFilePath: string | null;
+  /** Sort hint within an epic. Stories first, then retro at end. */
+  readonly orderInEpic: number;
+}
+
+export const BmadStoryViewSchema = z.object({
+  key: z.string().min(1),
+  kind: z.enum(BMAD_STORY_CARD_KINDS),
+  epicId: z.string().min(1),
+  epicNumber: z.number().int().nonnegative(),
+  storyNumber: z.number().int().nonnegative().nullable(),
+  slug: z.string().nullable(),
+  title: z.string(),
+  status: BmadDevelopmentStatusSchema,
+  persona: BmadPersonaSlugSchema.nullable(),
+  storyFilePath: z.string().nullable(),
+  orderInEpic: z.number().int().nonnegative(),
+});
+
+/**
+ * Epic group rendered under a collapsible header in each Kanban column.
+ * Cards are partitioned into `stories` (the main 5 columns) and `retro`
+ * (the optional lane). The epic row itself is not draggable — it summarizes
+ * its children's progress.
+ */
+export interface BmadEpicView {
+  readonly id: string;
+  readonly epicNumber: number;
+  readonly title: string;
+  readonly status: BmadDevelopmentStatus;
+  readonly stories: readonly BmadStoryView[];
+  readonly retro: BmadStoryView | null;
+}
+
+export const BmadEpicViewSchema = z.object({
+  id: z.string().min(1),
+  epicNumber: z.number().int().nonnegative(),
+  title: z.string(),
+  status: BmadDevelopmentStatusSchema,
+  stories: z.array(BmadStoryViewSchema).readonly(),
+  retro: BmadStoryViewSchema.nullable(),
+});
+
+/**
+ * Snapshot delivered to the Kanban renderer. Aggregates everything the UI
+ * needs from one project — the store consumes this via `useBmadProject`.
+ */
+export interface BmadKanbanSnapshot {
+  readonly projectRoot: string;
+  readonly project: string;
+  readonly track: BmadTrack;
+  readonly currentPhase: BmadPhase;
+  readonly sprintStatus: BmadSprintStatus | null;
+  readonly epics: readonly BmadEpicView[];
+  readonly recommendation: BmadHelpRecommendation | null;
+}

@@ -108,5 +108,39 @@
       "done": "Done",
       "optional": "Optional"
     }
+  },
+  "kanban": {
+    "boardAriaLabel": "BMad sprint kanban board",
+    "columnAriaLabel": "{{name}} column ({{count}} stories)",
+    "cardAriaLabel": "Story {{handle}} {{title}}, status {{status}}",
+    "phase": "Phase",
+    "phaseNavigationAriaLabel": "BMad lifecycle phase progress",
+    "phaseState": {
+      "complete": "complete",
+      "active": "current",
+      "pending": "pending"
+    },
+    "run": "Run",
+    "running": "Running…",
+    "runActionAriaLabel": "Run the next workflow for {{title}}",
+    "retrospectiveBadge": "Retro",
+    "retrospectiveDescription": "Optional epic retrospective. Click Run to launch bmad-retrospective.",
+    "optionalLaneLabel": "Optional · {{count}} retro",
+    "optionalLaneLabel_one": "Optional · {{count}} retrospective",
+    "optionalLaneLabel_other": "Optional · {{count}} retrospectives",
+    "empty": {
+      "backlog": "No stories in backlog. Run sprint-planning to populate.",
+      "ready-for-dev": "Drop stories here when they're ready for development.",
+      "in-progress": "Drag a story here to mark it in progress.",
+      "review": "Stories awaiting code review land here.",
+      "done": "Completed stories will appear here."
+    },
+    "storyDetailAriaLabel": "Story details panel",
+    "closeStoryDetailAriaLabel": "Close story details",
+    "storyFileMissing": "No story file on disk yet. Run bmad-create-story to generate one.",
+    "storyNarrative": "Story",
+    "acceptanceCriteria": "Acceptance criteria",
+    "acceptanceToggleAriaLabel": "Toggle acceptance criterion {{index}}: {{text}}",
+    "runStoryWorkflow": "Run next workflow"
   }
 }
