@@ -256,12 +256,19 @@ export function classifyPath(filePath: string, projectRoot: string): BmadFileEve
     }
     if (sub === 'implementation-artifacts') {
       if (fileName === 'sprint-status.yaml') return 'sprint-status-changed';
-      // story-* / *.story.md / *.story.yaml convention from BMAD's
-      // bmad-create-story skill.
-      if (/(^|[/-])(story|stories)/i.test(rel) && fileName.endsWith('.md')) {
+      // Story files: BMAD's `bmad-create-story` skill writes `{N}-{M}-*.md`
+      // per its SKILL.md (`default_output_file = {implementation_artifacts}/{{story_key}}.md`).
+      // Also accept the legacy `story-*.md` convention for backward compat.
+      // Cross-platform: check the basename directly so Windows backslash
+      // separators don't confuse a `/`-anchored scan.
+      if (
+        fileName.endsWith('.md') &&
+        (/^\d+-\d+-/i.test(fileName) || /^(story|stories)-/i.test(fileName))
+      ) {
         return 'story-file-changed';
       }
-      if (/(^|[/-])(epic|epics)/i.test(rel) && fileName.endsWith('.md')) {
+      // Epic files: `epic-N-*.md` and `epic-N.md` shapes.
+      if (fileName.endsWith('.md') && /^(epic|epics)-/i.test(fileName)) {
         return 'epic-file-changed';
       }
       return 'implementation-artifact-changed';

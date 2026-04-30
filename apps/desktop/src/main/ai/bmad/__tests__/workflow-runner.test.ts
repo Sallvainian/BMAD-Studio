@@ -13,6 +13,7 @@
  * `RUN_BMAD_WORKFLOW_SMOKE=1` to keep CI fast).
  */
 
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { __internals } from '../workflow-runner';
@@ -363,14 +364,16 @@ describe('guessOutputFilePath', () => {
   it('derives prd.md from bmad-create-prd', () => {
     const skill = { ...SAMPLE_SKILL, canonicalId: 'bmad-create-prd' };
     expect(guessOutputFilePath(skill, SAMPLE_VARS)).toEqual([
-      '/proj/_bmad-output/planning-artifacts/prd.md',
+      // Use path.join for the expected value so the assertion is cross-platform —
+      // path.join on Windows returns backslash-separated paths.
+      path.join('/proj/_bmad-output/planning-artifacts', 'prd.md'),
     ]);
   });
 
   it('derives architecture.md from bmad-create-architecture', () => {
     const skill = { ...SAMPLE_SKILL, canonicalId: 'bmad-create-architecture' };
     expect(guessOutputFilePath(skill, SAMPLE_VARS)).toEqual([
-      '/proj/_bmad-output/planning-artifacts/architecture.md',
+      path.join('/proj/_bmad-output/planning-artifacts', 'architecture.md'),
     ]);
   });
 

@@ -156,17 +156,23 @@ export async function buildVariableContext(
   // then expand the rest. Bounded depth + cycle detection.
   const ctxScalars = expandAll(raw);
 
+  // Normalize path-shaped variables to platform-correct separators. BMAD's
+  // `_bmad/config.toml` stores forward-slash paths (Unix-style) which
+  // produce mixed separators on Windows after string substitution.
+  // `path.normalize` resolves the slashes per the host platform.
+  const normalize = (value: string): string => (value ? path.normalize(value) : value);
+
   const ctx: BmadVariableContext = {
-    projectRoot: ctxScalars['project-root'],
-    skillRoot: ctxScalars['skill-root'],
+    projectRoot: normalize(ctxScalars['project-root']),
+    skillRoot: normalize(ctxScalars['skill-root']),
     skillName: ctxScalars['skill-name'],
     userName: ctxScalars['user_name'],
     communicationLanguage: ctxScalars['communication_language'],
     documentOutputLanguage: ctxScalars['document_output_language'],
-    planningArtifacts: ctxScalars['planning_artifacts'],
-    implementationArtifacts: ctxScalars['implementation_artifacts'],
-    projectKnowledge: ctxScalars['project_knowledge'],
-    outputFolder: ctxScalars['output_folder'],
+    planningArtifacts: normalize(ctxScalars['planning_artifacts']),
+    implementationArtifacts: normalize(ctxScalars['implementation_artifacts']),
+    projectKnowledge: normalize(ctxScalars['project_knowledge']),
+    outputFolder: normalize(ctxScalars['output_folder']),
     date: ctxScalars['date'],
     projectName: ctxScalars['project_name'],
     ...(ctxScalars['user_skill_level']
