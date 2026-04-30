@@ -103,7 +103,7 @@ import {
   createOrchestratorEmitter,
   OrchestratorError,
 } from '../ai/bmad/orchestrator';
-import { runHelpSync, HelpRunnerError } from '../ai/bmad/help-runner';
+import { runHelpAI, runHelpSync, HelpRunnerError } from '../ai/bmad/help-runner';
 import { runWorkflow, WorkflowRunnerError } from '../ai/bmad/workflow-runner';
 import type { ClaudeProfile } from '../../shared/types/agent';
 import { randomUUID } from 'node:crypto';
@@ -221,10 +221,28 @@ const TrackInput = z.object({
   track: z.enum(BMAD_TRACKS),
 });
 
+const RunHelpAIInput = z.object({
+  projectRoot: z.string().min(1),
+  track: z.enum(BMAD_TRACKS),
+  question: z.string().optional(),
+  invocationId: z.string().min(1).optional(),
+  activeProfile: z.object({
+    id: z.string().min(1),
+  }).passthrough(),
+});
+
 const RunWorkflowInput = z.object({
   projectRoot: z.string().min(1),
   skillName: z.string().min(1),
   personaSlug: z.enum(BMAD_PERSONA_SLUGS).optional(),
+  /**
+   * Optional renderer-supplied invocation id. When omitted, a UUID is
+   * generated server-side. Allowing the renderer to pass it lets the chat
+   * UI route streamed chunks to a thread it created synchronously, rather
+   * than waiting for the runWorkflow Promise to resolve at workflow end.
+   * Per Phase 4 deliverable §1 (BmadPersonaChat must show streaming).
+   */
+  invocationId: z.string().min(1).optional(),
   activeProfile: z.object({
     id: z.string().min(1),
   }).passthrough(), // ClaudeProfile has many optional fields; we trust shape upstream.
@@ -953,6 +971,66 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
     },
   );
 
+  /**
+   * AI-augmented bmad-help. Streams the model's free-form narrative back via
+   * BMAD_WORKFLOW_STREAM (the same channel `runWorkflow` uses) so the
+   * persona chat UI can render the response with the same plumbing.
+   * Per BMAD docs § "Meet BMad-Help: Your Intelligent Guide" — the third
+   * affordance is "Answer questions" via the bmad-help skill itself.
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_RUN_HELP_AI,
+    async (event, payload): Promise<BmadIpcResult<{ invocationId: string }>> => {
+      const v = validate(RunHelpAIInput, payload);
+      if (!v.ok) return v.result;
+      const invocationId = v.data.invocationId ?? randomUUID();
+
+      try {
+        const window = deps.getMainWindow();
+        const senderId = event.sender.id;
+        const sendChunk = (chunk: BmadWorkflowStreamChunk) => {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.BMAD_WORKFLOW_STREAM, {
+              invocationId,
+              senderId,
+              chunk,
+            });
+          }
+        };
+
+        const profile = v.data.activeProfile as unknown as ClaudeProfile;
+        // Fire-and-forget: stream events do the heavy lifting. The Promise
+        // resolves at the end but the renderer doesn't need to await it —
+        // it tracks completion via the 'done' chunk.
+        runHelpAI({
+          projectRoot: v.data.projectRoot,
+          track: v.data.track,
+          ...(v.data.question ? { question: v.data.question } : {}),
+          activeProfile: profile,
+          onStreamChunk: sendChunk,
+        }).catch((err) => {
+          // Surface the error as an `error` chunk so the renderer can
+          // render it inline instead of needing a separate failure channel.
+          sendChunk({
+            kind: 'error',
+            text: err instanceof Error ? err.message : String(err),
+            seq: -1,
+            timestamp: Date.now(),
+          });
+          sendChunk({
+            kind: 'done',
+            seq: -1,
+            timestamp: Date.now(),
+          });
+        });
+
+        return bmadOk({ invocationId });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.BMAD_GET_ORCHESTRATOR_STATE,
     async (_e, payload): Promise<BmadIpcResult<BmadHelpRecommendation>> => {
@@ -983,7 +1061,7 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
     async (event, payload): Promise<BmadIpcResult<BmadWorkflowResult & { invocationId: string }>> => {
       const v = validate(RunWorkflowInput, payload);
       if (!v.ok) return v.result;
-      const invocationId = randomUUID();
+      const invocationId = v.data.invocationId ?? randomUUID();
 
       try {
         const window = deps.getMainWindow();

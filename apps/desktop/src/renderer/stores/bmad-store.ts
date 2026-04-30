@@ -20,14 +20,22 @@
 import { create } from 'zustand';
 
 import type {
+  BmadChatMessage,
+  BmadChatThread,
   BmadDevelopmentStatus,
   BmadFileEvent,
   BmadHelpRecommendation,
   BmadPersonaIdentity,
+  BmadPersonaSlug,
   BmadPhaseGraph,
   BmadProjectSummary,
   BmadSprintStatus,
+  BmadStartHelpAIArgs,
+  BmadStartWorkflowArgs,
   BmadTrack,
+  BmadWorkflowMenu,
+  BmadWorkflowStreamChunk,
+  BmadWorkflowUserChoice,
 } from '../../shared/types/bmad';
 import {
   groupSprintStatusIntoEpics,
@@ -37,10 +45,89 @@ import {
   toggleAcceptanceCriterion,
   type ParsedKey,
 } from '../../shared/types/bmad-kanban-helpers';
+import type { ClaudeProfile } from '../../shared/types/agent';
 
 type ParsedStory = ReturnType<typeof parseStoryFile>;
 
 const DEFAULT_TRACK: BmadTrack = 'method';
+
+// =============================================================================
+// Chat thread helpers
+// =============================================================================
+
+/**
+ * Generates a tiny non-cryptographic id. Crypto.randomUUID is preferred when
+ * available (Electron + modern browsers), but tests run under jsdom which
+ * also exposes it. Falls back to a Math.random + Date.now combo to keep the
+ * store usable in synthetic environments.
+ */
+function generateInvocationId(): string {
+  const c =
+    (typeof crypto !== 'undefined' ? (crypto as Crypto & { randomUUID?: () => string }) : null) ??
+    null;
+  if (c && typeof c.randomUUID === 'function') {
+    return `bmad-${c.randomUUID()}`;
+  }
+  return `bmad-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function newMessageId(): string {
+  return `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Persona ownership of a workflow. Matches BMAD docs § "Default Agents" —
+ * Mary owns analysis, John owns planning, Winston owns architecture, Amelia
+ * owns implementation. Used to default the chat thread's persona when the
+ * caller doesn't supply one explicitly.
+ */
+function inferPersonaForSkill(skillName: string): BmadPersonaSlug | null {
+  if (skillName.startsWith('bmad-agent-')) {
+    switch (skillName) {
+      case 'bmad-agent-analyst':
+        return 'mary';
+      case 'bmad-agent-tech-writer':
+        return 'paige';
+      case 'bmad-agent-pm':
+        return 'john';
+      case 'bmad-agent-ux-designer':
+        return 'sally';
+      case 'bmad-agent-architect':
+        return 'winston';
+      case 'bmad-agent-dev':
+        return 'amelia';
+      default:
+        return null;
+    }
+  }
+  // Workflow skills — match by phase ownership.
+  if (skillName === 'bmad-create-prd') return 'john';
+  if (skillName === 'bmad-validate-prd') return 'john';
+  if (skillName === 'bmad-edit-prd') return 'john';
+  if (skillName === 'bmad-create-epics-and-stories') return 'john';
+  if (skillName === 'bmad-correct-course') return 'john';
+  if (skillName === 'bmad-create-architecture') return 'winston';
+  if (skillName === 'bmad-check-implementation-readiness') return 'winston';
+  if (skillName === 'bmad-generate-project-context') return 'winston';
+  if (skillName === 'bmad-create-ux-design') return 'sally';
+  if (skillName === 'bmad-product-brief') return 'mary';
+  if (skillName === 'bmad-prfaq') return 'mary';
+  if (skillName === 'bmad-brainstorming') return 'mary';
+  if (skillName === 'bmad-domain-research') return 'mary';
+  if (skillName === 'bmad-market-research') return 'mary';
+  if (skillName === 'bmad-technical-research') return 'mary';
+  if (skillName === 'bmad-document-project') return 'mary';
+  if (skillName.startsWith('bmad-dev-')) return 'amelia';
+  if (skillName === 'bmad-sprint-planning') return 'amelia';
+  if (skillName === 'bmad-sprint-status') return 'amelia';
+  if (skillName === 'bmad-create-story') return 'amelia';
+  if (skillName === 'bmad-code-review') return 'amelia';
+  if (skillName === 'bmad-quick-dev') return 'amelia';
+  if (skillName === 'bmad-retrospective') return 'amelia';
+  if (skillName === 'bmad-checkpoint-preview') return 'amelia';
+  if (skillName === 'bmad-qa-generate-e2e-tests') return 'amelia';
+  return null;
+}
 
 // =============================================================================
 // State shape
@@ -96,6 +183,25 @@ export interface BmadStoreState {
         readonly skillName: string;
       }
     | null;
+
+  // ─── Phase 4: chat threads ───────────────────────────────────────────────
+  /** All chat threads (active + completed) for the current project session. */
+  chatThreads: Readonly<Record<string, BmadChatThread>>;
+  /** Currently displayed chat thread in the persona chat dock. */
+  activeChatId: string | null;
+  /**
+   * Persona slug to use for the next free-form chat. Persists across thread
+   * boundaries so the user's persona switcher selection survives chat ends.
+   */
+  preferredPersona: BmadPersonaSlug | null;
+  /**
+   * True once the global workflow-stream + menu-request listeners are wired.
+   * Idempotent guard so the listeners don't accumulate when the consuming
+   * hook re-mounts (e.g. project switch, dev-mode HMR).
+   */
+  streamListenersAttached: boolean;
+  /** Tutorial overlay flag — true when the user hasn't dismissed it yet. */
+  tutorialDismissed: boolean;
 }
 
 // =============================================================================
@@ -129,6 +235,89 @@ interface BmadStoreActions {
   ): void;
   /** Reset error state without changing other slices. */
   clearError(): void;
+
+  // ─── Phase 4: chat thread + workflow lifecycle ─────────────────────────
+  /**
+   * Wire the global workflow-stream and menu-request listeners. Idempotent.
+   * Called by `useBmadProject` on mount; does nothing if already wired.
+   */
+  attachStreamListeners(): void;
+  /**
+   * Tear down the stream listeners. Called when the renderer unloads.
+   * Idempotent. Used in tests and on hard project teardown.
+   */
+  detachStreamListeners(): void;
+  /**
+   * Append a streamed chunk to the matching thread. Public so the listeners
+   * + tests can drive it; not normally invoked from UI code.
+   */
+  appendStreamChunk(invocationId: string, chunk: BmadWorkflowStreamChunk): void;
+  /**
+   * Surface a menu request to the chat. Public for the same reason as above.
+   */
+  setPendingMenu(invocationId: string, menuId: string, menu: BmadWorkflowMenu): void;
+  /**
+   * Start a workflow as a fresh chat thread. Generates a renderer-side
+   * invocation id, creates the thread, and fires `bmad.runWorkflow`.
+   * Resolves with the thread id when the IPC call returns its final result.
+   */
+  startWorkflow(
+    args: BmadStartWorkflowArgs,
+    activeProfile: ClaudeProfile,
+  ): Promise<{ success: boolean; invocationId?: string; error?: string }>;
+  /**
+   * Start a free-form bmad-help question as a chat thread. Streams the
+   * model's narrative answer back via the same chunk infrastructure.
+   */
+  startHelpAI(
+    args: BmadStartHelpAIArgs,
+    activeProfile: ClaudeProfile,
+  ): Promise<{ success: boolean; invocationId?: string; error?: string }>;
+  /**
+   * Resolve a pending menu by sending the user's choice back to the runner.
+   * Appends the user's pick as a chat message and clears the pending menu.
+   */
+  respondToMenu(
+    invocationId: string,
+    choice: BmadWorkflowUserChoice,
+  ): Promise<{ success: boolean; error?: string }>;
+  /** Switch which chat thread is shown in the dock. Pass null to close. */
+  selectChat(invocationId: string | null): void;
+  /** Drop a thread (after completion). Removes from the chatThreads map. */
+  closeChat(invocationId: string): void;
+  /** Set the user's persona pick for the next free-form chat. */
+  setPreferredPersona(slug: BmadPersonaSlug | null): void;
+  /** Mark the first-run tutorial as dismissed. */
+  dismissTutorial(): void;
+}
+
+/**
+ * Persistent flag for the first-launch tutorial. Stored in localStorage so
+ * dismissing it survives app restarts. Reads return `false` when running
+ * outside a browser (e.g., main-process Vitest) so the tutorial behaves
+ * correctly on its first render.
+ */
+const TUTORIAL_DISMISSED_STORAGE_KEY = 'bmad.tutorial.dismissed';
+
+function readTutorialDismissed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(TUTORIAL_DISMISSED_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeTutorialDismissed(value: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(
+      TUTORIAL_DISMISSED_STORAGE_KEY,
+      value ? 'true' : 'false',
+    );
+  } catch {
+    // localStorage may be disabled (private browsing); fall through.
+  }
 }
 
 const initialState: BmadStoreState = {
@@ -146,7 +335,19 @@ const initialState: BmadStoreState = {
   storyDetails: {},
   activeStoryKey: null,
   activeInvocation: null,
+  chatThreads: {},
+  activeChatId: null,
+  preferredPersona: null,
+  streamListenersAttached: false,
+  tutorialDismissed: readTutorialDismissed(),
 };
+
+/**
+ * Module-level cleanup handles for the global stream listeners. Hoisted out
+ * of the store so the create() factory doesn't run them again on HMR.
+ */
+let streamListenerCleanup: (() => void) | null = null;
+let menuListenerCleanup: (() => void) | null = null;
 
 // =============================================================================
 // Store
@@ -183,6 +384,12 @@ type BmadAPIShape = {
   writeStoryFile: typeof window.electronAPI.bmad.writeStoryFile;
   onFileEvent: typeof window.electronAPI.bmad.onFileEvent;
   onOrchestratorEvent: typeof window.electronAPI.bmad.onOrchestratorEvent;
+  // Phase 4 additions
+  runWorkflow: typeof window.electronAPI.bmad.runWorkflow;
+  runHelpAI: typeof window.electronAPI.bmad.runHelpAI;
+  respondToWorkflowMenu: typeof window.electronAPI.bmad.respondToWorkflowMenu;
+  onWorkflowStream: typeof window.electronAPI.bmad.onWorkflowStream;
+  onWorkflowMenuRequest: typeof window.electronAPI.bmad.onWorkflowMenuRequest;
 };
 
 export const useBmadStore = create<BmadStoreState & BmadStoreActions>(
@@ -305,7 +512,15 @@ export const useBmadStore = create<BmadStoreState & BmadStoreActions>(
           // Best-effort — main process may have already torn down.
         }
       }
-      set({ ...initialState });
+      // Detach Phase 4 stream listeners before resetting state, otherwise the
+      // module-level cleanup handles leak across project switches and a
+      // subsequent re-attach creates a second IPC subscriber.
+      streamListenerCleanup?.();
+      menuListenerCleanup?.();
+      streamListenerCleanup = null;
+      menuListenerCleanup = null;
+      // Re-read the persisted tutorial flag so dismissal survives the reset.
+      set({ ...initialState, tutorialDismissed: readTutorialDismissed() });
     },
 
     applyFileEvent: async (event) => {
@@ -492,6 +707,479 @@ export const useBmadStore = create<BmadStoreState & BmadStoreActions>(
 
     closeStoryDetail: () => set({ activeStoryKey: null }),
 
+    // ─── Phase 4: chat thread + workflow lifecycle ────────────────────
+    attachStreamListeners: () => {
+      if (get().streamListenersAttached) return;
+      const api = bmad();
+      streamListenerCleanup = api.onWorkflowStream((payload) => {
+        get().appendStreamChunk(payload.invocationId, payload.chunk);
+      });
+      menuListenerCleanup = api.onWorkflowMenuRequest((payload) => {
+        get().setPendingMenu(payload.invocationId, payload.menuId, payload.menu);
+      });
+      set({ streamListenersAttached: true });
+    },
+
+    detachStreamListeners: () => {
+      streamListenerCleanup?.();
+      menuListenerCleanup?.();
+      streamListenerCleanup = null;
+      menuListenerCleanup = null;
+      set({ streamListenersAttached: false });
+    },
+
+    appendStreamChunk: (invocationId, chunk) => {
+      set((state) => {
+        const thread = state.chatThreads[invocationId];
+        if (!thread) return state;
+
+        // 'done' marks the workflow as finished — the runWorkflow Promise
+        // result will land separately and refine the outcome. We finalize
+        // the streaming flag here so the bubble stops pulsing.
+        if (chunk.kind === 'done') {
+          const messages = thread.messages.map((m) =>
+            m.streaming ? { ...m, streaming: false } : m,
+          );
+          // Don't override 'completed' / 'errored' if those already landed
+          // from the menu path or the IPC result; keep streaming threads
+          // open until the final status update arrives.
+          const nextStatus =
+            thread.status === 'awaiting-menu' ||
+            thread.status === 'awaiting-response' ||
+            thread.status === 'completed' ||
+            thread.status === 'aborted' ||
+            thread.status === 'errored'
+              ? thread.status
+              : ('completed' as const);
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...thread,
+                messages,
+                status: nextStatus,
+                endedAt: thread.endedAt ?? Date.now(),
+              },
+            },
+          };
+        }
+
+        if (chunk.kind === 'error') {
+          const messages = appendSystemMessage(
+            thread.messages,
+            chunk.text ?? 'Workflow errored',
+          );
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...thread,
+                messages,
+                status: 'errored',
+                error: chunk.text ?? 'Workflow errored',
+                endedAt: Date.now(),
+              },
+            },
+          };
+        }
+
+        if (chunk.kind === 'step-start') {
+          // Surface step transitions as a system message so the UI can
+          // show "Loaded step: foo.md" inline. Per BMAD's just-in-time
+          // step file rule (per BMAD docs § "The Activation Flow") only
+          // one step is ever active at a time.
+          const stepText = chunk.stepFileName
+            ? `Step loaded: ${chunk.stepFileName}`
+            : (chunk.text ?? 'Step loaded');
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...thread,
+                messages: appendSystemMessage(thread.messages, stepText),
+              },
+            },
+          };
+        }
+
+        if (chunk.kind === 'tool-call') {
+          // Surface tool calls as compact system messages so the user can
+          // see "Read /path", "Write /path" etc. without parsing the
+          // full agent output.
+          const callDescription = describeToolCall(chunk);
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...thread,
+                messages: appendSystemMessage(thread.messages, callDescription),
+              },
+            },
+          };
+        }
+
+        if (chunk.kind === 'text-delta' && chunk.text) {
+          const messages = appendAssistantDelta(
+            thread.messages,
+            chunk.text,
+            thread.personaSlug ?? undefined,
+          );
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...thread,
+                messages,
+                status: thread.status === 'starting' ? 'streaming' : thread.status,
+              },
+            },
+          };
+        }
+
+        // 'menu' is handled by the dedicated menu listener; ignore here.
+        // 'reasoning' deltas + tool-result chunks are intentionally dropped
+        // from the chat history (they're noise for end-users; can be
+        // surfaced via a debug toggle in Phase 6).
+        return state;
+      });
+    },
+
+    setPendingMenu: (invocationId, menuId, menu) => {
+      set((state) => {
+        const thread = state.chatThreads[invocationId];
+        if (!thread) return state;
+        // Mark the in-progress assistant message as no longer streaming —
+        // the model has halted and is waiting for input.
+        const messages = thread.messages.map((m) =>
+          m.streaming ? { ...m, streaming: false } : m,
+        );
+        return {
+          chatThreads: {
+            ...state.chatThreads,
+            [invocationId]: {
+              ...thread,
+              messages,
+              status: 'awaiting-menu',
+              pendingMenu: { menuId, menu, receivedAt: Date.now() },
+            },
+          },
+        };
+      });
+    },
+
+    startWorkflow: async (args, activeProfile) => {
+      const { activeProjectRoot } = get();
+      if (!activeProjectRoot) {
+        return { success: false, error: 'No active BMad project' };
+      }
+
+      const invocationId = generateInvocationId();
+      const personaSlug = args.personaSlug ?? inferPersonaForSkill(args.skillName);
+      // Ensure listeners are wired before the IPC fires; the runner emits
+      // chunks immediately so we can't afford a registration race.
+      get().attachStreamListeners();
+
+      const thread: BmadChatThread = {
+        invocationId,
+        skillName: args.skillName,
+        personaSlug,
+        storyKey: args.storyKey ?? null,
+        title: args.title ?? null,
+        messages: [],
+        status: 'starting',
+        pendingMenu: null,
+        startedAt: Date.now(),
+      };
+
+      set((state) => ({
+        chatThreads: { ...state.chatThreads, [invocationId]: thread },
+        activeChatId: invocationId,
+        ...(args.storyKey
+          ? {
+              activeInvocation: {
+                invocationId,
+                storyKey: args.storyKey,
+                skillName: args.skillName,
+              },
+            }
+          : {}),
+      }));
+
+      // Optimistic story-status transition to 'in-progress' when running on
+      // a 'ready-for-dev' or 'backlog' story card. Watcher will reconcile
+      // once the workflow writes sprint-status.yaml.
+      if (args.storyKey) {
+        const current = get().sprintStatus?.developmentStatus[args.storyKey];
+        if (current === 'ready-for-dev' || current === 'backlog') {
+          set((state) => ({
+            optimisticStatus: {
+              ...state.optimisticStatus,
+              [args.storyKey as string]: 'in-progress',
+            },
+          }));
+        }
+      }
+
+      try {
+        const resp = await bmad().runWorkflow({
+          projectRoot: activeProjectRoot,
+          skillName: args.skillName,
+          ...(personaSlug ? { personaSlug } : {}),
+          invocationId,
+          activeProfile,
+          ...(args.args ? { args: args.args } : {}),
+          ...(args.maxTurns !== undefined ? { maxTurns: args.maxTurns } : {}),
+          ...(args.initialMessages ? { initialMessages: args.initialMessages } : {}),
+        });
+
+        if (!resp.success) {
+          set((state) => {
+            const t = state.chatThreads[invocationId];
+            if (!t) return state;
+            return {
+              chatThreads: {
+                ...state.chatThreads,
+                [invocationId]: {
+                  ...t,
+                  status: 'errored',
+                  error: resp.error.message,
+                  endedAt: Date.now(),
+                },
+              },
+              lastError: resp.error.message,
+              ...(args.storyKey
+                ? rollbackOptimisticStatus(state, args.storyKey)
+                : {}),
+              activeInvocation:
+                state.activeInvocation?.invocationId === invocationId
+                  ? null
+                  : state.activeInvocation,
+            };
+          });
+          return { success: false, invocationId, error: resp.error.message };
+        }
+
+        // Final outcome. The 'done' chunk may have already finalized the
+        // streaming flag; we just merge the outcome here.
+        set((state) => {
+          const t = state.chatThreads[invocationId];
+          if (!t) return state;
+          const finalStatus: BmadChatThread['status'] =
+            resp.data.outcome === 'completed'
+              ? 'completed'
+              : resp.data.outcome === 'aborted'
+                ? 'aborted'
+                : 'errored';
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...t,
+                status: finalStatus,
+                outcome: resp.data.outcome,
+                endedAt: t.endedAt ?? Date.now(),
+                ...(resp.data.error ? { error: resp.data.error.message } : {}),
+              },
+            },
+            activeInvocation:
+              state.activeInvocation?.invocationId === invocationId
+                ? null
+                : state.activeInvocation,
+          };
+        });
+        return { success: true, invocationId };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'startWorkflow failed';
+        set((state) => {
+          const t = state.chatThreads[invocationId];
+          if (!t) return state;
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...t,
+                status: 'errored',
+                error: message,
+                endedAt: Date.now(),
+              },
+            },
+            lastError: message,
+            ...(args.storyKey
+              ? rollbackOptimisticStatus(state, args.storyKey)
+              : {}),
+            activeInvocation:
+              state.activeInvocation?.invocationId === invocationId
+                ? null
+                : state.activeInvocation,
+          };
+        });
+        return { success: false, invocationId, error: message };
+      }
+    },
+
+    startHelpAI: async (args, activeProfile) => {
+      const { activeProjectRoot, track } = get();
+      if (!activeProjectRoot) {
+        return { success: false, error: 'No active BMad project' };
+      }
+
+      const invocationId = generateInvocationId();
+      get().attachStreamListeners();
+
+      const userMessage: BmadChatMessage | null = args.question
+        ? {
+            id: newMessageId(),
+            role: 'user',
+            content: args.question,
+            timestamp: Date.now(),
+          }
+        : null;
+
+      const thread: BmadChatThread = {
+        invocationId,
+        skillName: 'bmad-help',
+        personaSlug: null,
+        storyKey: null,
+        title: null,
+        messages: userMessage ? [userMessage] : [],
+        status: 'starting',
+        pendingMenu: null,
+        startedAt: Date.now(),
+      };
+
+      set((state) => ({
+        chatThreads: { ...state.chatThreads, [invocationId]: thread },
+        activeChatId: invocationId,
+      }));
+
+      try {
+        const resp = await bmad().runHelpAI({
+          projectRoot: activeProjectRoot,
+          track: args.track ?? track,
+          ...(args.question ? { question: args.question } : {}),
+          invocationId,
+          activeProfile,
+        });
+
+        if (!resp.success) {
+          set((state) => {
+            const t = state.chatThreads[invocationId];
+            if (!t) return state;
+            return {
+              chatThreads: {
+                ...state.chatThreads,
+                [invocationId]: {
+                  ...t,
+                  status: 'errored',
+                  error: resp.error.message,
+                  endedAt: Date.now(),
+                },
+              },
+              lastError: resp.error.message,
+            };
+          });
+          return { success: false, invocationId, error: resp.error.message };
+        }
+        // runHelpAI is fire-and-forget — completion arrives via the
+        // 'done' stream chunk. Nothing else to do here.
+        return { success: true, invocationId };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'startHelpAI failed';
+        set((state) => {
+          const t = state.chatThreads[invocationId];
+          if (!t) return state;
+          return {
+            chatThreads: {
+              ...state.chatThreads,
+              [invocationId]: {
+                ...t,
+                status: 'errored',
+                error: message,
+                endedAt: Date.now(),
+              },
+            },
+            lastError: message,
+          };
+        });
+        return { success: false, invocationId, error: message };
+      }
+    },
+
+    respondToMenu: async (invocationId, choice) => {
+      const thread = get().chatThreads[invocationId];
+      if (!thread || !thread.pendingMenu) {
+        return { success: false, error: 'No pending menu' };
+      }
+      const menuId = thread.pendingMenu.menuId;
+      const userText =
+        choice.optionCode && choice.text
+          ? `${choice.optionCode} ${choice.text}`.trim()
+          : choice.text || (choice.optionCode ?? '');
+
+      // Append the user's pick as a chat message and clear the pending menu.
+      set((state) => ({
+        chatThreads: {
+          ...state.chatThreads,
+          [invocationId]: {
+            ...thread,
+            pendingMenu: null,
+            status: 'streaming',
+            messages: [
+              ...thread.messages,
+              {
+                id: newMessageId(),
+                role: 'user',
+                content: userText,
+                timestamp: Date.now(),
+              },
+            ],
+          },
+        },
+      }));
+
+      try {
+        const resp = await bmad().respondToWorkflowMenu({
+          invocationId,
+          menuId,
+          choice,
+        });
+        if (!resp.success) {
+          set((state) => ({ lastError: resp.error.message }));
+          return { success: false, error: resp.error.message };
+        }
+        return { success: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'respondToMenu failed';
+        set({ lastError: message });
+        return { success: false, error: message };
+      }
+    },
+
+    selectChat: (invocationId) => set({ activeChatId: invocationId }),
+
+    closeChat: (invocationId) => {
+      set((state) => {
+        const next = { ...state.chatThreads };
+        delete next[invocationId];
+        return {
+          chatThreads: next,
+          activeChatId:
+            state.activeChatId === invocationId ? null : state.activeChatId,
+          activeInvocation:
+            state.activeInvocation?.invocationId === invocationId
+              ? null
+              : state.activeInvocation,
+        };
+      });
+    },
+
+    setPreferredPersona: (slug) => set({ preferredPersona: slug }),
+
+    dismissTutorial: () => {
+      writeTutorialDismissed(true);
+      set({ tutorialDismissed: true });
+    },
+
     toggleAcceptance: async (storyKey, acIndex, done) => {
       const { activeProjectRoot, storyDetails } = get();
       if (!activeProjectRoot) {
@@ -563,6 +1251,94 @@ export const useBmadStore = create<BmadStoreState & BmadStoreActions>(
 
 function pathForKey(parsed: ParsedKey): string | null {
   return speculativeStoryPath(parsed);
+}
+
+/**
+ * Append a text-delta chunk to the trailing assistant message. Creates a
+ * fresh assistant message when the previous one isn't streaming (i.e. the
+ * model just halted for a menu and is now starting a new turn).
+ */
+function appendAssistantDelta(
+  messages: readonly BmadChatMessage[],
+  text: string,
+  personaSlug: BmadPersonaSlug | undefined,
+): readonly BmadChatMessage[] {
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'assistant' && last.streaming) {
+    const updated: BmadChatMessage = {
+      ...last,
+      content: last.content + text,
+    };
+    return [...messages.slice(0, -1), updated];
+  }
+  const next: BmadChatMessage = {
+    id: newMessageId(),
+    role: 'assistant',
+    content: text,
+    ...(personaSlug ? { personaSlug } : {}),
+    timestamp: Date.now(),
+    streaming: true,
+  };
+  return [...messages, next];
+}
+
+/**
+ * Append a UI-only system message (step transitions, tool calls, errors).
+ */
+function appendSystemMessage(
+  messages: readonly BmadChatMessage[],
+  text: string,
+): readonly BmadChatMessage[] {
+  return [
+    ...messages,
+    {
+      id: newMessageId(),
+      role: 'system',
+      content: text,
+      timestamp: Date.now(),
+    },
+  ];
+}
+
+/**
+ * Render a tool-call chunk as a compact human-readable string.
+ */
+function describeToolCall(chunk: BmadWorkflowStreamChunk): string {
+  const tool = chunk.toolName ?? 'tool';
+  const args = chunk.toolArgs ?? {};
+  if (
+    (tool === 'Read' || tool === 'Write' || tool === 'Edit') &&
+    typeof (args as { file_path?: unknown }).file_path === 'string'
+  ) {
+    return `${tool} ${(args as { file_path: string }).file_path}`;
+  }
+  if (tool === 'Bash' && typeof (args as { command?: unknown }).command === 'string') {
+    const cmd = (args as { command: string }).command;
+    const trimmed = cmd.length > 80 ? `${cmd.slice(0, 77)}…` : cmd;
+    return `Bash ${trimmed}`;
+  }
+  if (
+    (tool === 'Glob' || tool === 'Grep') &&
+    typeof (args as { pattern?: unknown }).pattern === 'string'
+  ) {
+    return `${tool} ${(args as { pattern: string }).pattern}`;
+  }
+  return tool;
+}
+
+/**
+ * Build the partial state update that rolls back an optimistic status
+ * override. Used when a workflow start fails — the optimistic 'in-progress'
+ * paint gets undone so the kanban returns the card to its prior column.
+ */
+function rollbackOptimisticStatus(
+  state: BmadStoreState,
+  storyKey: string,
+): Partial<BmadStoreState> {
+  if (!(storyKey in state.optimisticStatus)) return {};
+  const next = { ...state.optimisticStatus };
+  delete next[storyKey];
+  return { optimisticStatus: next };
 }
 
 /**

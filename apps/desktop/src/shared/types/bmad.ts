@@ -1224,3 +1224,124 @@ export interface BmadKanbanSnapshot {
   readonly epics: readonly BmadEpicView[];
   readonly recommendation: BmadHelpRecommendation | null;
 }
+
+// =============================================================================
+// Phase 4: Chat thread shapes (BmadPersonaChat)
+// =============================================================================
+
+/**
+ * One message inside a `BmadChatThread`. Three roles per BMAD docs §
+ * "The Activation Flow":
+ *   - `assistant` — model output (Mary/John/etc, prefixed with their icon)
+ *   - `user` — the human's input (greeting, menu choices, free-form replies)
+ *   - `system` — UI-only narration (e.g. "Workflow started", "Step 2 loaded")
+ */
+export const BMAD_CHAT_MESSAGE_ROLES = ['assistant', 'user', 'system'] as const;
+export type BmadChatMessageRole = (typeof BMAD_CHAT_MESSAGE_ROLES)[number];
+
+/**
+ * Chat thread message rendered in the persona chat dock. Built by appending
+ * stream chunks (text deltas concatenate into one assistant message until
+ * the next user input or workflow completion).
+ */
+export interface BmadChatMessage {
+  readonly id: string;
+  readonly role: BmadChatMessageRole;
+  /** Markdown body. Tool calls render as inline blocks via system messages. */
+  readonly content: string;
+  /** Persona slug for assistant messages (drives icon + name in the bubble). */
+  readonly personaSlug?: BmadPersonaSlug;
+  readonly timestamp: number;
+  /**
+   * Marks an assistant message that's still receiving stream chunks.
+   * Cleared when the model halts (menu) or the workflow completes.
+   */
+  readonly streaming?: boolean;
+}
+
+/**
+ * Lifecycle status of one workflow invocation. Drives the chat dock's
+ * header indicator (loader vs idle vs error vs done).
+ */
+export const BMAD_CHAT_THREAD_STATUSES = [
+  'starting',
+  'streaming',
+  'awaiting-menu',
+  'awaiting-response',
+  'completed',
+  'aborted',
+  'errored',
+] as const;
+export type BmadChatThreadStatus = (typeof BMAD_CHAT_THREAD_STATUSES)[number];
+
+/**
+ * Pending menu surfaced from the workflow runner. The chat UI renders the
+ * options as buttons (or a free-form text field when `options` is empty);
+ * resolving fires `respondToWorkflowMenu({ invocationId, menuId, choice })`
+ * and the thread transitions back to `streaming`.
+ */
+export interface BmadChatPendingMenu {
+  readonly menuId: string;
+  readonly menu: BmadWorkflowMenu;
+  readonly receivedAt: number;
+}
+
+/**
+ * Per-invocation chat thread. Multiple threads can coexist (one per running
+ * workflow); the dock shows whichever id is `activeChatId` in the store.
+ *
+ * Per ENGINE_SWAP_PROMPT.md KAD-7 ("Personas persist; chats are fresh") the
+ * thread starts with empty messages on every workflow run. Persona persistence
+ * is a worker-thread concern, not a chat-history concern.
+ */
+export interface BmadChatThread {
+  readonly invocationId: string;
+  readonly skillName: string;
+  readonly personaSlug: BmadPersonaSlug | null;
+  /** Story key when this thread was started by clicking Run on a card. */
+  readonly storyKey: string | null;
+  /**
+   * `null` until the first chunk arrives. Populated from the workflow runner's
+   * skill resolution + persona registry when the renderer launches the call.
+   */
+  readonly title: string | null;
+  /** Streamed messages. Append-only during the thread's lifetime. */
+  readonly messages: readonly BmadChatMessage[];
+  readonly status: BmadChatThreadStatus;
+  /** Pending menu when status === 'awaiting-menu'. */
+  readonly pendingMenu: BmadChatPendingMenu | null;
+  /** Outcome of the underlying workflow (set on completion). */
+  readonly outcome?: BmadWorkflowOutcome;
+  /** Error message when status === 'errored'. */
+  readonly error?: string;
+  readonly startedAt: number;
+  readonly endedAt?: number;
+}
+
+/**
+ * Argument shape used by the renderer-side store action. Matches the IPC
+ * payload but does not include `invocationId` (the store generates one
+ * locally so it can subscribe to stream events synchronously).
+ */
+export interface BmadStartWorkflowArgs {
+  readonly skillName: string;
+  readonly personaSlug?: BmadPersonaSlug;
+  readonly storyKey?: string;
+  readonly args?: readonly string[];
+  readonly maxTurns?: number;
+  readonly initialMessages?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  /**
+   * Optional override for the title shown in the chat header before the
+   * first model response arrives. Defaults to the persona's name+title.
+   */
+  readonly title?: string;
+}
+
+/**
+ * Argument shape for runHelpAI. The bmad-help skill's narrative streams
+ * back into the same chat thread infrastructure as workflows.
+ */
+export interface BmadStartHelpAIArgs {
+  readonly question?: string;
+  readonly track?: BmadTrack;
+}

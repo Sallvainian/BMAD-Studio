@@ -18,17 +18,25 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import { BmadKanbanView } from '../BmadKanbanView';
 import { useBmadStore } from '../../../stores/bmad-store';
+import { useClaudeProfileStore } from '../../../stores/claude-profile-store';
 import type {
   BmadFileEvent,
   BmadIpcResult,
   BmadPersonaIdentity,
   BmadSprintStatus,
+  BmadWorkflowResult,
 } from '../../../../shared/types/bmad';
+import type { ClaudeProfile } from '../../../../shared/types/agent';
+
+vi.mock('react-markdown', () => ({
+  default: ({ children }: { children: string }) => <div>{children}</div>,
+}));
+vi.mock('remark-gfm', () => ({ default: () => {} }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -38,6 +46,7 @@ vi.mock('react-i18next', () => ({
       }
       return key;
     },
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -129,6 +138,24 @@ function installMock() {
       return () => fileEventListeners.delete(handler);
     }),
     onOrchestratorEvent: vi.fn().mockReturnValue(() => {}),
+    // Phase 4 IPC methods — stubbed so the store's startWorkflow / chat
+    // actions don't crash mid-test.
+    runWorkflow: vi.fn().mockResolvedValue(
+      ok<BmadWorkflowResult & { invocationId: string }>({
+        outcome: 'completed',
+        skillId: 'bmad-dev-story',
+        turns: 1,
+        durationMs: 1,
+        outputFiles: [],
+        invocationId: 'integration-mock',
+      }),
+    ),
+    runHelpAI: vi
+      .fn()
+      .mockResolvedValue(ok({ invocationId: 'integration-help-mock' })),
+    respondToWorkflowMenu: vi.fn().mockResolvedValue(ok({ resolved: true })),
+    onWorkflowStream: vi.fn().mockReturnValue(() => {}),
+    onWorkflowMenuRequest: vi.fn().mockReturnValue(() => {}),
   };
 
   (window as unknown as { electronAPI: { bmad: typeof mock } }).electronAPI = {
@@ -152,6 +179,13 @@ function installMock() {
   };
 }
 
+const TEST_PROFILE: ClaudeProfile = {
+  id: 'integration-profile',
+  name: 'Integration',
+  isDefault: true,
+  createdAt: new Date(),
+};
+
 describe('BmadKanbanView integration', () => {
   beforeEach(() => {
     useBmadStore.setState({
@@ -169,6 +203,15 @@ describe('BmadKanbanView integration', () => {
       storyDetails: {},
       activeStoryKey: null,
       activeInvocation: null,
+      chatThreads: {},
+      activeChatId: null,
+      preferredPersona: null,
+      streamListenersAttached: false,
+      tutorialDismissed: true,
+    });
+    useClaudeProfileStore.setState({
+      profiles: [TEST_PROFILE],
+      activeProfileId: TEST_PROFILE.id,
     });
   });
 
@@ -250,7 +293,7 @@ describe('BmadKanbanView integration', () => {
     expect(useBmadStore.getState().optimisticStatus).toEqual({});
   });
 
-  it('renders the empty state when the project is not BMad', async () => {
+  it('renders the install prompt when the project is not BMad (Phase 4)', async () => {
     const harness = installMock();
     harness.mock.detectProject.mockResolvedValue(
       ok({
@@ -263,9 +306,136 @@ describe('BmadKanbanView integration', () => {
     );
     render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
     await waitFor(() => {
-      // The empty state translation key uses 'errors.PROJECT_NOT_BMAD'
-      expect(screen.getByText('errors.PROJECT_NOT_BMAD')).toBeInTheDocument();
+      // Phase 4 replaces the bare empty-state text with the BmadInstallPrompt
+      // panel so the user has a one-click path to run the installer.
+      expect(screen.getByTestId('bmad-install-prompt')).toBeInTheDocument();
     });
     expect(harness.mock.startWatcher).not.toHaveBeenCalled();
+  });
+
+  // ─── Phase 4 specific: Run button + chat dock + sidebar toggles ──────────
+  it('Phase 4: Run button on a story card calls runWorkflow with bmad-dev-story', async () => {
+    const harness = installMock();
+    render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('bmad-kanban-board')).toBeInTheDocument(),
+    );
+    // First seed the story to ready-for-dev so the Run button is enabled
+    // and resolves to bmad-dev-story.
+    await act(async () => {
+      await useBmadStore
+        .getState()
+        .setStoryStatus('1-1-user-authentication', 'ready-for-dev');
+    });
+    harness.mock.runWorkflow.mockClear();
+
+    // Find the specific card for this story (DOM order is column-driven, so
+    // use the data-story-key attribute to disambiguate from other cards).
+    const card = document.querySelector(
+      '[data-story-key="1-1-user-authentication"]',
+    ) as HTMLElement;
+    expect(card).not.toBeNull();
+    const runButton = within(card).getByTestId('bmad-story-run-button');
+    await act(async () => {
+      runButton.click();
+      await new Promise<void>((r) => setTimeout(r, 0));
+    });
+    expect(harness.mock.runWorkflow).toHaveBeenCalled();
+    const args = harness.mock.runWorkflow.mock.calls[0]?.[0] as {
+      skillName: string;
+      activeProfile: ClaudeProfile;
+    };
+    expect(args.skillName).toBe('bmad-dev-story');
+    expect(args.activeProfile.id).toBe(TEST_PROFILE.id);
+
+    // The store-level chat thread carries storyKey (the IPC payload itself
+    // doesn't — storyKey is renderer-side state for the kanban<->chat
+    // visual link). Verify on the thread side instead.
+    const chatId = useBmadStore.getState().activeChatId;
+    expect(chatId).not.toBeNull();
+    expect(useBmadStore.getState().chatThreads[chatId!]?.storyKey).toBe(
+      '1-1-user-authentication',
+    );
+  });
+
+  it('Phase 4: Run button on a story in `review` status picks bmad-code-review', async () => {
+    const harness = installMock();
+    harness.setCurrentSprint({
+      ...INITIAL_SPRINT_STATUS,
+      developmentStatus: {
+        ...INITIAL_SPRINT_STATUS.developmentStatus,
+        '1-1-user-authentication': 'review',
+      },
+    });
+    render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('bmad-kanban-board')).toBeInTheDocument(),
+    );
+
+    const card = document.querySelector(
+      '[data-story-key="1-1-user-authentication"]',
+    ) as HTMLElement;
+    expect(card).not.toBeNull();
+    const runButton = within(card).getByTestId('bmad-story-run-button');
+    await act(async () => {
+      runButton.click();
+      await new Promise<void>((r) => setTimeout(r, 0));
+    });
+    expect(harness.mock.runWorkflow).toHaveBeenCalled();
+    const args = harness.mock.runWorkflow.mock.calls[0]?.[0] as {
+      skillName: string;
+    };
+    expect(args.skillName).toBe('bmad-code-review');
+  });
+
+  it('Phase 4: starting a workflow auto-opens the chat panel', async () => {
+    installMock();
+    render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('bmad-kanban-board')).toBeInTheDocument(),
+    );
+    // Chat panel hidden by default
+    expect(screen.queryByTestId('bmad-persona-chat')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await useBmadStore.getState().startWorkflow(
+        { skillName: 'bmad-dev-story', storyKey: '1-1-user-authentication' },
+        TEST_PROFILE,
+      );
+      await new Promise<void>((r) => setTimeout(r, 0));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('bmad-persona-chat')).toBeInTheDocument();
+    });
+  });
+
+  it('Phase 4: help sidebar toggle hides + shows', async () => {
+    installMock();
+    render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('bmad-kanban-board')).toBeInTheDocument(),
+    );
+    // Help sidebar is visible by default.
+    expect(screen.getByTestId('bmad-help-sidebar')).toBeInTheDocument();
+
+    await act(async () => {
+      screen.getByTestId('bmad-toggle-help-button').click();
+    });
+    expect(screen.queryByTestId('bmad-help-sidebar')).not.toBeInTheDocument();
+  });
+
+  it('Phase 4: chat panel toggle button opens the chat with persona switcher', async () => {
+    installMock();
+    render(<BmadKanbanView projectRoot={PROJECT_ROOT} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('bmad-kanban-board')).toBeInTheDocument(),
+    );
+    // Chat hidden by default
+    expect(screen.queryByTestId('bmad-persona-chat')).not.toBeInTheDocument();
+
+    await act(async () => {
+      screen.getByTestId('bmad-toggle-chat-button').click();
+    });
+    expect(screen.getByTestId('bmad-persona-chat')).toBeInTheDocument();
   });
 });

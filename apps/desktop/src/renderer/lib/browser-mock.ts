@@ -368,6 +368,7 @@ const browserMockAPI: ElectronAPI = {
     getHelpRecommendation: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
     getOrchestratorState: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
     runWorkflow: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runHelpAI: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
     respondToWorkflowMenu: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
     onWorkflowStream: () => () => {},
     onWorkflowMenuRequest: () => () => {},

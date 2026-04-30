@@ -490,6 +490,98 @@ Option 2. Added `bmad-kanban` to `SidebarView`, new nav item with the `Workflow`
 
 ---
 
+### D-015: Phase 4 layout uses three persistent panels with toggles
+
+**Date:** 2026-04-30
+**Phase:** 4
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+Phase 4 ships three new visual surfaces (Help sidebar, persona chat, install wizard). The simplest mounting strategy would be a stacked dialog approach (each surface a modal popup), but BMAD docs § "Meet BMad-Help: Your Intelligent Guide" explicitly calls for the help sidebar to be **always-on**, not modal. The persona chat needs to stay visible so the user can react to streamed responses while continuing to drag-drop on the kanban. The install wizard is a one-shot dialog (already Radix `Dialog`-based).
+
+**Options considered:**
+1. **Three flex columns with toggleable visibility** — Help (left, 18rem default-open) │ Kanban (center, flex-1) │ Chat (right, 24rem, conditional). Story detail still slides over from right edge as a `position: fixed` overlay (z-50). Tutorial covers everything (z-60). Install wizard remains a modal dialog.
+2. **Tab-style chrome** — kanban view has tabs for "Board / Help / Chat" — saves horizontal space but breaks the prompt's "always-on companion" affordance.
+3. **Floating panels with absolute positioning** — Help + Chat float over the kanban — loses the immediate-reachability of always-on chrome and is hard to keyboard-navigate.
+
+**Decision:**
+Option 1. Help sidebar defaults open (`useState(true)`), chat dock defaults closed (`useState(false)`) and auto-opens once when `activeChatId` becomes non-null. Toolbar buttons toggle each. Both panels are rendered inside the same flex container as the kanban so toggling them does not animate layout shifts — the kanban just gets more horizontal space.
+
+**Rationale:**
+- Honors BMAD docs § "Meet BMad-Help" + § "What Named Agents Buy You" (always-visible persona icon when chat is open).
+- The chat panel auto-opening is a one-shot effect tied to `activeChatId` going non-null. Once the user manually closes the dock, the same activeChatId staying non-null doesn't re-open it. A *new* workflow (i.e. `activeChatId` changing to a new value) re-opens.
+- Keyboard-toggleable via the toolbar buttons; both panels expose ARIA labels via i18n.
+
+**Consequences:**
+- The kanban shrinks horizontally when chat is open (full width 24rem). On screens narrower than ~1280px the user will likely keep one panel closed at a time.
+- Story detail still uses `position: fixed; z-50` so it overlays the chat panel when both want to occupy the right edge.
+- Tutorial overlay sits at z-60, covering everything until dismissed.
+
+---
+
+### D-016: Tutorial overlay mounted inside BmadKanbanView with localStorage persistence
+
+**Date:** 2026-04-30
+**Phase:** 4
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+The first-launch tutorial (Phase 4 deliverable §5) needs to:
+1. Show on the first BMad project the user opens.
+2. Survive a `tutorialDismissed` flip across project switches (otherwise project-switch flicker re-shows it).
+3. Survive an app restart (otherwise users dismiss it once a session, forever).
+4. Not block any other UI surface (the user can still type / drag / click while it's visible? answer: no — it's a real modal).
+
+**Options considered:**
+1. **Mount at App.tsx root, persisted via Zustand `persist` middleware** — most robust but mixes BMad concerns with the app shell.
+2. **Mount inside `BmadKanbanView` with localStorage-backed flag** — keeps BMad concerns in the BMad subtree. localStorage is enough for "once per install"; project switches re-read the flag in `unloadProject` so the dismissed state stays dismissed.
+3. **Mount as a Radix Dialog with a "don't show again" checkbox** — adds two clicks on dismiss (uncheck → close).
+
+**Decision:**
+Option 2. `BmadTutorialOverlay` reads `bmadStore.tutorialDismissed`; the store hydrates `tutorialDismissed` from `localStorage.getItem('bmad.tutorial.dismissed')` on initialization and on every `unloadProject` reset. `dismissTutorial()` writes both the in-memory flag and localStorage.
+
+**Rationale:**
+- Co-located with the BMad subtree, no app-shell coupling.
+- `unloadProject`'s reset would otherwise drop the dismissed flag — fixed by re-reading from localStorage in the same setState.
+- localStorage is renderer-process-shared, so the user's choice persists across app sessions.
+
+**Consequences:**
+- Tutorial is per-installation, not per-account. Acceptable; Phase 6 multi-account UX can move the flag to a per-account preferences store.
+- Tests for `dismissTutorial`'s localStorage side-effect live in the jsdom-environment `BmadTutorialOverlay.test.tsx`. The Node-environment `bmad-store.test.ts` only verifies the in-memory flag (since `window.localStorage` isn't available in pure-Node Vitest).
+
+---
+
+### D-017: Story-card Run button maps status → workflow heuristically; orchestrator owns the canonical recommendation
+
+**Date:** 2026-04-30
+**Phase:** 4
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+The Run button on a kanban story card needs to invoke "the right next workflow" without forcing the user to read the orchestrator's recommendation list. Two design choices:
+
+**Options considered:**
+1. **Always invoke `bmad-dev-story`** — simple but ignores `review` status (which should run `bmad-code-review` first per BMAD docs § "The Build Cycle").
+2. **Lookup against the orchestrator's recommendation map for this story** — most "correct" but requires the orchestrator to be queried with a story-key argument, which it doesn't support today (it's project-scoped).
+3. **Status-driven heuristic table inside `BmadKanbanView`** — `ready-for-dev`/`in-progress` → `bmad-dev-story`, `review` → `bmad-code-review`, `backlog` → `bmad-create-story`, `done` → no-op (button disabled).
+
+**Decision:**
+Option 3, with a fall-through to `bmad-dev-story` for unknown statuses (forward-compat for new statuses BMAD might add). The help sidebar's recommendation list remains the canonical "what's next?" surface for the *project* level (orchestrator-driven, reads `bmad-help.csv` graph). The kanban Run button is the per-story happy path — fast and predictable, but if the user wants to see the full menu they ask BMad-Help.
+
+**Rationale:**
+- Per BMAD docs § "The Build Cycle" the implementation cycle is `bmad-dev-story → bmad-code-review` looped per story. `bmad-create-story` precedes `bmad-dev-story` for stories that don't have a story file yet (status: `backlog`).
+- The orchestrator is project-scoped (`bmad-help.csv` reads), so adding per-story recommendation logic would expand its scope. The heuristic table captures the same rules with no new infrastructure.
+- The help sidebar remains the "did I miss something?" surface for users who want to validate the kanban's choice.
+
+**Consequences:**
+- New BMAD modules that introduce new statuses or new implementation-cycle workflows would not be auto-handled by the kanban Run button. Acceptable: Phase 5's Customization Panel exposes per-skill menu items, and the orchestrator's recommendation list always shows the canonical next action.
+- The mapping lives as a tiny `nextWorkflowForStatus()` function inside `BmadKanbanView.tsx`. If it grows to >5 cases, factor it out into a shared module.
+
+---
+
 ### D-014: BmadStoryView/EpicView types vs. helpers — separate modules
 
 **Date:** 2026-04-30

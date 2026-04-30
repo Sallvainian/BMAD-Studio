@@ -157,11 +157,29 @@ export interface BmadAPI {
     projectRoot: string;
     skillName: string;
     personaSlug?: BmadPersonaSlug;
+    /**
+     * Optional renderer-supplied invocation id. When omitted, the main
+     * process generates a UUID. Allowing the renderer to seed it lets the
+     * persona chat thread route streamed chunks immediately.
+     */
+    invocationId?: string;
     activeProfile: ClaudeProfile;
     args?: readonly string[];
     maxTurns?: number;
     initialMessages?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
   }): Promise<BmadIpcResult<BmadWorkflowResult & { invocationId: string }>>;
+  /**
+   * AI-augmented help. Streams the bmad-help skill's narrative answer via
+   * the same BMAD_WORKFLOW_STREAM channel as runWorkflow. Returns
+   * synchronously with the invocationId so the chat thread can subscribe.
+   */
+  runHelpAI(args: {
+    projectRoot: string;
+    track: BmadTrack;
+    question?: string;
+    invocationId?: string;
+    activeProfile: ClaudeProfile;
+  }): Promise<BmadIpcResult<{ invocationId: string }>>;
   respondToWorkflowMenu(args: {
     invocationId: string;
     menuId: string;
@@ -274,6 +292,7 @@ export const createBmadAPI = (): BmadAPI => ({
   getOrchestratorState: (projectRoot, track) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_GET_ORCHESTRATOR_STATE, { projectRoot, track }),
   runWorkflow: (args) => ipcRenderer.invoke(IPC_CHANNELS.BMAD_RUN_WORKFLOW, args),
+  runHelpAI: (args) => ipcRenderer.invoke(IPC_CHANNELS.BMAD_RUN_HELP_AI, args),
   respondToWorkflowMenu: (args) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_WORKFLOW_MENU_RESPONSE, args),
 
