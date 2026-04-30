@@ -247,6 +247,8 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 
 **Pre-work:** Re-read the "Phase 3" sections in `<bmad_docs_index>`. The sprint-status template at `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml` defines the exact status states — do not invent new ones. The `bmad-help.csv` row format is documented in `bmad-help/SKILL.md` § "CSV Interpretation"; that section is the spec for how `phase`, `after`, `before`, `required`, `output-location`, and `outputs` are interpreted by both BMad-Help and (now) BMad Studio.
 
+**Phase 1 hardening to fold in:** `apps/desktop/src/main/ai/bmad/__tests__/file-watcher.test.ts` has a parallelism-flaky case (the "coalesces duplicate events" test) that only passes reliably with `--no-file-parallelism`. Phase 2 documented this; Phase 3 owns the fix because the Kanban depends heavily on the file-watcher being deterministic. Options: increase the chokidar debounce window for tests, switch the test to chokidar's `usePolling: true` mode for stability, or rewrite the assertion to be timing-tolerant (count events within a window rather than expecting a specific sequence). Pick one and commit it as part of Phase 3's foundation work, not as a separate hardening pass.
+
 **Deliverables:**
 1. `BmadKanbanBoard.tsx` — 5 columns: **Backlog** | **Ready for Dev** | **In Progress** | **Review** | **Done**. Plus a collapsed "Optional" lane at the bottom for retrospectives. Cards group under epic headers (collapsible).
 2. `BmadStoryCard.tsx` — shows story id, title, current status, assigned persona avatar, "Run" button (invokes the next workflow per `bmad-help.csv` `after`/`before` for current status). Skeleton loader while sprint-status loads.
