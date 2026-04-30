@@ -676,3 +676,59 @@ KAD-2 says the filesystem is the BMAD contract, and BMAD docs § "Worked Example
 - Customization edits immediately flow through `_bmad/custom/*.toml` and the existing file watcher.
 - Module update/remove keeps using `npx bmad-method install` rather than editing manifests directly, matching BMAD docs § "Updating Custom Modules".
 - The settings panels are easy to remove or rearrange without migrating stored UI state.
+
+---
+
+### D-019: Brownfield migrator uses a completion marker for one-shot behavior
+
+**Date:** 2026-04-30
+**Phase:** 5
+**Status:** Resolved
+**Author:** GPT-5.5
+
+**Context:**
+The Phase 5 migrator backs up `.auto-claude/` and seeds `_bmad-output/`, but the original `.auto-claude/specs/` directory intentionally remains in place for preservation. Without an explicit completion signal, `BmadKanbanView` can detect the same legacy specs on the next project load and offer the migration again, potentially overwriting generated BMAD artifacts.
+
+**Options considered:**
+1. Move `.auto-claude/specs/` after migration.
+2. Delete `.auto-claude/specs/` after backup.
+3. Preserve `.auto-claude/specs/` and write a completion marker.
+
+**Decision:**
+Option 3. A successful migration writes `.auto-claude/.bmad-migration-complete.json` with the migrated candidate IDs and generated artifact paths. `detectLegacySpecs()` treats that marker as authoritative and returns a no-op plan.
+
+**Rationale:**
+This preserves the original legacy files, keeps the backup guarantee, and makes the project-open migration prompt one-shot. It also avoids using generated output filenames as implicit migration state.
+
+**Consequences:**
+- Re-running `migrateLegacySpecs()` after success is a no-op.
+- Users can remove the marker manually if they intentionally want to rerun migration after editing legacy specs.
+- The marker lives inside `.auto-claude/` because it describes legacy Aperant migration state, not BMAD project state.
+
+---
+
+### D-020: Module Manager treats `--modules` as the exact kept module set
+
+**Date:** 2026-04-30
+**Phase:** 5
+**Status:** Resolved
+**Author:** GPT-5.5
+
+**Context:**
+BMAD docs § "Headless CI installs" define `--modules <a,b,c>` as the exact module set, not a delta. BMAD docs § "Updating Custom Modules" also distinguish quick update from full update: quick update refreshes modules from existing settings, while full update is the add/remove path.
+
+**Options considered:**
+1. Pass only the clicked module to `--modules` for per-row update/remove.
+2. Edit `_bmad/_config/manifest.yaml` directly.
+3. Use `--action quick-update` without a modules filter for refresh, and `--action update --modules <complete kept set>` for add/remove.
+
+**Decision:**
+Option 3. Row-level "Update" is a canonical installer refresh and does not pass a module filter. Add/remove runs full update with the complete intended non-core module set.
+
+**Rationale:**
+This matches BMAD installer semantics and avoids accidental module removal from passing a partial modules list. It also keeps KAD-1/KAD-9 intact: BMad Studio wraps the installer rather than owning module state.
+
+**Consequences:**
+- The UI can still expose per-row update buttons, but they run the canonical quick update path and report that the named module was refreshed through the installer.
+- Remove computes the remaining non-core module set and passes that full set to `--action update`.
+- Install preserves currently installed non-core modules and appends newly selected official modules/custom sources.

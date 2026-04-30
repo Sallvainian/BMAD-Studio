@@ -88,11 +88,11 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
       {
         directory: projectRoot,
         yes: true,
-        tools: ['cursor'],
         action: 'quick-update',
-        ...(moduleName && moduleName !== 'core' ? { modules: [moduleName] } : {}),
       },
-      t('moduleManager.updateSuccess'),
+      moduleName && moduleName !== 'core'
+        ? t('moduleManager.updateOneSuccess', { module: moduleName })
+        : t('moduleManager.updateSuccess'),
     );
   };
 
@@ -104,8 +104,7 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
       {
         directory: projectRoot,
         yes: true,
-        tools: ['cursor'],
-        action: 'install',
+        action: 'update',
         modules: remaining,
       },
       t('moduleManager.removeSuccess', { module: moduleName }),
@@ -121,9 +120,9 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
       {
         directory: projectRoot,
         yes: true,
-        tools: ['cursor'],
-        action: 'install',
-        modules: selectedModules,
+        action: modules.length > 0 ? 'update' : 'install',
+        modules: uniqueModules([...installedModuleNames(modules), ...selectedModules]),
+        ...(modules.length === 0 ? { tools: ['cursor'] } : {}),
         ...(customSources.length > 0 ? { customSource: customSources } : {}),
       },
       t('moduleManager.installSuccess'),
@@ -212,6 +211,7 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
                     size="sm"
                     onClick={() => handleUpdate(module.name)}
                     disabled={isRunning}
+                    data-testid={`bmad-module-update-${module.name}`}
                   >
                     {t('moduleManager.update')}
                   </Button>
@@ -220,6 +220,7 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
                     size="sm"
                     onClick={() => handleRemove(module.name)}
                     disabled={isRunning || module.name === 'core'}
+                    data-testid={`bmad-module-remove-${module.name}`}
                   >
                     <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                     {t('moduleManager.remove')}
@@ -259,11 +260,16 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleInstall} disabled={isRunning}>
+          <Button onClick={handleInstall} disabled={isRunning} data-testid="bmad-module-install">
             <Download className="mr-2 h-4 w-4" aria-hidden="true" />
             {isRunning ? t('moduleManager.running') : t('moduleManager.install')}
           </Button>
-          <Button variant="outline" onClick={handleListOptions} disabled={isRunning}>
+          <Button
+            variant="outline"
+            onClick={handleListOptions}
+            disabled={isRunning}
+            data-testid="bmad-module-list-options"
+          >
             {t('moduleManager.listOptions')}
           </Button>
         </div>
@@ -283,4 +289,14 @@ export function BmadModuleManager({ projectRoot }: BmadModuleManagerProps) {
       )}
     </div>
   );
+}
+
+function installedModuleNames(modules: readonly BmadModule[]): string[] {
+  return modules
+    .map((module) => module.name)
+    .filter((name) => name !== 'core');
+}
+
+function uniqueModules(moduleNames: readonly string[]): string[] {
+  return [...new Set(moduleNames.filter(Boolean))];
 }

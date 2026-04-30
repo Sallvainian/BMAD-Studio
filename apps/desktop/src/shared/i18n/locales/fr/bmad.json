@@ -309,6 +309,7 @@
     "outputTitle": "Sortie de l'installateur",
     "installSuccess": "Modules installés. Catalogue des workflows rafraîchi.",
     "updateSuccess": "Mise à jour du module terminée.",
+    "updateOneSuccess": "{{module}} mis à jour via l'installateur.",
     "removeSuccess": "{{module}} supprimé et installation rafraîchie."
   },
   "migration": {

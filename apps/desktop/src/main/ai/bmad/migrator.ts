@@ -70,6 +70,16 @@ export async function detectLegacySpecs(projectRoot: string): Promise<BmadMigrat
 
   const specsDir = path.join(root, '.auto-claude', 'specs');
   const backupDir = path.join(root, '.auto-claude.backup');
+  if (await pathExists(migrationMarkerPath(root))) {
+    return {
+      projectRoot: root,
+      hasLegacySpecs: false,
+      specsDir,
+      backupDir,
+      candidates: [],
+    };
+  }
+
   const entries = await safeReaddir(specsDir);
   const candidates: BmadMigrationCandidate[] = [];
 
@@ -174,6 +184,12 @@ export async function migrateLegacySpecs(projectRoot: string): Promise<BmadMigra
   };
 
   await writeSprintStatus({ projectRoot: plan.projectRoot, status });
+  await writeMigrationMarker(plan.projectRoot, {
+    migratedAt: new Date().toISOString(),
+    candidates: plan.candidates.map((candidate) => candidate.id),
+    planningFiles,
+    implementationFiles,
+  });
 
   return {
     ...plan,
@@ -193,6 +209,26 @@ async function backupLegacyAutoClaude(projectRoot: string): Promise<void> {
   if (!(await pathExists(source))) return;
   await fs.rm(backup, { recursive: true, force: true });
   await fs.cp(source, backup, { recursive: true });
+}
+
+async function writeMigrationMarker(
+  projectRoot: string,
+  payload: {
+    readonly migratedAt: string;
+    readonly candidates: readonly string[];
+    readonly planningFiles: readonly string[];
+    readonly implementationFiles: readonly string[];
+  },
+): Promise<void> {
+  const marker = migrationMarkerPath(projectRoot);
+  await fs.mkdir(path.dirname(marker), { recursive: true });
+  await writeFileWithRetry(marker, `${JSON.stringify(payload, null, 2)}\n`, {
+    encoding: 'utf-8',
+  });
+}
+
+function migrationMarkerPath(projectRoot: string): string {
+  return path.join(projectRoot, '.auto-claude', '.bmad-migration-complete.json');
 }
 
 async function safeReaddir(dir: string): Promise<import('node:fs').Dirent[]> {

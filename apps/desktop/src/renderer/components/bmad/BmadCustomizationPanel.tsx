@@ -187,7 +187,7 @@ export function BmadCustomizationPanel({ projectRoot }: BmadCustomizationPanelPr
               selectedWriteTarget === 'config' && 'bg-muted font-medium',
             )}
             onClick={() => {
-              setTemplateId('roster-description');
+              handleTemplateChange('roster-description');
               setSelectedSkillId(skills[0]?.canonicalId ?? 'config');
             }}
           >
@@ -205,7 +205,7 @@ export function BmadCustomizationPanel({ projectRoot }: BmadCustomizationPanelPr
               )}
               onClick={() => {
                 setSelectedSkillId(skill.canonicalId);
-                if (templateId === 'roster-description') setTemplateId('agent-icon');
+                if (templateId === 'roster-description') handleTemplateChange('agent-icon');
               }}
             >
               <span className="block">{skill.name || skill.canonicalId}</span>

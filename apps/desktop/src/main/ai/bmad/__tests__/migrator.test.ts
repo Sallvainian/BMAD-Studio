@@ -50,6 +50,11 @@ describe('BMad legacy migrator', () => {
       'utf-8',
     );
     expect(backupSpec).toContain('Legacy Spec');
+    const marker = await readFile(
+      path.join(projectRoot, '.auto-claude', '.bmad-migration-complete.json'),
+      'utf-8',
+    );
+    expect(marker).toContain('001-foo');
 
     const brief = await readFile(
       path.join(projectRoot, '_bmad-output', 'planning-artifacts', '001-foo-product-brief.md'),
@@ -60,6 +65,20 @@ describe('BMad legacy migrator', () => {
     const sprint = await readSprintStatus({ projectRoot });
     expect(sprint?.developmentStatus['epic-001-foo']).toBe('backlog');
     expect(sprint?.developmentStatus['001-foo-1-create-login']).toBe('ready-for-dev');
+  });
+
+  it('does not offer or rerun migration after a successful migration marker exists', async () => {
+    await writeLegacySpec(projectRoot, '001-foo');
+
+    await migrateLegacySpecs(projectRoot);
+    const plan = await detectLegacySpecs(projectRoot);
+    const secondRun = await migrateLegacySpecs(projectRoot);
+
+    expect(plan.hasLegacySpecs).toBe(false);
+    expect(plan.candidates).toEqual([]);
+    expect(secondRun.migrated).toBe(false);
+    expect(secondRun.planningFiles).toEqual([]);
+    expect(secondRun.implementationFiles).toEqual([]);
   });
 
   it('returns a no-op result when no legacy specs exist', async () => {
