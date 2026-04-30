@@ -100,7 +100,7 @@
     "dotenv": "^17.3.1",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
-    "i18next": "^25.8.18",
+    "i18next": "^26.0.8",
     "lucide-react": "^0.577.0",
     "minimatch": "^10.2.4",
     "motion": "^12.36.0",
