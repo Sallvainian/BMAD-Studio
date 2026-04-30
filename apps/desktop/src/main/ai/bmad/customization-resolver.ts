@@ -30,6 +30,12 @@
  * No removal mechanism — overrides cannot delete base items. To suppress a
  * default, override it by `code` with a no-op description / prompt, or fork
  * the skill (per BMAD docs § "Merge Rules (by shape, not by field name)").
+ *
+ * Mutation safety: `resolveCustomization` returns a `structuredClone` of the
+ * merged tree. Callers may mutate freely without corrupting the resolver's
+ * internal state or the skill registry's cached defaults. The `deepMerge` /
+ * `mergeByKey` internals (exposed via `__internals` for tests) do NOT clone
+ * — they're not part of the public API and the tests don't mutate.
  */
 
 import { promises as fs } from 'node:fs';
@@ -382,10 +388,18 @@ export async function resolveCustomization(
   let merged = deepMerge(defaults, team) as TomlObject;
   merged = deepMerge(merged, user) as TomlObject;
 
+  // Detach the merged tree from the resolver's intermediate state and from
+  // smol-toml's parsed output. Without this, downstream mutation of the
+  // result (e.g. Phase 5's customization editor pushing into `agent.menu`)
+  // would corrupt the skill registry's cached defaults via shared reference.
+  // structuredClone preserves Date values (smol-toml emits Date for TOML
+  // datetimes) and is supported in Electron's Node runtime (>= 17).
+  const detached = structuredClone(merged) as TomlObject;
+
   if (options.keys && options.keys.length > 0) {
     const sparse: TomlObject = {};
     for (const key of options.keys) {
-      const value = extractKey(merged, key);
+      const value = extractKey(detached, key);
       if (value !== undefined) {
         sparse[key] = value;
       }
@@ -393,7 +407,7 @@ export async function resolveCustomization(
     return sparse;
   }
 
-  return merged;
+  return detached;
 }
 
 // Re-export internal helpers for unit tests. Keeping them named-exports here

@@ -348,7 +348,7 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 - Test on macOS, Windows, Linux as part of CI
 
 **Error handling:**
-- Every IPC handler catches and returns `{ ok: false, error: { code, message, details } }` shape
+- BMAD IPC handlers use `BmadIpcResult<T>` shape (per D-007): `{ success: true, data: T }` or `{ success: false, error: { code: BmadErrorCode, message, details } }`. Matches Aperant's existing `IPCResult<T>` verb (`success/data`) per KAD-10, but elevates the error to a structured object with a closed `BmadErrorCode` union so the renderer can exhaustively switch without string parsing.
 - User-facing errors translated and actionable (never raw stack traces in production)
 - Sentry breadcrumbs around installer invocations and skill execution
 - Crash-safe writes (write-temp-then-rename) for sprint-status and customization files

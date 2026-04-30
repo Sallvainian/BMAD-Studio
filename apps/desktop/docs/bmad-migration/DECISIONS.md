@@ -317,4 +317,38 @@ Option 3.
 
 ---
 
-<!-- Append D-008, D-009, ... here. -->
+### D-008: Resolver returns `structuredClone` of merged tree (deviation from Python's reference-sharing memory model)
+
+**Date:** 2026-04-30
+**Phase:** 1 (post-Phase-1 hardening)
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+The Python `resolve_customization.py` (the spec) returns merged dicts that share object references with the loaded `customize.toml` defaults — `deep_merge` in Python clones at the object level but recursively shares nested references, same as the original TS port. `skill-registry.ts` caches each skill's parsed `customize.toml` and calls `resolveCustomization()` to produce a merged view; the result was typed as `Readonly<Record<string, unknown>>` (compile-time hint only, zero runtime enforcement).
+
+Future consumers — specifically Phase 5's `BmadCustomizationPanel.tsx` (reads resolved tree to display "current values," lets user edit, writes back to override files) and Phase 2's `workflow-runner.ts` (substitutes variables into resolved values) — would naturally mutate the result. A push to `resolved.agent.menu` or a splice on `resolved.workflow.persistent_facts` would corrupt the skill registry's cached defaults via shared reference. Symptoms would be subtle: the next call to `resolveCustomization()` on the same skill would see a corrupted base, downstream merges would produce surprising results, and debugging would be painful because the corruption survives across resolver invocations.
+
+The `ENGINE_SWAP_PROMPT.md` `<anti_patterns>` rule "Don't be clever in the customization resolver. The Python implementation is the spec; mirror it line-for-line." applies to **merge semantics**, not to memory model. Cloning the result does not change which keys win, which arrays append, or which tables deep-merge. It only changes who owns the returned object graph.
+
+**Options considered:**
+1. **Mirror Python verbatim, document the mutation hazard, hope consumers comply.** Relies on every future agent reading the docstring and remembering. Long-term liability.
+2. **Freeze the result with recursive `Object.freeze`.** Catches mutation at runtime via TypeError, but breaks legitimate consumer patterns (e.g. workflow runner extending the result with computed fields). More invasive.
+3. **`structuredClone` the merged tree at the public API boundary.** One clone per `resolveCustomization()` call. Result is fully detached from inputs. Consumers may mutate freely. Native, no dependency, preserves `Date` (smol-toml emits `Date` for TOML datetimes), available in Node 17+ (package.json mandates Node ≥24 — fine).
+
+**Decision:**
+Option 3. Single `structuredClone` call site in `resolveCustomization`, applied to the merged tree before either the full-tree or sparse-`keys` extraction return path. `__internals` (`deepMerge`, `mergeByKey`, `detectKeyedMergeField`, `isPlainObject`, `findProjectRoot`) are unchanged — they're test-only and the tests don't mutate.
+
+**Rationale:**
+- Concrete future-bug class eliminated, not just documented away.
+- Memory-model deviation, not semantics deviation. Anti-pattern rule unviolated (per docs_protocol Rule 1: cited [BMAD docs § "Merge Rules (by shape, not by field name)"](https://docs.bmad-method.org/how-to/customize-bmad/) for the merge contract; the immutability decision is TS-side).
+- `structuredClone` perf cost is microseconds for typical TOML sizes (BMAD `customize.toml` files are small — tens of fields, no deep nesting).
+- The `Readonly<>` type signature on `skill-registry.ts:186` is now backed by runtime behavior, closing the compile-vs-runtime gap.
+
+**Consequences:**
+- File-header docstring on `customization-resolver.ts` updated with a "Mutation safety" note explaining the contract.
+- All 54 customization-resolver tests pass unchanged (none rely on referential equality of returned objects).
+- `npm run typecheck` clean.
+- Phase 2's `workflow-runner.ts` may safely mutate results from `resolveCustomization()` (e.g. for variable substitution or computed-field injection) without skill-registry corruption.
+- Phase 5's `BmadCustomizationPanel.tsx` may safely build edit-state from the resolved tree without defensive copying at the consumer site.
+- Future agents reading the resolver: do **not** remove the `structuredClone` call, even if comparing line-for-line against `resolve_customization.py`. The deviation is intentional and this entry is the canonical "why."
