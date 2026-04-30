@@ -1,0 +1,36 @@
+{
+  "errors": {
+    "INSTALLER_NOT_FOUND": "BMad installer not found. Please run `npx bmad-method install` manually.",
+    "INSTALLER_FAILED": "BMad installer failed: {{message}}",
+    "INSTALLER_TIMEOUT": "BMad installer timed out. Try again or run it manually.",
+    "INSTALLER_ALREADY_RUNNING": "An installer is already running for this project. Wait for it to finish or cancel it first.",
+    "NPX_NOT_AVAILABLE": "`npx` is not available on PATH. Install Node.js 20+ to continue.",
+    "PROJECT_NOT_BMAD": "This is not a BMad project. Run the install wizard to set it up.",
+    "PROJECT_NOT_FOUND": "Project not found at the given path.",
+    "MANIFEST_PARSE_ERROR": "BMad manifest is invalid: {{message}}",
+    "CSV_PARSE_ERROR": "Could not parse a BMad CSV file: {{message}}",
+    "TOML_PARSE_ERROR": "Could not parse a TOML file: {{message}}",
+    "YAML_PARSE_ERROR": "Could not parse a YAML file: {{message}}",
+    "SKILL_NOT_FOUND": "Skill `{{skillId}}` is not installed in this project.",
+    "STEP_FILE_NOT_FOUND": "Step file is missing on disk: {{path}}",
+    "STEP_LOAD_VIOLATION": "Step files must be loaded one at a time. Refusing to pre-load.",
+    "PATH_OUT_OF_PROJECT": "The requested path is outside this BMad project.",
+    "CUSTOMIZATION_VALIDATION_ERROR": "Customization is invalid: {{message}}",
+    "CUSTOMIZATION_WRITE_FAILED": "Could not write customization file: {{message}}",
+    "CUSTOMIZATION_READ_FAILED": "Could not read customization file: {{message}}",
+    "WATCHER_INIT_FAILED": "Could not start the BMad file watcher: {{message}}",
+    "WATCHER_NOT_RUNNING": "The BMad file watcher is not running for this project.",
+    "IO_ERROR": "Filesystem error: {{message}}",
+    "INVALID_INPUT": "Invalid input.",
+    "UNKNOWN": "An unknown BMad error occurred."
+  },
+  "debug": {
+    "dumpSkills": {
+      "header": "Installed BMad skills",
+      "emptyState": "No BMad skills detected. Run the installer first.",
+      "personaLabel": "Persona",
+      "stepsLabel": "Steps",
+      "customizationKeysLabel": "Customization keys"
+    }
+  }
+}

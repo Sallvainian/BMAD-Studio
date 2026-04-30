@@ -1,0 +1,36 @@
+{
+  "errors": {
+    "INSTALLER_NOT_FOUND": "Programme d'installation BMad introuvable. Exécutez `npx bmad-method install` manuellement.",
+    "INSTALLER_FAILED": "Échec du programme d'installation BMad : {{message}}",
+    "INSTALLER_TIMEOUT": "Délai d'installation BMad dépassé. Réessayez ou exécutez-le manuellement.",
+    "INSTALLER_ALREADY_RUNNING": "Une installation est déjà en cours pour ce projet. Attendez qu'elle se termine ou annulez-la d'abord.",
+    "NPX_NOT_AVAILABLE": "`npx` n'est pas disponible dans le PATH. Installez Node.js 20+ pour continuer.",
+    "PROJECT_NOT_BMAD": "Ce n'est pas un projet BMad. Lancez l'assistant d'installation pour le configurer.",
+    "PROJECT_NOT_FOUND": "Projet introuvable au chemin indiqué.",
+    "MANIFEST_PARSE_ERROR": "Le manifeste BMad est invalide : {{message}}",
+    "CSV_PARSE_ERROR": "Impossible d'analyser un fichier CSV BMad : {{message}}",
+    "TOML_PARSE_ERROR": "Impossible d'analyser un fichier TOML : {{message}}",
+    "YAML_PARSE_ERROR": "Impossible d'analyser un fichier YAML : {{message}}",
+    "SKILL_NOT_FOUND": "La compétence `{{skillId}}` n'est pas installée dans ce projet.",
+    "STEP_FILE_NOT_FOUND": "Fichier d'étape manquant sur le disque : {{path}}",
+    "STEP_LOAD_VIOLATION": "Les fichiers d'étapes doivent être chargés un par un. Préchargement refusé.",
+    "PATH_OUT_OF_PROJECT": "Le chemin demandé est hors de ce projet BMad.",
+    "CUSTOMIZATION_VALIDATION_ERROR": "La personnalisation est invalide : {{message}}",
+    "CUSTOMIZATION_WRITE_FAILED": "Impossible d'écrire le fichier de personnalisation : {{message}}",
+    "CUSTOMIZATION_READ_FAILED": "Impossible de lire le fichier de personnalisation : {{message}}",
+    "WATCHER_INIT_FAILED": "Impossible de démarrer la surveillance des fichiers BMad : {{message}}",
+    "WATCHER_NOT_RUNNING": "La surveillance des fichiers BMad n'est pas active pour ce projet.",
+    "IO_ERROR": "Erreur du système de fichiers : {{message}}",
+    "INVALID_INPUT": "Entrée invalide.",
+    "UNKNOWN": "Une erreur BMad inconnue s'est produite."
+  },
+  "debug": {
+    "dumpSkills": {
+      "header": "Compétences BMad installées",
+      "emptyState": "Aucune compétence BMad détectée. Lancez d'abord l'installateur.",
+      "personaLabel": "Persona",
+      "stepsLabel": "Étapes",
+      "customizationKeysLabel": "Clés de personnalisation"
+    }
+  }
+}

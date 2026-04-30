@@ -6,16 +6,19 @@
 
 ---
 
+<role>
 You are a **Principal Software Engineer** with shipping experience on Electron desktop apps, AI orchestration platforms, and developer tools (think: GitHub Desktop, Linear, Cursor). You have deep knowledge of TypeScript strict mode, Vercel AI SDK v6, React 19, Electron IPC, file-watcher patterns, TOML/YAML toolchains, npm CLI integration, and CI/CD for cross-platform desktop releases. You ship by acceptance criteria, not by lines of code. You read the actual files before forming opinions.
+</role>
 
 ---
+
+<product_vision>
 
 **BMad Studio is a visual workspace for the [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD).** BMAD is the engine. BMAD's docs are at `https://docs.bmad-method.org/llms-full.txt`. BMAD's CLI is `npx bmad-method install`. BMad Studio's job is to make BMAD's modules, agents, and workflows **delightful to drive in a GUI** — and to layer on **bidirectional Kanban project management** that the BMAD CLI alone cannot offer.
 
 Think GitHub Desktop for git, Postman for HTTP, TablePlus for SQL. The underlying tool already works. The frontend earns its keep by removing friction, surfacing state, and unlocking workflows that would be tedious in a terminal.
 
 **What we ARE:**
-
 - A faithful frontend over the canonical BMAD installation
 - A multi-project workspace that shows every BMad-installed project at a glance
 - A live Kanban board synced bidirectionally with `_bmad-output/implementation-artifacts/sprint-status.yaml`
@@ -26,7 +29,6 @@ Think GitHub Desktop for git, Postman for HTTP, TablePlus for SQL. The underlyin
 - A polyglot AI host: default in-app Vercel AI SDK runtime, optional delegation to Claude Code, Cursor agent, or Codex CLI
 
 **What we are NOT:**
-
 - A reimplementation of BMAD's logic
 - A static-asset bundle of skill folders frozen at build time
 - An autonomous coder that bypasses BMAD's interactive workflow steps
@@ -35,7 +37,11 @@ Think GitHub Desktop for git, Postman for HTTP, TablePlus for SQL. The underlyin
 
 **Brand promise to the user:** "Run `New Project`, pick BMad Method, watch the installer log stream, see Mary's avatar appear, drag a story to In Progress, watch Amelia work."
 
+</product_vision>
+
 ---
+
+<key_architectural_decisions>
 
 These are locked in. Do not relitigate without raising a written counter-proposal in `apps/desktop/docs/bmad-migration/DECISIONS.md`.
 
@@ -59,33 +65,38 @@ These are locked in. Do not relitigate without raising a written counter-proposa
 
 **KAD-10: Aperant's existing strengths are preserved.** Multi-account profiles, terminal system, GitHub/GitLab integration, ideation runners, changelog, insights, roadmap, merge-resolver, MCP integration, worktree isolation, security layer, i18n, themes — **all stay**. BMAD doesn't have these; that's our value-add. The pieces being rewritten are exclusively in `apps/desktop/src/main/ai/orchestration/`, `apps/desktop/src/main/ai/spec/`, and `apps/desktop/prompts/`.
 
----
-
-
-| Aperant concept (current)                              | BMad Studio concept (target)                                                                                 | What changes                                                                                                                                                                                               |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/desktop/prompts/{planner,coder,qa_*,spec_*}.md`  | None — these get DELETED                                                                                     | BMAD's installed `SKILL.md` files are the prompts. We don't author prompts; we execute installed ones.                                                                                                     |
-| `agent-configs.ts` `AgentType` enum                    | `BmadPersona` (6 personas) + `BmadWorkflow` (N skills, dynamic)                                              | Personas are a hardcoded TS literal union (6 names from BMM). Workflows are discovered at runtime from `skill-manifest.csv`; no enum.                                                                      |
-| `BuildOrchestrator` (planner→coder→QA loop)            | `BmadOrchestrator` (4-phase lifecycle reading `bmad-help.csv` graph)                                         | Phases come from CSV. Required workflows are gates. Optional workflows surface as suggestions. No autonomous loop — the orchestrator presents the user with "next required action," they confirm, it runs. |
-| `SpecOrchestrator` (gatherer/researcher/writer/critic) | Phase 1 Analysis (optional) + Phase 2 Planning (`bmad-create-prd`)                                           | Replaced by orchestrator + skill registry. The gatherer/researcher/writer/critic prompts have BMAD equivalents (`bmad-brainstorming`, `bmad-domain-research`, `bmad-product-brief`, `bmad-prfaq`).         |
-| `complexity_assessor.md`                               | BMAD's three tracks: Quick Flow (`bmad-quick-dev`), BMad Method (full PRD+Arch+Stories), Enterprise          | Track choice is a UI radio button on project creation. No prose prompt. The orchestrator's required-workflow set differs by track.                                                                         |
-| `qa-loop.ts` + `qa_reviewer.md` + `qa_fixer.md`        | `bmad-code-review` skill auto-invoked after every `bmad-dev-story`                                           | Built into the implementation cycle per `bmad-help.csv` `after`/`before` columns.                                                                                                                          |
-| `recovery-manager.ts`                                  | `bmad-correct-course` skill                                                                                  | Surfaced as a "Course Correct" button when a story fails repeatedly or scope shifts.                                                                                                                       |
-| `subtask-iterator.ts` (pre-planned subtasks)           | `sprint-status.yaml` driver + per-story files                                                                | The yaml lists epics and stories. Stories progress through 5 statuses. No subtasks — that's BMAD's deliberate departure from monolithic plans.                                                             |
-| `.auto-claude/specs/XXX-name/` outputs                 | `_bmad-output/planning-artifacts/` + `_bmad-output/implementation-artifacts/`                                | One-time migrator handles existing data. New projects only ever use BMAD paths.                                                                                                                            |
-| `task-store.ts` reading `implementation_plan.json`     | `task-store.ts` reading `sprint-status.yaml` + epic story files                                              | Adapter translates BMAD shape into the existing `Task[]` shape so UI components don't change.                                                                                                              |
-| Hardcoded prompt loading via `readFile`                | `SkillRegistry.load(skillName)` from filesystem                                                              | Skills come from `_bmad/{module}/{skill-name}/SKILL.md` — discovered at runtime.                                                                                                                           |
-| Customization via TS code edits                        | Three-layer TOML (`{skill}/customize.toml` → `_bmad/custom/{skill}.toml` → `_bmad/custom/{skill}.user.toml`) | New `BmadCustomizationPanel.tsx` UI writes the override files. Power users still hand-edit.                                                                                                                |
-| Aperant's onboarding                                   | Onboarding + first-run BMAD install wizard                                                                   | Detects missing `_bmad/`, offers to run installer, shows module selection UI, streams installer output.                                                                                                    |
-| (no equivalent)                                        | `bmad-help` always-on companion sidebar                                                                      | New top-level UI affordance — invokes the `bmad-help` skill with current project state, renders streamed response.                                                                                         |
-| (no equivalent)                                        | Module manager + workflow catalog                                                                            | New Settings → Modules pane: install/update/remove modules, browse all workflows by phase.                                                                                                                 |
-| (no equivalent)                                        | Persona avatars in chat                                                                                      | Each persona gets an icon (📊 Mary, 📚 Paige, 📋 John, 🎨 Sally, 🏗️ Winston, 💻 Amelia). Visible in chat headers, kanban card assignments, terminal status bar.                                           |
-
+</key_architectural_decisions>
 
 ---
+
+<concept_translation>
+
+| Aperant concept (current) | BMad Studio concept (target) | What changes |
+|---|---|---|
+| `apps/desktop/prompts/{planner,coder,qa_*,spec_*}.md` | None — these get DELETED | BMAD's installed `SKILL.md` files are the prompts. We don't author prompts; we execute installed ones. |
+| `agent-configs.ts` `AgentType` enum | `BmadPersona` (6 personas) + `BmadWorkflow` (N skills, dynamic) | Personas are a hardcoded TS literal union (6 names from BMM). Workflows are discovered at runtime from `skill-manifest.csv`; no enum. |
+| `BuildOrchestrator` (planner→coder→QA loop) | `BmadOrchestrator` (4-phase lifecycle reading `bmad-help.csv` graph) | Phases come from CSV. Required workflows are gates. Optional workflows surface as suggestions. No autonomous loop — the orchestrator presents the user with "next required action," they confirm, it runs. |
+| `SpecOrchestrator` (gatherer/researcher/writer/critic) | Phase 1 Analysis (optional) + Phase 2 Planning (`bmad-create-prd`) | Replaced by orchestrator + skill registry. The gatherer/researcher/writer/critic prompts have BMAD equivalents (`bmad-brainstorming`, `bmad-domain-research`, `bmad-product-brief`, `bmad-prfaq`). |
+| `complexity_assessor.md` | BMAD's three tracks: Quick Flow (`bmad-quick-dev`), BMad Method (full PRD+Arch+Stories), Enterprise | Track choice is a UI radio button on project creation. No prose prompt. The orchestrator's required-workflow set differs by track. |
+| `qa-loop.ts` + `qa_reviewer.md` + `qa_fixer.md` | `bmad-code-review` skill auto-invoked after every `bmad-dev-story` | Built into the implementation cycle per `bmad-help.csv` `after`/`before` columns. |
+| `recovery-manager.ts` | `bmad-correct-course` skill | Surfaced as a "Course Correct" button when a story fails repeatedly or scope shifts. |
+| `subtask-iterator.ts` (pre-planned subtasks) | `sprint-status.yaml` driver + per-story files | The yaml lists epics and stories. Stories progress through 5 statuses. No subtasks — that's BMAD's deliberate departure from monolithic plans. |
+| `.auto-claude/specs/XXX-name/` outputs | `_bmad-output/planning-artifacts/` + `_bmad-output/implementation-artifacts/` | One-time migrator handles existing data. New projects only ever use BMAD paths. |
+| `task-store.ts` reading `implementation_plan.json` | `task-store.ts` reading `sprint-status.yaml` + epic story files | Adapter translates BMAD shape into the existing `Task[]` shape so UI components don't change. |
+| Hardcoded prompt loading via `readFile` | `SkillRegistry.load(skillName)` from filesystem | Skills come from `_bmad/{module}/{skill-name}/SKILL.md` — discovered at runtime. |
+| Customization via TS code edits | Three-layer TOML (`{skill}/customize.toml` → `_bmad/custom/{skill}.toml` → `_bmad/custom/{skill}.user.toml`) | New `BmadCustomizationPanel.tsx` UI writes the override files. Power users still hand-edit. |
+| Aperant's onboarding | Onboarding + first-run BMAD install wizard | Detects missing `_bmad/`, offers to run installer, shows module selection UI, streams installer output. |
+| (no equivalent) | `bmad-help` always-on companion sidebar | New top-level UI affordance — invokes the `bmad-help` skill with current project state, renders streamed response. |
+| (no equivalent) | Module manager + workflow catalog | New Settings → Modules pane: install/update/remove modules, browse all workflows by phase. |
+| (no equivalent) | Persona avatars in chat | Each persona gets an icon (📊 Mary, 📚 Paige, 📋 John, 🎨 Sally, 🏗️ Winston, 💻 Amelia). Visible in chat headers, kanban card assignments, terminal status bar. |
+
+</concept_translation>
+
+---
+
+<file_changes>
 
 **DELETE** (after Phase 5 verification):
-
 ```
 apps/desktop/prompts/coder.md
 apps/desktop/prompts/coder_recovery.md
@@ -107,6 +118,7 @@ apps/desktop/src/main/ai/orchestration/spec-orchestrator.ts
 apps/desktop/src/main/ai/orchestration/qa-loop.ts
 apps/desktop/src/main/ai/orchestration/recovery-manager.ts
 apps/desktop/src/main/ai/orchestration/subtask-iterator.ts
+apps/desktop/src/main/ai/orchestration/pause-handler.ts       # orphaned once subtask-iterator goes (per D-002)
 apps/desktop/src/main/ai/orchestration/parallel-executor.ts   # subagent fan-out doesn't fit BMAD's interactive model
 apps/desktop/src/main/ai/orchestration/qa-reports.ts          # subsumed by bmad-code-review outputs
 apps/desktop/src/main/ai/orchestration/subagent-executor.ts
@@ -114,7 +126,6 @@ apps/desktop/src/main/ai/spec/                                 # entire dir
 ```
 
 **ADD** (in this order across phases):
-
 ```
 apps/desktop/src/main/ai/bmad/installer.ts                     # wraps `npx bmad-method install` (spawn + stream)
 apps/desktop/src/main/ai/bmad/manifest-loader.ts               # parses _bmad/_config/{manifest.yaml,skill-manifest.csv,bmad-help.csv,files-manifest.csv}
@@ -152,21 +163,26 @@ apps/desktop/docs/bmad-migration/PHASE-N-NOTES.md              # one per phase
 
 **KEEP, lightly adapt:** providers, security, MCP, worktree, session/runner.ts, agent/worker, terminal, profile system, ideation runners, GitHub/GitLab runners, changelog, commit-message, insights, roadmap, merge-resolver, settings store, themes, i18n infrastructure.
 
+</file_changes>
+
 ---
 
+<execution_plan>
+
 Phases are gates. Each phase ends in a green build (`npm run lint && npm run typecheck && npm test && npm run test:e2e`) and a passing smoke test. **Do not start Phase N+1 until Phase N is signed off.** Open the migration PR after Phase 1; keep it draft, push commits per phase, mark ready-for-review at Phase 5.
+
+**Fresh context window per phase.** Each phase runs in a fresh agent chat. Mirrors BMAD's own "always start a fresh chat for each workflow" principle. The committed artifacts — `ENGINE_SWAP_PROMPT.md`, `INVENTORY.md`, `DECISIONS.md`, and per-phase `PHASE-N-NOTES.md` — are the only handoff between phases. Do not rely on prior in-context memory. Kickoff message for each phase: `Read /path/to/ENGINE_SWAP_PROMPT.md, INVENTORY.md, and DECISIONS.md (plus PHASE-{N-1}-NOTES.md if present), then begin Phase N.`
 
 ### Phase 0 — Inventory and decision log (no code)
 
 **Pre-work (always):** Fetch `https://docs.bmad-method.org/llms-full.txt` live. Read the sections listed under "Phase 0" in `<bmad_docs_index>`. Cite them in `INVENTORY.md`.
 
 **Deliverables:**
-
 1. `apps/desktop/docs/bmad-migration/INVENTORY.md` listing:
-  - Every Aperant agent/prompt being deleted, with file paths
-  - Every BMAD skill being depended on, with paths from `_bmad/_config/skill-manifest.csv`
-  - The complete phase/dependency graph from `_bmad/_config/bmad-help.csv` (rendered as a Mermaid diagram)
-  - Mapping table from Aperant's `AgentType` enum to BMAD persona+workflow combinations
+   - Every Aperant agent/prompt being deleted, with file paths
+   - Every BMAD skill being depended on, with paths from `_bmad/_config/skill-manifest.csv`
+   - The complete phase/dependency graph from `_bmad/_config/bmad-help.csv` (rendered as a Mermaid diagram)
+   - Mapping table from Aperant's `AgentType` enum to BMAD persona+workflow combinations
 2. `apps/desktop/docs/bmad-migration/DECISIONS.md` seeded with KAD-1 through KAD-10 above and an empty "later decisions" section
 3. Verification that `~/Projects/BMAD-Install-Files/` matches a fresh `npx bmad-method install` (run it on a throwaway dir and diff)
 4. Issue opened in the BMAD-Studio repo titled "Engine swap: Aperant → BMad Method frontend" linking to this prompt
@@ -179,7 +195,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 **Pre-work:** Re-read the "Phase 1" sections in `<bmad_docs_index>`. The four merge rules in "Merge Rules (by shape, not by field name)" are the spec for `customization-resolver.ts` — your TS port must pass fixtures derived from that section's wording. The full `npx bmad-method install` flag surface lives in "Headless CI installs"; the wrapper must support every flag listed there.
 
 **Deliverables:**
-
 1. `installer.ts` — spawns `npx bmad-method install` with configurable args, streams stdout/stderr to renderer via IPC, returns exit code + parsed install result. Handles `--list-options bmm` for module discovery, `--action update` for upgrades. Cross-platform (use `apps/desktop/src/main/platform/` for path/exec resolution).
 2. `manifest-loader.ts` — parses `_bmad/_config/manifest.yaml` (modules + versions), `_bmad/_config/skill-manifest.csv` (every skill), `_bmad/_config/bmad-help.csv` (phase graph), `_bmad/_config/files-manifest.csv` (skill assets). Returns typed objects via Zod.
 3. `module-registry.ts` — exposes `listInstalledModules()`, `getWorkflowsForModule(id)`, `getPhaseGraph()`, `getRequiredWorkflowsForPhase(phase, track)`.
@@ -189,7 +204,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 7. IPC handlers in `bmad-handlers.ts` for: `list-modules`, `list-workflows`, `get-phase-graph`, `read-customization`, `write-customization`, `read-sprint-status`, `read-story-file`.
 
 **Acceptance:**
-
 - `npm test -- bmad/customization-resolver` green
 - A debug command in dev mode logs every installed skill with resolved persona block
 - File watcher fires correctly when a skill's customize.toml changes
@@ -200,10 +214,9 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 **Pre-work:** Re-read the "Phase 2" sections in `<bmad_docs_index>`. "The Activation Flow" is the **literal spec** for the runner's startup sequence — eight ordered steps. "How Skills Are Generated" + "Where Skill Files Live" govern the skill loader's path resolution. Open `~/Projects/BMAD-Install-Files/.agents/skills/bmad-create-prd/SKILL.md` and `bmad-dev-story/SKILL.md` and read the "Critical Rules (NO EXCEPTIONS)" sections — those rules are what `step-loader.ts` enforces.
 
 **Deliverables:**
-
 1. `step-loader.ts` — exports `loadCurrentStep(skill, stepIndex)`. **Hard-fails** if called for a step that follows a step still marked incomplete in the workflow's frontmatter `stepsCompleted` array. Mirrors BMAD's "NEVER load multiple step files simultaneously" rule.
 2. `workflow-runner.ts` — generic runtime. Contract:
-  ```ts
+   ```ts
    runWorkflow(opts: {
      skillName: string;
      persona?: BmadPersona;
@@ -216,7 +229,7 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
      onComplete: (result: WorkflowResult) => void;
      abortSignal?: AbortSignal;
    }): Promise<WorkflowResult>
-  ```
+   ```
    Implements BMAD's activation sequence verbatim: resolve workflow block → execute prepend steps → load persistent_facts → load config → greet → execute append steps → enter workflow body → at each step: load step file, inject as system addendum, run `streamText()`, capture menu/output/file writes → repeat until step file signals completion.
 3. Variable substitution engine: `{project-root}`, `{skill-root}`, `{skill-name}`, `{user_name}`, `{communication_language}`, `{document_output_language}`, `{planning_artifacts}`, `{implementation_artifacts}`, `{project_knowledge}`, `{output_folder}`, `{date}`. Resolved from config + active worktree.
 4. `persona.ts` — 6 hardcoded personas (Mary/Paige/John/Sally/Winston/Amelia) with name/title/icon/identity from BMM `module.yaml` and the per-persona `customize.toml`. Activating a persona on a worker thread loads its system prompt; subsequent workflow runs in that worker layer the workflow block on top.
@@ -225,7 +238,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 7. `sprint-status.ts` — Zod schema for the YAML, atomic read/write (write-temp-then-rename to avoid partial reads when watcher fires), event-emitting on every write.
 
 **Acceptance:**
-
 - A CLI smoke test runs `bmad-product-brief` end-to-end against a throwaway project and produces `_bmad-output/planning-artifacts/product-brief.md`
 - A CLI smoke test runs the orchestrator against a fresh project and emits the correct `workflow-required` events for each phase of BMad Method track
 - Step-loader hard-fails when an integration test attempts pre-loading
@@ -236,7 +248,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 **Pre-work:** Re-read the "Phase 3" sections in `<bmad_docs_index>`. The sprint-status template at `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml` defines the exact status states — do not invent new ones. The `bmad-help.csv` row format is documented in `bmad-help/SKILL.md` § "CSV Interpretation"; that section is the spec for how `phase`, `after`, `before`, `required`, `output-location`, and `outputs` are interpreted by both BMad-Help and (now) BMad Studio.
 
 **Deliverables:**
-
 1. `BmadKanbanBoard.tsx` — 5 columns: **Backlog** | **Ready for Dev** | **In Progress** | **Review** | **Done**. Plus a collapsed "Optional" lane at the bottom for retrospectives. Cards group under epic headers (collapsible).
 2. `BmadStoryCard.tsx` — shows story id, title, current status, assigned persona avatar, "Run" button (invokes the next workflow per `bmad-help.csv` `after`/`before` for current status). Skeleton loader while sprint-status loads.
 3. `BmadStoryDetail.tsx` — slide-in panel on card click. Renders the story file's markdown, exposes acceptance-criteria checkboxes that write back to the file, shows file list, change log. Uses `react-markdown` + the existing markdown styles.
@@ -247,7 +258,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 8. i18n: every column header, button label, status name, error message keyed under `bmad` namespace.
 
 **Acceptance:**
-
 - Open a project that has a `sprint-status.yaml` with 3 epics × 4 stories — all render correctly
 - Drag a story from "Backlog" to "Ready for Dev" — YAML updates within 250ms, persists across app restart
 - Edit a story file in an external editor — kanban card reflects the change within 500ms
@@ -260,7 +270,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 **Pre-work:** Re-read the "Phase 4" sections in `<bmad_docs_index>`. "Meet BMad-Help: Your Intelligent Guide" is the UX brief for the sidebar — the prompt's "Show your options," "Recommend what's next," and "Answer questions" affordances are non-negotiable. Read `bmad-help/SKILL.md` end-to-end before writing `BmadHelpSidebar.tsx` — your component **calls** the skill, never reimplements its routing logic. "What Named Agents Buy You" justifies why each persona's chat is visually distinct.
 
 **Deliverables:**
-
 1. `BmadPersonaChat.tsx` — chat panel docked right (or as a tab in the existing chat UI). Persona avatar in the message header. Streamed responses from the workflow runner. Interactive menus rendered as button groups (`onMenu` callback resolves with the user's pick). Input box for free-form follow-ups.
 2. `BmadHelpSidebar.tsx` — always-on companion docked left or right (user-configurable). Shows: current phase indicator, "Next Required" (with one-click run button), "Recommended" list, "Completed" list. Auto-refreshes on every file-watcher event. The single most prominent UI affordance — make it inviting.
 3. Persona switcher: a dropdown above the chat, listing the 6 personas with their icons and titles. Switching swaps the worker thread's active persona for subsequent workflow runs.
@@ -268,7 +277,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 5. First-launch tutorial overlay (skippable): "Click here to ask BMad-Help what to do," "Click here to talk to John."
 
 **Acceptance:**
-
 - Cold-start a fresh project, click "What now?", see "Required: Create PRD with John (`bmad-create-prd`)" with a Run button
 - Click Run, see John's avatar appear, see the streamed persona greeting, answer his interactive PRD questions, watch `prd.md` appear in `_bmad-output/planning-artifacts/`
 - Switch persona to Winston, ask a free-form question, see Winston's icon and architectural communication style
@@ -279,7 +287,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 **Pre-work:** Re-read the "Phase 5" sections in `<bmad_docs_index>`. "Worked Examples" Recipes 1-5 are the patterns the customization editor's "Common templates" picker should surface. "Recipe 5: Customize the Agent Roster" specifies how `_bmad/custom/config.toml` adds/rebrands agents — the roster editor must write valid TOML that survives the next install. "Existing Projects" + "Step 2: Create Project Context" inform the migrator's brownfield handling.
 
 **Deliverables:**
-
 1. `BmadCustomizationPanel.tsx` — Settings → Agents → Customizations. Lists every customizable skill. Click a skill: see resolved values for each field (icon, principles, persistent_facts, menu items, activation hooks). Edit a field: choice of Team scope (writes `_bmad/custom/{skill}.toml`) or Personal scope (writes `_bmad/custom/{skill}.user.toml`). Validates TOML on write; shows merged-result preview.
 2. `BmadModuleManager.tsx` — Settings → Modules. Lists installed modules with version + last-updated. Buttons: Update, Remove. "Install Module" launches a wizard that calls `npx bmad-method install --list-options`, presents a checkbox UI, runs `--yes --modules ...`, streams output.
 3. `migrator.ts` — on project open, detects `.auto-claude/specs/*/` and offers a migration. Best-effort: spec.md → product-brief.md (manual review prompt), implementation_plan.json → seeds sprint-status.yaml. Always backs up the original to `.auto-claude.backup/` before touching anything.
@@ -290,7 +297,6 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 8. Remove or archive `apps/desktop/COMPLETION_SUMMARY.md`, `apps/desktop/VERIFICATION_SUMMARY.md`, `apps/desktop/XSTATE_MIGRATION_SUMMARY.md` if they refer to the old architecture (or update if still relevant).
 
 **Acceptance:**
-
 - Edit John's icon to 🏥 in the Customization Panel — next John session greets with the new icon
 - Install a custom module via Module Manager — workflows appear in the orchestrator immediately
 - Open a project with `.auto-claude/specs/001-foo/` — migration prompt appears, user accepts, `_bmad-output/` is populated, original is backed up
@@ -300,6 +306,7 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 
 ### Phase 6 — Stretch goals (do not start until Phase 5 merged)
 
+- **Quick Flow track support (per D-005):** Phases 1–5 ship BMad Method + Enterprise tracks only. Quick Flow uses `bmad-quick-dev` (single workflow, no epics/stories), so the Kanban shape doesn't apply. Add a separate "Quick Build" project mode with a single-pane chat view, distinct from the BMad Method Kanban. Track choice surfaces at project creation.
 - **IDE delegation backend:** spawn Claude Code or Cursor agent in subprocess with the project mounted; capture output via PTY (reuse existing terminal infra); render in BmadPersonaChat. User chooses runtime per workflow in Settings.
 - **Workflow templates marketplace:** browse community modules with `npx bmad-method install --list-options` extended scan + a curated registry; one-click install.
 - **Multi-project parallel execution:** run different workflows in different projects simultaneously, each in their own worker thread. Aggregate progress in the project list view.
@@ -307,26 +314,27 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 - **Live customization hot-reload:** customization edits apply mid-workflow without restart (already partially supported via file watcher; needs polish).
 - **Telemetry (opt-in):** anonymous workflow run counts to Sentry to detect broken skills early.
 
+</execution_plan>
+
 ---
+
+<engineering_standards>
 
 **Type safety:** TypeScript strict. Zod schemas at every IPC boundary, every TOML/YAML parse, every external CLI output parse. No `any` without `// FIXME(type):` and a tracking issue.
 
 **Testing:**
-
 - Unit tests (Vitest) for `customization-resolver`, `config-resolver`, `manifest-loader`, `sprint-status` writer, `step-loader` invariants, `orchestrator` phase progression
 - Integration tests (Vitest) for `installer` against a temp dir, `workflow-runner` against fixture skills
 - E2E tests (Playwright + Electron) for: new project install wizard, kanban drag-and-drop, persona chat with interactive menu, customization edit roundtrip
 - Coverage target: 80% on the `bmad/` directory
 
 **Performance budgets:**
-
 - Skill registry initial load: < 500ms for an install with 30+ skills
 - Kanban first paint: < 100ms after sprint-status load
 - File-watcher debounced re-render: < 50ms perceived latency
 - AI first-token latency: depends on provider, but UI must show streaming indicator within 200ms of request
 
 **Accessibility:**
-
 - All interactive elements keyboard-navigable
 - ARIA roles on kanban (role="application", columns role="region", cards role="article")
 - Screen reader announces drag-and-drop status changes
@@ -334,67 +342,67 @@ Phases are gates. Each phase ends in a green build (`npm run lint && npm run typ
 - Reduced-motion respect for animations
 
 **Cross-platform:**
-
 - Use `apps/desktop/src/main/platform/` for every path/exec/shell concern
 - `installer.ts` handles `npx.cmd` on Windows
 - File watcher polling fallback for network drives (chokidar usePolling option, configurable)
 - Test on macOS, Windows, Linux as part of CI
 
 **Error handling:**
-
 - Every IPC handler catches and returns `{ ok: false, error: { code, message, details } }` shape
 - User-facing errors translated and actionable (never raw stack traces in production)
 - Sentry breadcrumbs around installer invocations and skill execution
 - Crash-safe writes (write-temp-then-rename) for sprint-status and customization files
 
 **Logging:**
-
 - Use the existing logger (`apps/desktop/src/main/logging/`)
 - **Zero `console.log`** in production code paths (per `CLAUDE.md`)
 - Log levels: trace for step-by-step workflow execution, debug for file-watcher events, info for user actions, warn for recoverable issues, error for unhandled failures
 
 **Security:**
-
 - Keep the existing `apps/desktop/src/main/ai/security/` bash validator for any shell tool the workflow runner exposes
 - Path containment: workflow file writes must stay within the active worktree (the existing `path-containment.ts` enforces this — preserve it)
 - Customization TOML edits sanitized before write
 - BMAD installer args validated against an allowlist (no shell injection via module names)
 
 **Internationalization:**
-
 - All new UI strings in `apps/desktop/src/shared/i18n/locales/{en,fr}/bmad.json`
 - BMAD skill content (markdown) is rendered as-is — translate the chrome around it, not the BMAD content (BMAD has its own `communication_language` config)
 
 **Decision logging:**
-
 - Every architectural decision that goes beyond what's specified in this prompt gets a numbered entry in `apps/desktop/docs/bmad-migration/DECISIONS.md` with: context, options considered, decision, rationale, date
 - If you encounter ambiguity that this prompt doesn't resolve, choose pragmatically and log the choice — don't block
 
----
-
-
-| Resource                           | Path / URL                                                                                      |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| BMAD canonical docs (full)         | `https://docs.bmad-method.org/llms-full.txt`                                                    |
-| BMAD docs index                    | `https://docs.bmad-method.org/llms.txt`                                                         |
-| BMAD docs site                     | `https://docs.bmad-method.org/`                                                                 |
-| BMAD source repo                   | `https://github.com/bmad-code-org/BMAD-METHOD`                                                  |
-| BMAD Builder                       | `https://github.com/bmad-code-org/bmad-builder`                                                 |
-| Reference install on this machine  | `~/Projects/BMAD-Install-Files/`                                                                |
-| BMAD source clone (if present)     | `~/Projects/BMAD-METHOD/BMAD-METHOD/`                                                           |
-| Aperant project rules              | `apps/desktop/CLAUDE.md`, `apps/desktop/CONTRIBUTING.md`                                        |
-| Aperant architecture deep-dive     | `shared_docs/ARCHITECTURE.md`                                                                   |
-| Skill manifest CSV                 | `~/Projects/BMAD-Install-Files/_bmad/_config/skill-manifest.csv`                                |
-| Phase graph CSV                    | `~/Projects/BMAD-Install-Files/_bmad/_config/bmad-help.csv`                                     |
-| Sprint status template             | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml` |
-| Sample SKILL.md (workflow)         | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-create-prd/SKILL.md`                         |
-| Sample SKILL.md (persona)          | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-agent-pm/SKILL.md`                           |
-| Sample customize.toml              | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-agent-pm/customize.toml`                     |
-| Customization resolver (port this) | `~/Projects/BMAD-Install-Files/_bmad/scripts/resolve_customization.py`                          |
-| Config resolver (port this)        | `~/Projects/BMAD-Install-Files/_bmad/scripts/resolve_config.py`                                 |
-
+</engineering_standards>
 
 ---
+
+<reference_material>
+
+| Resource | Path / URL |
+|---|---|
+| BMAD canonical docs (full) | `https://docs.bmad-method.org/llms-full.txt` |
+| BMAD docs index | `https://docs.bmad-method.org/llms.txt` |
+| BMAD docs site | `https://docs.bmad-method.org/` |
+| BMAD source repo | `https://github.com/bmad-code-org/BMAD-METHOD` |
+| BMAD Builder | `https://github.com/bmad-code-org/bmad-builder` |
+| Reference install on this machine | `~/Projects/BMAD-Install-Files/` |
+| BMAD source clone (if present) | `~/Projects/BMAD-METHOD/BMAD-METHOD/` |
+| Aperant project rules | `apps/desktop/CLAUDE.md`, `apps/desktop/CONTRIBUTING.md` |
+| Aperant architecture deep-dive | `shared_docs/ARCHITECTURE.md` |
+| Skill manifest CSV | `~/Projects/BMAD-Install-Files/_bmad/_config/skill-manifest.csv` |
+| Phase graph CSV | `~/Projects/BMAD-Install-Files/_bmad/_config/bmad-help.csv` |
+| Sprint status template | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml` |
+| Sample SKILL.md (workflow) | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-create-prd/SKILL.md` |
+| Sample SKILL.md (persona) | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-agent-pm/SKILL.md` |
+| Sample customize.toml | `~/Projects/BMAD-Install-Files/.agents/skills/bmad-agent-pm/customize.toml` |
+| Customization resolver (port this) | `~/Projects/BMAD-Install-Files/_bmad/scripts/resolve_customization.py` |
+| Config resolver (port this) | `~/Projects/BMAD-Install-Files/_bmad/scripts/resolve_config.py` |
+
+</reference_material>
+
+---
+
+<docs_protocol>
 
 The BMAD docs at `https://docs.bmad-method.org/llms-full.txt` are the **canonical specification of BMAD's behavior**. Treat them like RFC text. Three rules govern their use:
 
@@ -405,124 +413,116 @@ The BMAD docs at `https://docs.bmad-method.org/llms-full.txt` are the **canonica
 **Rule 3 — When the install reference and the docs disagree, file an issue and side with the docs.** The reference install at `~/Projects/BMAD-Install-Files/` is a snapshot. The docs are the spec. If you find a divergence, log it in `DECISIONS.md`, open an issue against the BMAD repo, and implement to the docs' contract — but cite both.
 
 **When to fetch live vs. read local snapshot:**
-
 - Phase 0 + Phase 1 setup: fetch live (catches recent changes to installer flags, customization rules)
 - Mid-phase reference checks: local snapshot is fine
 - Before declaring a phase complete: fetch live and re-verify cited sections still exist and match
 
+</docs_protocol>
+
 ---
+
+<bmad_docs_index>
 
 Curated map from execution-plan phases to specific doc sections. Section titles are H2 headings as they appear in `https://docs.bmad-method.org/llms-full.txt`. Read these **before** starting work in the phase.
 
 ### Phase 0 — Inventory
 
-
-| Section                                                                | Why                                                                                                                             |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| "Understanding BMad"                                                   | The 4-phase mental model (Analysis/Planning/Solutioning/Implementation) and the three planning tracks (Quick/Method/Enterprise) |
-| "Quick Reference"                                                      | The full workflow catalog you're building UI for                                                                                |
-| "Skill Categories"                                                     | How BMAD groups skills (agent skills, workflow skills, utility skills)                                                          |
-| "The Three-Legged Stool" (in "Customization as a First-Class Citizen") | The agents/workflows/skills triad                                                                                               |
-| "What Named Agents Buy You"                                            | Why personas matter — informs the persona chat design                                                                           |
-
+| Section | Why |
+|---|---|
+| "Understanding BMad" | The 4-phase mental model (Analysis/Planning/Solutioning/Implementation) and the three planning tracks (Quick/Method/Enterprise) |
+| "Quick Reference" | The full workflow catalog you're building UI for |
+| "Skill Categories" | How BMAD groups skills (agent skills, workflow skills, utility skills) |
+| "The Three-Legged Stool" (in "Customization as a First-Class Citizen") | The agents/workflows/skills triad |
+| "What Named Agents Buy You" | Why personas matter — informs the persona chat design |
 
 ### Phase 1 — Installer + Manifest + Resolver
 
-
-| Section                                     | Why                                                                                                                                                                                                         |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Installation" (Getting Started chapter)    | First-install flow + module selection prompts                                                                                                                                                               |
-| "First-time install (the fast path)"        | Default flags, prompts, output structure                                                                                                                                                                    |
-| "Picking a specific version"                | `@latest` vs `@next` channel switching                                                                                                                                                                      |
-| "Updating an existing install"              | The update menu + `--action update` flag                                                                                                                                                                    |
-| "Headless CI installs"                      | All `npx bmad-method install` flags: `--yes`, `--modules`, `--tools`, `--pin`, `--all-next`, `--directory`, `--custom-source`, `--list-options`, `--set` — this is the complete CLI surface you're wrapping |
-| "Custom Sources (Git URLs and Local Paths)" | `--custom-source` semantics for local module dev                                                                                                                                                            |
-| "How Module Discovery Works"                | How the installer enumerates available modules                                                                                                                                                              |
-| "What got installed"                        | The `_bmad/`, `_bmad-output/`, and IDE-specific skill folder structure to expect                                                                                                                            |
-| "How It Works" (Customize Skills chapter)   | The three-layer override model — required reading for the resolver port                                                                                                                                     |
-| "Three-Layer Override Model"                | Priority order: defaults → team → user                                                                                                                                                                      |
-| "Merge Rules (by shape, not by field name)" | The four shape-driven merge rules — port these EXACTLY                                                                                                                                                      |
-| "Some agent fields are read-only"           | `agent.name` and `agent.title` are non-overridable identity                                                                                                                                                 |
-| "How Resolution Works"                      | The resolver's API surface (`--skill`, `--key`) — your TS port must accept the same args                                                                                                                    |
-| "Workflow Customization"                    | `[workflow]` namespace mirrors `[agent]` shape                                                                                                                                                              |
-| "Central Configuration"                     | Four-layer merge for cross-cutting state (`_bmad/config.toml`, `_bmad/custom/config.toml`, etc.)                                                                                                            |
-| "Troubleshooting" (Customize Skills)        | Edge cases you must handle in the resolver                                                                                                                                                                  |
-
+| Section | Why |
+|---|---|
+| "Installation" (Getting Started chapter) | First-install flow + module selection prompts |
+| "First-time install (the fast path)" | Default flags, prompts, output structure |
+| "Picking a specific version" | `@latest` vs `@next` channel switching |
+| "Updating an existing install" | The update menu + `--action update` flag |
+| "Headless CI installs" | All `npx bmad-method install` flags: `--yes`, `--modules`, `--tools`, `--pin`, `--all-next`, `--directory`, `--custom-source`, `--list-options`, `--set` — this is the complete CLI surface you're wrapping |
+| "Custom Sources (Git URLs and Local Paths)" | `--custom-source` semantics for local module dev |
+| "How Module Discovery Works" | How the installer enumerates available modules |
+| "What got installed" | The `_bmad/`, `_bmad-output/`, and IDE-specific skill folder structure to expect |
+| "How It Works" (Customize Skills chapter) | The three-layer override model — required reading for the resolver port |
+| "Three-Layer Override Model" | Priority order: defaults → team → user |
+| "Merge Rules (by shape, not by field name)" | The four shape-driven merge rules — port these EXACTLY |
+| "Some agent fields are read-only" | `agent.name` and `agent.title` are non-overridable identity |
+| "How Resolution Works" | The resolver's API surface (`--skill`, `--key`) — your TS port must accept the same args |
+| "Workflow Customization" | `[workflow]` namespace mirrors `[agent]` shape |
+| "Central Configuration" | Four-layer merge for cross-cutting state (`_bmad/config.toml`, `_bmad/custom/config.toml`, etc.) |
+| "Troubleshooting" (Customize Skills) | Edge cases you must handle in the resolver |
 
 ### Phase 2 — Workflow Runtime
 
-
-| Section                                                                                             | Why                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| "How Skills Are Generated"                                                                          | Skills are install-time outputs from `module.yaml`, not static files — informs your discovery model                                   |
-| "Where Skill Files Live"                                                                            | IDE-specific paths (`.cursor/skills/`, `.claude/skills/`, `.agents/skills/`) — the runner must locate skills regardless of IDE target |
-| "The Activation Flow"                                                                               | The exact 8-step activation sequence agents and workflows follow — your runner must replicate this                                    |
-| "Trigger Types"                                                                                     | How skills get invoked (skill name, agent menu, prompt match)                                                                         |
-| "Why Not Just a Menu?"                                                                              | Why interactive menus mid-workflow exist — informs the `onMenu` UI surfacing                                                          |
-| "Why Not Just a Blank Prompt?"                                                                      | The persona-as-context-frame argument — informs persona persistence model                                                             |
-| "Step 1: Create Your Plan" + "Step 2: Build Your Project" (Getting Started)                         | The phase-by-phase workflow execution order — informs orchestrator transitions                                                        |
-| Per-skill `SKILL.md` "Critical Rules (NO EXCEPTIONS)" sections (e.g. in `bmad-create-prd/SKILL.md`) | Step-file enforcement contract — read in tandem with the workflow runner spec                                                         |
-
+| Section | Why |
+|---|---|
+| "How Skills Are Generated" | Skills are install-time outputs from `module.yaml`, not static files — informs your discovery model |
+| "Where Skill Files Live" | IDE-specific paths (`.cursor/skills/`, `.claude/skills/`, `.agents/skills/`) — the runner must locate skills regardless of IDE target |
+| "The Activation Flow" | The exact 8-step activation sequence agents and workflows follow — your runner must replicate this |
+| "Trigger Types" | How skills get invoked (skill name, agent menu, prompt match) |
+| "Why Not Just a Menu?" | Why interactive menus mid-workflow exist — informs the `onMenu` UI surfacing |
+| "Why Not Just a Blank Prompt?" | The persona-as-context-frame argument — informs persona persistence model |
+| "Step 1: Create Your Plan" + "Step 2: Build Your Project" (Getting Started) | The phase-by-phase workflow execution order — informs orchestrator transitions |
+| Per-skill `SKILL.md` "Critical Rules (NO EXCEPTIONS)" sections (e.g. in `bmad-create-prd/SKILL.md`) | Step-file enforcement contract — read in tandem with the workflow runner spec |
 
 ### Phase 3 — Kanban
 
-
-| Section                                                                                                                                          | Why                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Sprint status template comments (in `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml`)             | Source of truth for status states and transitions                                             |
+| Section | Why |
+|---|---|
+| Sprint status template comments (in `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml`) | Source of truth for status states and transitions |
 | `_bmad/_config/bmad-help.csv` row format docstring (in `~/Projects/BMAD-Install-Files/.agents/skills/bmad-help/SKILL.md` § "CSV Interpretation") | How to interpret `phase`, `after`, `before`, `required`, `output-location`, `outputs` columns |
-| "The Typical Flow" (Brainstorming explanation)                                                                                                   | Story-cycle iteration pattern                                                                 |
-| "Why Solutioning is Required"                                                                                                                    | Why `bmad-create-architecture` precedes `bmad-create-epics-and-stories` — informs phase gates |
-
+| "The Typical Flow" (Brainstorming explanation) | Story-cycle iteration pattern |
+| "Why Solutioning is Required" | Why `bmad-create-architecture` precedes `bmad-create-epics-and-stories` — informs phase gates |
 
 ### Phase 4 — Persona Chat + bmad-help
 
-
-| Section                                                                                     | Why                                                                                        |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| "Meet BMad-Help: Your Intelligent Guide"                                                    | The full UX intent for the help sidebar — match this verbatim                              |
+| Section | Why |
+|---|---|
+| "Meet BMad-Help: Your Intelligent Guide" | The full UX intent for the help sidebar — match this verbatim |
 | `bmad-help` SKILL.md (in `~/Projects/BMAD-Install-Files/.agents/skills/bmad-help/SKILL.md`) | The skill's actual logic — your `BmadHelpSidebar` calls this skill, doesn't reimplement it |
-| "Default Agents"                                                                            | Mary/Paige/John/Sally/Winston/Amelia identity & roles                                      |
-| "What Named Agents Buy You"                                                                 | Why each persona has a fixed name + title that survives customization                      |
-| "The Activation Flow" (re-read)                                                             | Greeting protocol — the chat UI must surface the icon-prefixed greeting cleanly            |
-
+| "Default Agents" | Mary/Paige/John/Sally/Winston/Amelia identity & roles |
+| "What Named Agents Buy You" | Why each persona has a fixed name + title that survives customization |
+| "The Activation Flow" (re-read) | Greeting protocol — the chat UI must surface the icon-prefixed greeting cleanly |
 
 ### Phase 5 — Customization UI + Module Manager + Migration
 
-
-| Section                                                     | Why                                                                                     |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| "Worked Examples" + "Recipe 1-5" (Expand BMad for Your Org) | Real-world override patterns — informs the customization editor's preset templates      |
-| "Recipe 5: Customize the Agent Roster"                      | How `_bmad/custom/config.toml` adds/rebrands agents — informs the roster editor         |
-| "Reinforce Global Rules in Your IDE's Session File"         | Cross-cutting rule enforcement                                                          |
-| "Combining Recipes"                                         | Multi-layer override interactions                                                       |
-| "Community Modules" + "Creating Your Own Modules"           | Module marketplace context for the Module Manager                                       |
-| "Updating Custom Modules"                                   | Update-flow edge cases                                                                  |
-| "Existing Projects" tutorial chapter                        | Brownfield onboarding — informs the migrator's UX                                       |
-| "Step 2: Create Project Context"                            | `project-context.md` generation — informs migration of Aperant's existing context files |
-| "Module Migration" (BMad Method changes chapter)            | How BMAD itself versions and migrates between releases                                  |
-
+| Section | Why |
+|---|---|
+| "Worked Examples" + "Recipe 1-5" (Expand BMad for Your Org) | Real-world override patterns — informs the customization editor's preset templates |
+| "Recipe 5: Customize the Agent Roster" | How `_bmad/custom/config.toml` adds/rebrands agents — informs the roster editor |
+| "Reinforce Global Rules in Your IDE's Session File" | Cross-cutting rule enforcement |
+| "Combining Recipes" | Multi-layer override interactions |
+| "Community Modules" + "Creating Your Own Modules" | Module marketplace context for the Module Manager |
+| "Updating Custom Modules" | Update-flow edge cases |
+| "Existing Projects" tutorial chapter | Brownfield onboarding — informs the migrator's UX |
+| "Step 2: Create Project Context" | `project-context.md` generation — informs migration of Aperant's existing context files |
+| "Module Migration" (BMad Method changes chapter) | How BMAD itself versions and migrates between releases |
 
 ### Cross-cutting (read once, refer often)
 
-
-| Section                           | Why                                                                                                                  |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| "Key Takeaways" (Getting Started) | Non-negotiables: fresh chats, track choice, BMad-Help auto-runs at workflow end                                      |
-| "How to Use These Docs"           | The Diátaxis split (Tutorial / How-To / Explanation / Reference) — helps you find the right doc layer for a question |
-| "Common Questions"                | FAQ-shaped clarifications on edge cases                                                                              |
-
+| Section | Why |
+|---|---|
+| "Key Takeaways" (Getting Started) | Non-negotiables: fresh chats, track choice, BMad-Help auto-runs at workflow end |
+| "How to Use These Docs" | The Diátaxis split (Tutorial / How-To / Explanation / Reference) — helps you find the right doc layer for a question |
+| "Common Questions" | FAQ-shaped clarifications on edge cases |
 
 ### Update protocol for this index
 
 When the BMAD docs change (catch this on every Phase 0 re-read):
-
 1. Re-fetch `https://docs.bmad-method.org/llms-full.txt`
 2. Diff against the section titles above
 3. Log additions/removals/renames in `DECISIONS.md`
 4. Update this index inline in the prompt (the prompt is committed to the repo and is the index's home)
 
+</bmad_docs_index>
+
 ---
+
+<acceptance_criteria>
 
 A reviewer must be able to verify each in under 10 minutes, on a clean checkout:
 
@@ -540,7 +540,11 @@ A reviewer must be able to verify each in under 10 minutes, on a clean checkout:
 12. **i18n:** Switch app language to French. Every new UI string is translated; BMAD-generated content stays in the user's configured `document_output_language`.
 13. **PR quality:** PR targeting `develop` lists every file changed, links to the inventory doc and decisions log, includes screenshots of kanban + persona chat + customization panel + bmad-help sidebar, and references the BMAD docs sections it implements.
 
+</acceptance_criteria>
+
 ---
+
+<anti_patterns>
 
 Things to **not** do:
 
@@ -562,7 +566,11 @@ Things to **not** do:
 - **Don't make claims about BMAD without a citation.** Per `<docs_protocol>`, every assertion about BMAD behavior in code comments, PR descriptions, or `DECISIONS.md` cites the doc section. Reasoning from memory drifts; reasoning from cited spec doesn't.
 - **Don't trust the local install snapshot when in doubt.** `~/Projects/BMAD-Install-Files/` is a snapshot; the live docs at `https://docs.bmad-method.org/llms-full.txt` are the spec. When they disagree, log it and follow the docs.
 
+</anti_patterns>
+
 ---
+
+<output_format>
 
 For each phase you complete, post a comment on the PR (or in `apps/desktop/docs/bmad-migration/PHASE-N-NOTES.md`) with this shape:
 
@@ -590,26 +598,36 @@ For each phase you complete, post a comment on the PR (or in `apps/desktop/docs/
 
 For the final PR, follow the format in `apps/desktop/CLAUDE.md` § "creating-pull-requests" (Summary + Test plan).
 
+</output_format>
+
 ---
+
+<self_verification>
 
 Before declaring any phase complete, run this checklist:
 
-- All deliverables for the phase exist in the codebase
-- `npm run lint` exits 0
-- `npm run typecheck` exits 0
-- `npm test` exits 0 with no skipped tests in the new code
-- `npm run test:e2e` exits 0 (when E2E exists for this phase)
-- No `console.log` in any new file (`rg "console\.log" apps/desktop/src/main/ai/bmad/`)
-- No `any` without a tracking comment
-- No `process.platform` direct reads in new files
-- All new strings have EN + FR translations
-- All IPC handlers have Zod-validated inputs and `{ ok, ... }` outputs
-- Decision log updated with anything ambiguous
-- Phase notes file written with the format above
-- PR description updated
-- Doc sections for the phase were re-read live (not just the local snapshot) and any drift logged in `DECISIONS.md`
-- Every claim about BMAD behavior in code comments and the phase notes has an inline citation per `<docs_protocol>`
+- [ ] All deliverables for the phase exist in the codebase
+- [ ] `npm run lint` exits 0
+- [ ] `npm run typecheck` exits 0
+- [ ] `npm test` exits 0 with no skipped tests in the new code
+- [ ] `npm run test:e2e` exits 0 (when E2E exists for this phase)
+- [ ] No `console.log` in any new file (`rg "console\.log" apps/desktop/src/main/ai/bmad/`)
+- [ ] No `any` without a tracking comment
+- [ ] No `process.platform` direct reads in new files
+- [ ] All new strings have EN + FR translations
+- [ ] All IPC handlers have Zod-validated inputs and `{ ok, ... }` outputs
+- [ ] Decision log updated with anything ambiguous
+- [ ] Phase notes file written with the format above
+- [ ] PR description updated
+- [ ] Doc sections for the phase were re-read live (not just the local snapshot) and any drift logged in `DECISIONS.md`
+- [ ] Every claim about BMAD behavior in code comments and the phase notes has an inline citation per `<docs_protocol>`
+
+</self_verification>
 
 ---
 
+<start_command>
+
 Acknowledge this prompt by replying with a single sentence and the words "Beginning Phase 0." Then produce the Phase 0 deliverables and stop. Do not start Phase 1 until human review of the inventory and decisions log.
+
+</start_command>

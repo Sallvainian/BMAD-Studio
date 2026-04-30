@@ -932,6 +932,9 @@ export interface ElectronAPI {
 
   // Queue Routing API (rate limit recovery)
   queue: import('../../preload/api/queue-api').QueueAPI;
+
+  /** BMad Studio engine-swap API (Phase 1+) — see apps/desktop/src/preload/api/bmad-api.ts */
+  bmad: import('../../preload/api/bmad-api').BmadAPI;
 }
 
 /** Platform information exposed via contextBridge for platform-specific behavior */

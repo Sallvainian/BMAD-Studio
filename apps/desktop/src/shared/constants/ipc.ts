@@ -592,5 +592,37 @@ export const IPC_CHANNELS = {
   // Queue routing events (main -> renderer)
   QUEUE_PROFILE_SWAPPED: 'queue:profileSwapped',      // Task switched to different profile
   QUEUE_SESSION_CAPTURED: 'queue:sessionCaptured',    // Session ID captured from running task
-  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles' // All profiles unavailable
+  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles', // All profiles unavailable
+
+  // ─── BMad Studio (engine swap) ───────────────────────────────────────────
+  // Project + manifest discovery
+  BMAD_DETECT_PROJECT: 'bmad:detectProject',
+  BMAD_LIST_MODULES: 'bmad:listModules',
+  BMAD_LIST_WORKFLOWS: 'bmad:listWorkflows',
+  BMAD_GET_PHASE_GRAPH: 'bmad:getPhaseGraph',
+
+  // Skill loading
+  BMAD_LIST_SKILLS: 'bmad:listSkills',
+  BMAD_LOAD_SKILL: 'bmad:loadSkill',
+
+  // Customization (per-skill TOML)
+  BMAD_READ_CUSTOMIZATION: 'bmad:readCustomization',
+  BMAD_WRITE_CUSTOMIZATION: 'bmad:writeCustomization',
+
+  // Sprint status / story files (read-only in Phase 1; write in Phase 2)
+  BMAD_READ_SPRINT_STATUS: 'bmad:readSprintStatus',
+  BMAD_READ_STORY_FILE: 'bmad:readStoryFile',
+
+  // Installer
+  BMAD_RUN_INSTALLER: 'bmad:runInstaller',
+  BMAD_LIST_INSTALLER_OPTIONS: 'bmad:listInstallerOptions',
+
+  // File watcher (lifecycle control + main→renderer events)
+  BMAD_WATCHER_START: 'bmad:watcherStart',
+  BMAD_WATCHER_STOP: 'bmad:watcherStop',
+  BMAD_FILE_EVENT: 'bmad:fileEvent',                // Main → renderer event
+  BMAD_INSTALLER_STREAM: 'bmad:installerStream',    // Main → renderer event
+
+  // Phase 1 dev affordance
+  BMAD_DEBUG_DUMP_SKILLS: 'bmad:debugDumpSkills'
 } as const;

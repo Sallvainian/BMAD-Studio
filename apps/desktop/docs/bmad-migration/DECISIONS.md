@@ -284,6 +284,37 @@ Pending — recommended Option 1 (synthetic fixture).
 
 ## Later decisions
 
-(empty — additions in Phase 1+ append below)
+### D-007: BMAD IPC envelope keeps `success`/`data` verb but uses structured `error`
 
-<!-- Append D-007, D-008, ... here. -->
+**Date:** 2026-04-30
+**Phase:** 1
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+`ENGINE_SWAP_PROMPT.md` `<engineering_standards>` "Error handling" mandates every IPC handler returns `{ ok: false, error: { code, message, details } }`. The existing Aperant codebase uses `IPCResult<T> = { success: boolean; data?: T; error?: string }` (defined in `apps/desktop/src/shared/types/common.ts`) and that envelope is referenced by 50+ handlers and the renderer's `useIpc` hook. Adopting the prompt's `ok` shape verbatim would either fork the convention (two envelope types in one app) or trigger a giant refactor that's outside Phase 1's scope.
+
+**Options considered:**
+1. **Use the prompt's exact shape, fork the convention.** Two envelopes in the codebase — `IPCResult<T>` for legacy handlers, `{ ok, error: { code } }` for new BMAD handlers. Renderer hooks become envelope-aware.
+2. **Refactor the entire codebase to the `ok` shape.** Out of scope per KAD-10 ("Aperant strengths preserved") and the prompt's "Don't write a parallel task DB" / minimal-changes spirit.
+3. **Compromise: keep `success`/`data` (the existing verb) but elevate `error` from `string` to structured `{ code, message, details }` for BMAD handlers.** New shape: `BmadIpcResult<T> = { success: true; data: T } | { success: false; error: { code: BmadErrorCode; message: string; details?: unknown } }`.
+
+**Decision:**
+Option 3.
+
+**Rationale:**
+- Substantive change the prompt actually wants is the **structured error code + details** — not the `ok` vs `success` verb. Option 3 captures the substantive requirement without forking the envelope verb.
+- The `BmadErrorCode` union (closed set, 24 codes) gives the renderer exhaustive error UX without `string` parsing.
+- Existing handlers continue working unchanged (KAD-10).
+- The renderer can introduce a single helper `unwrap(result)` later that handles both envelope shapes uniformly.
+
+**Consequences:**
+- New BMAD handlers in `apps/desktop/src/main/ipc-handlers/bmad-handlers.ts` return `BmadIpcResult<T>`.
+- The preload bridge (`apps/desktop/src/preload/api/bmad-api.ts`) types every method's return as `BmadIpcResult<T>` so renderer call-sites get full type narrowing on `result.success` discriminator.
+- `apps/desktop/src/shared/types/bmad.ts` exports `bmadOk(data)` + `bmadFail(code, message, details?)` helpers so handler bodies stay terse.
+- All BMAD error codes are translated under `bmad.errors.{CODE}` in the EN + FR locale files. New error codes always require both translations.
+- Future migration to a unified envelope (if ever needed) is a single `IPCResult<T>` widening + adapter, not a per-handler rewrite.
+
+---
+
+<!-- Append D-008, D-009, ... here. -->
