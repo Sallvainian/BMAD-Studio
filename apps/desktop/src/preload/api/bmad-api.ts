@@ -16,18 +16,32 @@ import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/ipc';
 import type {
   BmadCustomizationScope,
+  BmadDevelopmentStatus,
   BmadFileEvent,
+  BmadHelpRecommendation,
   BmadInstallerOptions,
   BmadInstallerResult,
   BmadInstallerStreamChunk,
   BmadIpcResult,
   BmadModule,
+  BmadOrchestratorEvent,
+  BmadPersonaIdentity,
+  BmadPersonaSlug,
   BmadPhaseGraph,
   BmadProjectSummary,
   BmadSkill,
   BmadSkillManifestEntry,
+  BmadSprintStatus,
+  BmadTrack,
+  BmadVariableContext,
   BmadWorkflowDescriptor,
+  BmadWorkflowMenu,
+  BmadWorkflowResult,
+  BmadWorkflowStep,
+  BmadWorkflowStreamChunk,
+  BmadWorkflowUserChoice,
 } from '../../shared/types/bmad';
+import type { ClaudeProfile } from '../../shared/types/agent';
 import { createIpcListener, type IpcListenerCleanup } from './modules/ipc-utils';
 
 export interface BmadAPI {
@@ -91,6 +105,74 @@ export interface BmadAPI {
 
   // Phase 1 dev affordance
   debugDumpSkills(projectRoot: string): Promise<BmadIpcResult<unknown>>;
+
+  // ─── Phase 2: persona / variables / step / sprint-status / orchestrator / workflow ───
+  listPersonas(projectRoot: string): Promise<BmadIpcResult<readonly BmadPersonaIdentity[]>>;
+  loadPersona(
+    projectRoot: string,
+    slug: BmadPersonaSlug,
+  ): Promise<BmadIpcResult<BmadPersonaIdentity>>;
+  getVariableContext(args: {
+    projectRoot: string;
+    skillDir: string;
+    skillName?: string;
+    module?: string;
+  }): Promise<BmadIpcResult<BmadVariableContext>>;
+  loadStep(args: {
+    projectRoot: string;
+    skillId: string;
+    stepFileName: string;
+    outputFilePath?: string;
+  }): Promise<BmadIpcResult<BmadWorkflowStep>>;
+  writeSprintStatus(
+    projectRoot: string,
+    status: BmadSprintStatus,
+  ): Promise<BmadIpcResult<{ written: true }>>;
+  updateStoryStatus(args: {
+    projectRoot: string;
+    storyKey: string;
+    status: BmadDevelopmentStatus;
+  }): Promise<BmadIpcResult<BmadSprintStatus>>;
+  getHelpRecommendation(
+    projectRoot: string,
+    track: BmadTrack,
+  ): Promise<BmadIpcResult<BmadHelpRecommendation>>;
+  getOrchestratorState(
+    projectRoot: string,
+    track: BmadTrack,
+  ): Promise<BmadIpcResult<BmadHelpRecommendation>>;
+  runWorkflow(args: {
+    projectRoot: string;
+    skillName: string;
+    personaSlug?: BmadPersonaSlug;
+    activeProfile: ClaudeProfile;
+    args?: readonly string[];
+    maxTurns?: number;
+    initialMessages?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
+  }): Promise<BmadIpcResult<BmadWorkflowResult & { invocationId: string }>>;
+  respondToWorkflowMenu(args: {
+    invocationId: string;
+    menuId: string;
+    choice: BmadWorkflowUserChoice;
+  }): Promise<BmadIpcResult<{ resolved: boolean }>>;
+
+  onWorkflowStream(
+    handler: (payload: {
+      invocationId: string;
+      senderId: number;
+      chunk: BmadWorkflowStreamChunk;
+    }) => void,
+  ): IpcListenerCleanup;
+  onWorkflowMenuRequest(
+    handler: (payload: {
+      invocationId: string;
+      menuId: string;
+      menu: BmadWorkflowMenu;
+    }) => void,
+  ): IpcListenerCleanup;
+  onOrchestratorEvent(
+    handler: (event: BmadOrchestratorEvent) => void,
+  ): IpcListenerCleanup;
 }
 
 export const createBmadAPI = (): BmadAPI => ({
@@ -152,4 +234,38 @@ export const createBmadAPI = (): BmadAPI => ({
 
   debugDumpSkills: (projectRoot) =>
     ipcRenderer.invoke(IPC_CHANNELS.BMAD_DEBUG_DUMP_SKILLS, { projectRoot }),
+
+  // ─── Phase 2 ────────────────────────────────────────────────────────────
+  listPersonas: (projectRoot) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_LIST_PERSONAS, { projectRoot }),
+  loadPersona: (projectRoot, slug) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_LOAD_PERSONA, { projectRoot, slug }),
+  getVariableContext: (args) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_GET_VARIABLE_CONTEXT, args),
+  loadStep: (args) => ipcRenderer.invoke(IPC_CHANNELS.BMAD_LOAD_STEP, args),
+  writeSprintStatus: (projectRoot, status) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_WRITE_SPRINT_STATUS, { projectRoot, status }),
+  updateStoryStatus: (args) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_UPDATE_STORY_STATUS, args),
+  getHelpRecommendation: (projectRoot, track) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_GET_HELP_RECOMMENDATION, { projectRoot, track }),
+  getOrchestratorState: (projectRoot, track) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_GET_ORCHESTRATOR_STATE, { projectRoot, track }),
+  runWorkflow: (args) => ipcRenderer.invoke(IPC_CHANNELS.BMAD_RUN_WORKFLOW, args),
+  respondToWorkflowMenu: (args) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BMAD_WORKFLOW_MENU_RESPONSE, args),
+
+  onWorkflowStream: (handler) =>
+    createIpcListener<[
+      { invocationId: string; senderId: number; chunk: BmadWorkflowStreamChunk },
+    ]>(IPC_CHANNELS.BMAD_WORKFLOW_STREAM, (payload) => handler(payload)),
+  onWorkflowMenuRequest: (handler) =>
+    createIpcListener<[
+      { invocationId: string; menuId: string; menu: BmadWorkflowMenu },
+    ]>('bmad:workflowMenuRequest', (payload) => handler(payload)),
+  onOrchestratorEvent: (handler) =>
+    createIpcListener<[BmadOrchestratorEvent]>(
+      IPC_CHANNELS.BMAD_ORCHESTRATOR_EVENT,
+      (payload) => handler(payload),
+    ),
 });

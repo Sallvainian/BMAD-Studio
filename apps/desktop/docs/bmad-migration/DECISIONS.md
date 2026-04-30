@@ -352,3 +352,113 @@ Option 3. Single `structuredClone` call site in `resolveCustomization`, applied 
 - Phase 2's `workflow-runner.ts` may safely mutate results from `resolveCustomization()` (e.g. for variable substitution or computed-field injection) without skill-registry corruption.
 - Phase 5's `BmadCustomizationPanel.tsx` may safely build edit-state from the resolved tree without defensive copying at the consumer site.
 - Future agents reading the resolver: do **not** remove the `structuredClone` call, even if comparing line-for-line against `resolve_customization.py`. The deviation is intentional and this entry is the canonical "why."
+
+---
+
+### D-009: Variable substitution preserves `{{model-side-template}}` via lookaround
+
+**Date:** 2026-04-30
+**Phase:** 2
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+BMAD has two distinct kinds of "templates" inside skill bodies and step files:
+
+1. **Runtime variables** — single-brace `{name}` like `{project-root}`, `{planning_artifacts}`. Resolved by the workflow runner *before* the model sees the prompt. Sourced from `_bmad/config.toml` via the variable-substitution engine.
+2. **Model-side templates** — double-brace `{{name}}` like `{{user_name}}`, `{{briefCount}}`, `{{outputFile}}`. The model fills these in itself during workflow execution, often from values it just elicited from the user. Examples: `~/Projects/BMAD-Install-Files/.agents/skills/bmad-create-prd/steps-c/step-01-init.md` — `"Welcome {{user_name}}!"`, `"Created: \`{outputFile}\`"`.
+
+A naive substitution regex (`/\{([a-zA-Z][a-zA-Z0-9_-]*)\}/g`) matches *both* shapes — `{{user_name}}` would substitute to `{Sallvain}` (single-braced), corrupting the model-side template the skill author intended for the model to see literally.
+
+**Options considered:**
+1. **Pre-replace `{{...}}` with a sentinel before substitution; restore after.** Two passes, more code, sentinel collisions possible.
+2. **Detect doubled braces in the substitution loop.** Brittle; requires walking character-by-character.
+3. **Use lookaround in the regex** to reject single-brace matches that are immediately preceded by `{` or followed by `}`. Single regex pass; standard ECMAScript feature; no extra state.
+
+**Decision:**
+Option 3. The regex becomes `/(?<!\{)\{([a-zA-Z][a-zA-Z0-9_-]*)\}(?!\})/g` — `(?<!\{)` rejects a leading `{`, `(?!\})` rejects a trailing `}`. Cited in `variables.ts` as an inline comment.
+
+**Rationale:**
+- Single-pass + native regex feature → no auxiliary state, no perf cost.
+- Behavior is exactly the conservative one users expect: "if the SKILL author wrote `{{...}}`, leave it alone."
+- Verified by the test `substituteVariables > leaves unknown variables untouched (model-side templating survives)` plus an additional fixture asserting Mustache-shaped content survives.
+
+**Consequences:**
+- BMAD step files using `{{...}}` Mustache placeholders for model-side substitution work correctly through the runner.
+- Future agents writing new BMAD modules can rely on this contract: single-brace = runtime, double-brace = model-side.
+- Cited from BMAD docs § "Step 4: Load Config" (which lists the runtime variables explicitly with single braces).
+
+---
+
+### D-010: Workflow runner uses heuristic menu detection (BMAD `[CODE]` + numbered + free-form prompts)
+
+**Date:** 2026-04-30
+**Phase:** 2
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+The `runWorkflow` contract per ENGINE_SWAP_PROMPT.md Phase 2 §"Deliverables" includes an `onMenu` callback the runner invokes when the model halts and waits for user input. Per BMAD docs § "Why Not Just a Menu?", BMAD's menus are conventional (numbered or `[CODE]`-coded options) — not structurally signaled. The model just *writes the menu in its response* and the SKILL.md instructs it to "halt and wait."
+
+This means the runner has to **infer** when the model halted versus when it was streaming intermediate progress. There's no protocol-level "I'm done; awaiting input" frame to look for.
+
+**Options considered:**
+1. **Have the model emit a structured tool call** (`signalMenuHalt`) when it wants user input. Cleanest contractually, but requires modifying every BMAD skill — violates `<anti_patterns>` "Don't reimplement BMAD's logic."
+2. **Always treat each `streamText()` completion as a halt.** The runner pauses after every model turn and waits for the user. Simple but adds a click for every step file load (the model usually wants to silently chain through several steps).
+3. **Heuristic detection on the model's last response text.** Look for BMAD's two menu conventions plus a free-form fallback. When matched, surface to `onMenu`; when not, treat the response as final and complete the workflow.
+
+**Decision:**
+Option 3. Three patterns:
+- **Pattern A (BMAD canonical):** lines starting with `[CODE]` (e.g. `[C] Continue`, `[E] Edit`). One letter or short code in brackets.
+- **Pattern B (numbered):** lines starting with `1.` or `1)` (1-3 digit number followed by `.` or `)`).
+- **Free-form fallback:** if neither pattern matches but the response ends with `?` or contains words like `select`/`choose`/`pick`/`which`/`please`, treat as a free-form prompt with no parsed options. The renderer then shows a text input box.
+
+**Rationale:**
+- Both BMAD step files and SKILL.md bodies use these conventions consistently — verified by reading `bmad-create-prd/steps-c/step-01-init.md` (`[C] Continue`) and `bmad-dev-story/SKILL.md` (`Choose option [1], [2], [3], or [4]`).
+- The free-form fallback covers the "ask the user a question" case without forcing every BMAD step to use numbered options.
+- When no pattern matches AND the response doesn't look like a question, the runner assumes the workflow is complete (or the model is mid-stream and will respond again on the next turn).
+
+**Consequences:**
+- BMAD skills written today (October 2025 snapshot) all parse correctly. Novel skills using exotic menu shapes might fail to detect — easy to add a new pattern if it surfaces.
+- Renderer can render numbered options as buttons; free-form options as a text input. Both shapes resolve via the same `BmadWorkflowUserChoice` payload.
+- `detectMenu` is exported as a public `__internals` for future tuning + tests cover all three patterns + edge cases (deduplication, empty input, plain-text responses).
+
+---
+
+### D-011: IPC `runWorkflow` bridges `onMenu` callbacks via per-`(invocationId, menuId)` resolver registry
+
+**Date:** 2026-04-30
+**Phase:** 2
+**Status:** Resolved
+**Author:** Sallvain
+
+**Context:**
+The `runWorkflow` runner takes an `onMenu` callback that returns a `Promise<UserChoice>`. The runner blocks on this promise — the workflow can't continue until the user picks an option. When invoked from the renderer over IPC, the callback can't be a plain JS function; we need a way to:
+1. Surface the menu to the renderer
+2. Block the runner's promise
+3. Resolve it when the renderer responds
+
+Multiple workflows may be running concurrently (one per project, possibly more), and a single workflow may surface multiple menus over its lifetime. We need to identify which `onMenu` request a given response belongs to.
+
+**Options considered:**
+1. **Single global pending-menu slot.** Concurrent workflows would interfere; not robust.
+2. **Per-invocation pending-menu map.** Each `runWorkflow` IPC invocation gets a unique `invocationId` (UUID); resolves wait by `(invocationId, menuId)`. The renderer's response carries both. Timeout protects against the renderer never replying (window closed, etc.).
+3. **Streaming back-pressure.** Use a duplex stream where the runner sends "I want input" frames and the renderer sends "here's input" frames. Most general, but requires custom IPC framing — not justified for Phase 2's single-channel pattern.
+
+**Decision:**
+Option 2. Implementation:
+- `runWorkflow` IPC handler generates `invocationId` (UUID) on entry.
+- For each `onMenu` callback, generates a `menuId` (UUID), creates a Promise that resolves on `BMAD_WORKFLOW_MENU_RESPONSE { invocationId, menuId, choice }`, and emits a `bmad:workflowMenuRequest` event to the renderer with the menu data.
+- The handler's pending-menu map is keyed `${invocationId}::${menuId}`. A 10-minute timer auto-resolves with `{ text: '' }` (which the runner treats as abort) if the renderer never responds.
+- On `runWorkflow` completion (or error), any orphaned pending menus from this invocation are cleared.
+
+**Rationale:**
+- Concurrent workflows don't cross-contaminate.
+- The renderer can map `(invocationId, menuId)` pairs to its UI state (which workflow's chat is showing this menu, which menu inside that chat).
+- Timeout makes orphaned promises self-cleanup if a window closes mid-run.
+- Compatible with Aperant's existing IPC pattern (single-channel `invoke` + main→renderer event channels).
+
+**Consequences:**
+- The renderer's `BmadAPI.respondToWorkflowMenu({ invocationId, menuId, choice })` is the response shape.
+- The renderer's `onWorkflowStream` and `onWorkflowMenuRequest` listeners are independent — stream chunks (text deltas, tool calls) flow through the former; structured menu data flows through the latter.
+- A future stretch goal could replace this with a typed RPC stream library (e.g. `electron-trpc`) but the manual implementation is small (~40 lines) and fully tested.

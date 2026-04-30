@@ -591,6 +591,17 @@ export const BMAD_ERROR_CODES = [
   'CUSTOMIZATION_READ_FAILED',
   'WATCHER_INIT_FAILED',
   'WATCHER_NOT_RUNNING',
+  // Phase 2 additions
+  'PROVIDER_ERROR',
+  'UNSUPPORTED_TRACK',
+  'CYCLIC_VARIABLE',
+  'SPRINT_STATUS_NOT_FOUND',
+  'SPRINT_STATUS_VALIDATION_ERROR',
+  'SPRINT_STATUS_WRITE_FAILED',
+  'WORKFLOW_MAX_TURNS',
+  'PERSONA_NOT_FOUND',
+  'PERSONA_PARSE_ERROR',
+  // Generic
   'IO_ERROR',
   'INVALID_INPUT',
   'UNKNOWN',
@@ -726,4 +737,374 @@ export interface BmadPhaseGraph {
 export const BmadPhaseGraphSchema = z.object({
   slices: z.array(BmadPhaseSliceSchema).readonly(),
   anytimeWorkflows: z.array(BmadWorkflowDescriptorSchema).readonly(),
+});
+
+// =============================================================================
+// Phase 2: Persona identity (resolved persona block)
+// =============================================================================
+
+/**
+ * Persona identity at runtime — the merged result of `_bmad/config.toml`
+ * `[agents.bmad-agent-*]` (immutable name/title/module/team) plus the
+ * persona's own `customize.toml` `[agent]` block (icon/role/principles/menu).
+ *
+ * Per BMAD docs § "What Named Agents Buy You": `name` and `title` are
+ * read-only identity. Everything else is customizable via the three-layer
+ * TOML cascade (KAD-5).
+ */
+export interface BmadPersonaIdentity {
+  /** Slug from the hardcoded BmadPersonaSlug union. */
+  readonly slug: BmadPersonaSlug;
+  /** Skill id this persona belongs to (e.g. `bmad-agent-pm`). */
+  readonly skillId: string;
+  /** Read-only identity from `_bmad/config.toml [agents.{skillId}]`. */
+  readonly name: string;
+  readonly title: string;
+  readonly module: string;
+  readonly team: string;
+  readonly description: string;
+  /**
+   * Customizable surface (from per-skill `customize.toml [agent]`, possibly
+   * overridden by `_bmad/custom/{skillId}.toml` and `.user.toml`).
+   */
+  readonly icon: string;
+  readonly role: string;
+  readonly identity: string;
+  readonly communicationStyle: string;
+  readonly principles: readonly string[];
+  readonly persistentFacts: readonly string[];
+  readonly activationStepsPrepend: readonly string[];
+  readonly activationStepsAppend: readonly string[];
+  readonly menu: readonly BmadPersonaMenuItem[];
+  /** Lifecycle phase the persona is anchored to (informational; orchestrator
+   *  uses `bmad-help.csv` rows for routing, not this). */
+  readonly phase: BmadPhase;
+}
+
+export interface BmadPersonaMenuItem {
+  readonly code: string;
+  readonly description: string;
+  /** One of `skill` or `prompt` is set per BMAD docs § "Customization as a First-Class Citizen". */
+  readonly skill?: string;
+  readonly prompt?: string;
+}
+
+export const BmadPersonaMenuItemSchema = z.object({
+  code: z.string().min(1),
+  description: z.string(),
+  skill: z.string().optional(),
+  prompt: z.string().optional(),
+});
+
+export const BmadPersonaIdentitySchema = z.object({
+  slug: BmadPersonaSlugSchema,
+  skillId: z.string().min(1),
+  name: z.string().min(1),
+  title: z.string().min(1),
+  module: z.string().min(1),
+  team: z.string(),
+  description: z.string(),
+  icon: z.string(),
+  role: z.string(),
+  identity: z.string(),
+  communicationStyle: z.string(),
+  principles: z.array(z.string()).readonly(),
+  persistentFacts: z.array(z.string()).readonly(),
+  activationStepsPrepend: z.array(z.string()).readonly(),
+  activationStepsAppend: z.array(z.string()).readonly(),
+  menu: z.array(BmadPersonaMenuItemSchema).readonly(),
+  phase: BmadPhaseSchema,
+});
+
+// =============================================================================
+// Phase 2: Variable context (resolved central config + computed runtime values)
+// =============================================================================
+
+/**
+ * Substitution context passed to `substituteVariables(text, ctx)`. Every
+ * key listed here is a recognized BMAD variable per Phase 2 deliverable §3:
+ * `{project-root}`, `{skill-root}`, `{skill-name}`, `{user_name}`,
+ * `{communication_language}`, `{document_output_language}`,
+ * `{planning_artifacts}`, `{implementation_artifacts}`, `{project_knowledge}`,
+ * `{output_folder}`, `{date}`, plus the optional `{user_skill_level}` from
+ * `bmad-dev-story` (per its SKILL.md Step 4).
+ *
+ * Resolved from `_bmad/config.toml [core]` + `_bmad/{module}/config.yaml` per
+ * BMAD docs § "Step 4: Load Config" of every workflow's activation flow.
+ */
+export interface BmadVariableContext {
+  readonly projectRoot: string;
+  readonly skillRoot: string;
+  readonly skillName: string;
+  readonly userName: string;
+  readonly communicationLanguage: string;
+  readonly documentOutputLanguage: string;
+  readonly planningArtifacts: string;
+  readonly implementationArtifacts: string;
+  readonly projectKnowledge: string;
+  readonly outputFolder: string;
+  readonly date: string;
+  /** Optional, present only for skills that use it (e.g. bmad-dev-story). */
+  readonly userSkillLevel?: string;
+  /** Project name from `_bmad/config.toml [core] project_name`. */
+  readonly projectName: string;
+}
+
+// =============================================================================
+// Phase 2: Workflow runner contracts
+// =============================================================================
+
+/**
+ * One streamed event from a running workflow. The runner emits these via
+ * the `onStreamChunk` callback so the renderer can render incremental text,
+ * tool calls, and step transitions.
+ */
+export const BMAD_WORKFLOW_STREAM_KINDS = [
+  'text-delta',
+  'tool-call',
+  'tool-result',
+  'reasoning',
+  'step-start',
+  'step-finish',
+  'menu',
+  'error',
+  'done',
+] as const;
+export type BmadWorkflowStreamKind = (typeof BMAD_WORKFLOW_STREAM_KINDS)[number];
+
+export interface BmadWorkflowStreamChunk {
+  readonly kind: BmadWorkflowStreamKind;
+  readonly text?: string;
+  readonly toolName?: string;
+  readonly toolArgs?: Record<string, unknown>;
+  readonly toolResult?: unknown;
+  /** Step file context — set on `step-start` / `step-finish` events. */
+  readonly stepFileName?: string;
+  /** Sequence number for ordering on the renderer side. */
+  readonly seq: number;
+  readonly timestamp: number;
+}
+
+/**
+ * Workflow step descriptor — surfaced when the runner loads a new step file.
+ * Mirrors `BmadStepFile` (which describes a step file on disk) plus the
+ * loaded body content the runner injected as a system addendum.
+ */
+export interface BmadWorkflowStep {
+  readonly index: number;
+  readonly fileName: string;
+  readonly absolutePath: string;
+  readonly category: BmadStepCategory;
+  /** The full step file body, post-variable-substitution. */
+  readonly body: string;
+}
+
+export const BmadWorkflowStepSchema = z.object({
+  index: z.number().int().nonnegative(),
+  fileName: z.string().min(1),
+  absolutePath: z.string().min(1),
+  category: z.enum(BMAD_STEP_CATEGORIES),
+  body: z.string(),
+});
+
+/**
+ * Interactive menu surfaced to the renderer when the model halts and waits
+ * for user input. The runner uses a heuristic to detect numbered menus
+ * (e.g., `[C] Continue`, `1. Pick this`) in the model's last response;
+ * when none is detected, the renderer should treat the prompt as a free-form
+ * input and call `resolveMenu({ text: <freeform> })`.
+ */
+export interface BmadWorkflowMenuOption {
+  readonly code: string;
+  readonly label: string;
+}
+
+export interface BmadWorkflowMenu {
+  readonly prompt: string;
+  readonly options: readonly BmadWorkflowMenuOption[];
+}
+
+export const BmadWorkflowMenuOptionSchema = z.object({
+  code: z.string().min(1),
+  label: z.string().min(1),
+});
+
+export const BmadWorkflowMenuSchema = z.object({
+  prompt: z.string(),
+  options: z.array(BmadWorkflowMenuOptionSchema).readonly(),
+});
+
+/**
+ * User's response to a workflow menu. Either `optionCode` (matching one of
+ * the menu options) or free-form `text` (or both — text describes intent,
+ * code disambiguates among matching options).
+ */
+export interface BmadWorkflowUserChoice {
+  readonly optionCode?: string;
+  readonly text: string;
+}
+
+export const BmadWorkflowUserChoiceSchema = z.object({
+  optionCode: z.string().optional(),
+  text: z.string(),
+});
+
+/**
+ * Final result of one `runWorkflow()` invocation. The runner returns this
+ * after the workflow signals completion (model says "complete" or step file
+ * indicates terminal state) or the user aborts.
+ */
+export const BMAD_WORKFLOW_OUTCOMES = [
+  'completed',
+  'aborted',
+  'error',
+  'max_turns',
+] as const;
+export type BmadWorkflowOutcome = (typeof BMAD_WORKFLOW_OUTCOMES)[number];
+
+export interface BmadWorkflowResult {
+  readonly outcome: BmadWorkflowOutcome;
+  readonly skillId: string;
+  readonly turns: number;
+  readonly durationMs: number;
+  readonly outputFiles: readonly string[];
+  readonly error?: BmadError;
+}
+
+export const BmadWorkflowResultSchema = z.object({
+  outcome: z.enum(BMAD_WORKFLOW_OUTCOMES),
+  skillId: z.string().min(1),
+  turns: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+  outputFiles: z.array(z.string()).readonly(),
+  error: BmadErrorSchema.optional(),
+});
+
+// =============================================================================
+// Phase 2: Sprint status (Zod schema for sprint-status.yaml)
+// =============================================================================
+
+/**
+ * Parsed `_bmad-output/implementation-artifacts/sprint-status.yaml`. Schema
+ * sourced from `~/Projects/BMAD-Install-Files/.agents/skills/bmad-sprint-planning/sprint-status-template.yaml`.
+ *
+ * - `developmentStatus` keys: `epic-N` for epic rows, `epic-N-retrospective`
+ *   for the optional retro lane, `N-M-name` for stories. The Kanban groups
+ *   stories under their epic by parsing the leading number.
+ * - Status values: `BMAD_STORY_STATUSES` for stories + `optional`/`done` for
+ *   retros + `backlog`/`in-progress`/`done` for epics. We accept the wider
+ *   `BMAD_DEVELOPMENT_STATUS` union for forward-compat with future modules.
+ */
+export const BMAD_DEVELOPMENT_STATUSES = [
+  'backlog',
+  'ready-for-dev',
+  'in-progress',
+  'review',
+  'done',
+  'optional',
+] as const;
+export type BmadDevelopmentStatus = (typeof BMAD_DEVELOPMENT_STATUSES)[number];
+export const BmadDevelopmentStatusSchema = z.enum(BMAD_DEVELOPMENT_STATUSES);
+
+export interface BmadSprintStatus {
+  readonly generated: string;
+  readonly lastUpdated: string;
+  readonly project: string;
+  readonly projectKey: string;
+  readonly trackingSystem: string;
+  readonly storyLocation: string;
+  readonly developmentStatus: Readonly<Record<string, BmadDevelopmentStatus>>;
+}
+
+export const BmadSprintStatusSchema = z.object({
+  generated: z.string(),
+  lastUpdated: z.string(),
+  project: z.string(),
+  projectKey: z.string(),
+  trackingSystem: z.string(),
+  storyLocation: z.string(),
+  developmentStatus: z.record(z.string(), BmadDevelopmentStatusSchema),
+});
+
+// =============================================================================
+// Phase 2: Orchestrator events
+// =============================================================================
+
+/**
+ * Events emitted by `BmadOrchestrator` as the project progresses through
+ * the four lifecycle phases. The renderer subscribes via IPC; the orchestrator
+ * recomputes state on every `manifest-changed` / `sprint-status-changed` /
+ * `planning-artifact-changed` watcher event.
+ */
+export const BMAD_ORCHESTRATOR_EVENT_KINDS = [
+  'phase-progressed',
+  'workflow-required',
+  'workflow-recommended',
+  'workflow-completed',
+  'phase-complete',
+  'track-complete',
+] as const;
+export type BmadOrchestratorEventKind = (typeof BMAD_ORCHESTRATOR_EVENT_KINDS)[number];
+
+export interface BmadWorkflowAction {
+  readonly skillId: string;
+  readonly action: string;
+  readonly displayName: string;
+  readonly menuCode: string;
+  readonly description: string;
+  readonly phase: BmadPhase;
+  readonly required: boolean;
+  readonly persona: BmadPersonaSlug | null;
+  /** Why the orchestrator is recommending this — sourced from `bmad-help.csv`
+   *  `after`/`before` columns + the project's current artifact state. */
+  readonly rationale: string;
+}
+
+export const BmadWorkflowActionSchema = z.object({
+  skillId: z.string().min(1),
+  action: z.string(),
+  displayName: z.string(),
+  menuCode: z.string(),
+  description: z.string(),
+  phase: BmadPhaseSchema,
+  required: z.boolean(),
+  persona: BmadPersonaSlugSchema.nullable(),
+  rationale: z.string(),
+});
+
+export interface BmadOrchestratorEvent {
+  readonly kind: BmadOrchestratorEventKind;
+  readonly projectRoot: string;
+  readonly currentPhase: BmadPhase;
+  readonly action?: BmadWorkflowAction;
+  readonly timestamp: number;
+}
+
+export const BmadOrchestratorEventSchema = z.object({
+  kind: z.enum(BMAD_ORCHESTRATOR_EVENT_KINDS),
+  projectRoot: z.string().min(1),
+  currentPhase: BmadPhaseSchema,
+  action: BmadWorkflowActionSchema.optional(),
+  timestamp: z.number().int().nonnegative(),
+});
+
+/**
+ * The orchestrator's "what now?" snapshot. Computed on demand; updated on
+ * every relevant watcher event. Mirrors `bmad-help`'s structured output shape
+ * per the Phase 4 sidebar's data contract.
+ */
+export interface BmadHelpRecommendation {
+  readonly currentPhase: BmadPhase;
+  readonly required: BmadWorkflowAction | null;
+  readonly recommended: readonly BmadWorkflowAction[];
+  readonly completed: readonly BmadWorkflowAction[];
+  readonly track: BmadTrack;
+}
+
+export const BmadHelpRecommendationSchema = z.object({
+  currentPhase: BmadPhaseSchema,
+  required: BmadWorkflowActionSchema.nullable(),
+  recommended: z.array(BmadWorkflowActionSchema).readonly(),
+  completed: z.array(BmadWorkflowActionSchema).readonly(),
+  track: BmadTrackSchema,
 });

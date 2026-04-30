@@ -12,6 +12,7 @@
     "TOML_PARSE_ERROR": "Impossible d'analyser un fichier TOML : {{message}}",
     "YAML_PARSE_ERROR": "Impossible d'analyser un fichier YAML : {{message}}",
     "SKILL_NOT_FOUND": "La compétence `{{skillId}}` n'est pas installée dans ce projet.",
+    "SKILL_PARSE_ERROR": "Impossible d'analyser la compétence `{{skillId}}` : {{message}}",
     "STEP_FILE_NOT_FOUND": "Fichier d'étape manquant sur le disque : {{path}}",
     "STEP_LOAD_VIOLATION": "Les fichiers d'étapes doivent être chargés un par un. Préchargement refusé.",
     "PATH_OUT_OF_PROJECT": "Le chemin demandé est hors de ce projet BMad.",
@@ -20,6 +21,15 @@
     "CUSTOMIZATION_READ_FAILED": "Impossible de lire le fichier de personnalisation : {{message}}",
     "WATCHER_INIT_FAILED": "Impossible de démarrer la surveillance des fichiers BMad : {{message}}",
     "WATCHER_NOT_RUNNING": "La surveillance des fichiers BMad n'est pas active pour ce projet.",
+    "PROVIDER_ERROR": "Le fournisseur d'IA n'a pas pu être initialisé : {{message}}",
+    "UNSUPPORTED_TRACK": "Ce parcours n'est pas encore pris en charge. Choisissez BMad Method ou Enterprise.",
+    "CYCLIC_VARIABLE": "Une variable de votre configuration se référence en boucle : {{message}}",
+    "SPRINT_STATUS_NOT_FOUND": "Le fichier de statut du sprint n'existe pas encore. Exécutez d'abord `bmad-sprint-planning`.",
+    "SPRINT_STATUS_VALIDATION_ERROR": "Le fichier de statut du sprint n'a pas passé la validation : {{message}}",
+    "SPRINT_STATUS_WRITE_FAILED": "Impossible d'enregistrer le statut du sprint : {{message}}",
+    "WORKFLOW_MAX_TURNS": "Le workflow s'est arrêté — trop de tours sans terminer. Essayez de le diviser en étapes plus petites.",
+    "PERSONA_NOT_FOUND": "Le persona `{{slug}}` n'est pas disponible dans ce projet. Le module BMM n'est peut-être pas installé.",
+    "PERSONA_PARSE_ERROR": "La définition du persona est invalide : {{message}}",
     "IO_ERROR": "Erreur du système de fichiers : {{message}}",
     "INVALID_INPUT": "Entrée invalide.",
     "UNKNOWN": "Une erreur BMad inconnue s'est produite."
@@ -31,6 +41,72 @@
       "personaLabel": "Persona",
       "stepsLabel": "Étapes",
       "customizationKeysLabel": "Clés de personnalisation"
+    }
+  },
+  "personas": {
+    "mary": {
+      "name": "Mary",
+      "title": "Analyste métier"
+    },
+    "paige": {
+      "name": "Paige",
+      "title": "Rédactrice technique"
+    },
+    "john": {
+      "name": "John",
+      "title": "Product Manager"
+    },
+    "sally": {
+      "name": "Sally",
+      "title": "UX Designer"
+    },
+    "winston": {
+      "name": "Winston",
+      "title": "Architecte système"
+    },
+    "amelia": {
+      "name": "Amelia",
+      "title": "Ingénieure logicielle senior"
+    }
+  },
+  "phases": {
+    "1-analysis": "Analyse",
+    "2-planning": "Planification",
+    "3-solutioning": "Conception",
+    "4-implementation": "Implémentation",
+    "anytime": "À tout moment"
+  },
+  "tracks": {
+    "quick": "Flux Rapide",
+    "method": "BMad Method",
+    "enterprise": "Entreprise"
+  },
+  "workflow": {
+    "starting": "Démarrage du workflow {{skillId}}…",
+    "stepStart": "Étape chargée : {{fileName}}",
+    "menuPrompt": "Choisissez une option pour continuer :",
+    "menuFreeForm": "Répondez pour continuer :",
+    "completed": "Workflow terminé.",
+    "aborted": "Workflow annulé.",
+    "errored": "Le workflow s'est arrêté avec une erreur : {{message}}",
+    "maxTurns": "Le workflow a atteint le nombre maximum de tours. Reprenez là où il s'est arrêté."
+  },
+  "help": {
+    "currentPhase": "Phase actuelle",
+    "required": "Requis",
+    "recommended": "Recommandé",
+    "completed": "Terminé",
+    "noNextRequired": "Aucune action requise — vous pouvez avancer ou choisir parmi les Recommandés.",
+    "trackComplete": "Toutes les phases sont terminées. C'est l'heure d'une rétrospective !"
+  },
+  "sprintStatus": {
+    "developmentStatus": {
+      "backlog": "Backlog",
+      "ready-for-dev": "Prêt pour développement",
+      "in-progress": "En cours",
+      "review": "Revue",
+      "done": "Terminé",
+      "optional": "Optionnel"
     }
   }
 }

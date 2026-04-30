@@ -12,6 +12,7 @@
     "TOML_PARSE_ERROR": "Could not parse a TOML file: {{message}}",
     "YAML_PARSE_ERROR": "Could not parse a YAML file: {{message}}",
     "SKILL_NOT_FOUND": "Skill `{{skillId}}` is not installed in this project.",
+    "SKILL_PARSE_ERROR": "Skill `{{skillId}}` could not be parsed: {{message}}",
     "STEP_FILE_NOT_FOUND": "Step file is missing on disk: {{path}}",
     "STEP_LOAD_VIOLATION": "Step files must be loaded one at a time. Refusing to pre-load.",
     "PATH_OUT_OF_PROJECT": "The requested path is outside this BMad project.",
@@ -20,6 +21,15 @@
     "CUSTOMIZATION_READ_FAILED": "Could not read customization file: {{message}}",
     "WATCHER_INIT_FAILED": "Could not start the BMad file watcher: {{message}}",
     "WATCHER_NOT_RUNNING": "The BMad file watcher is not running for this project.",
+    "PROVIDER_ERROR": "AI provider could not be initialized: {{message}}",
+    "UNSUPPORTED_TRACK": "This track isn't supported yet. Pick BMad Method or Enterprise.",
+    "CYCLIC_VARIABLE": "A variable in your config references itself in a loop: {{message}}",
+    "SPRINT_STATUS_NOT_FOUND": "Sprint status file doesn't exist yet. Run `bmad-sprint-planning` first.",
+    "SPRINT_STATUS_VALIDATION_ERROR": "Sprint status file failed validation: {{message}}",
+    "SPRINT_STATUS_WRITE_FAILED": "Could not save sprint status: {{message}}",
+    "WORKFLOW_MAX_TURNS": "Workflow stopped — too many turns without finishing. Try splitting it into smaller steps.",
+    "PERSONA_NOT_FOUND": "Persona `{{slug}}` isn't available in this project. The BMM module may not be installed.",
+    "PERSONA_PARSE_ERROR": "Persona definition is invalid: {{message}}",
     "IO_ERROR": "Filesystem error: {{message}}",
     "INVALID_INPUT": "Invalid input.",
     "UNKNOWN": "An unknown BMad error occurred."
@@ -31,6 +41,72 @@
       "personaLabel": "Persona",
       "stepsLabel": "Steps",
       "customizationKeysLabel": "Customization keys"
+    }
+  },
+  "personas": {
+    "mary": {
+      "name": "Mary",
+      "title": "Business Analyst"
+    },
+    "paige": {
+      "name": "Paige",
+      "title": "Technical Writer"
+    },
+    "john": {
+      "name": "John",
+      "title": "Product Manager"
+    },
+    "sally": {
+      "name": "Sally",
+      "title": "UX Designer"
+    },
+    "winston": {
+      "name": "Winston",
+      "title": "System Architect"
+    },
+    "amelia": {
+      "name": "Amelia",
+      "title": "Senior Software Engineer"
+    }
+  },
+  "phases": {
+    "1-analysis": "Analysis",
+    "2-planning": "Planning",
+    "3-solutioning": "Solutioning",
+    "4-implementation": "Implementation",
+    "anytime": "Anytime"
+  },
+  "tracks": {
+    "quick": "Quick Flow",
+    "method": "BMad Method",
+    "enterprise": "Enterprise"
+  },
+  "workflow": {
+    "starting": "Starting workflow {{skillId}}…",
+    "stepStart": "Loaded step: {{fileName}}",
+    "menuPrompt": "Choose an option to continue:",
+    "menuFreeForm": "Reply to continue:",
+    "completed": "Workflow complete.",
+    "aborted": "Workflow cancelled.",
+    "errored": "Workflow stopped with an error: {{message}}",
+    "maxTurns": "Workflow reached the maximum number of turns. Pick up from where it left off."
+  },
+  "help": {
+    "currentPhase": "Current phase",
+    "required": "Required",
+    "recommended": "Recommended",
+    "completed": "Completed",
+    "noNextRequired": "No required action — you can move on or pick something from Recommended.",
+    "trackComplete": "All phases done. Time for a retrospective!"
+  },
+  "sprintStatus": {
+    "developmentStatus": {
+      "backlog": "Backlog",
+      "ready-for-dev": "Ready for Dev",
+      "in-progress": "In Progress",
+      "review": "Review",
+      "done": "Done",
+      "optional": "Optional"
     }
   }
 }

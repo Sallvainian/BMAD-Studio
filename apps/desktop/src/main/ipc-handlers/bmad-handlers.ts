@@ -35,13 +35,27 @@ import {
   bmadFail,
   bmadOk,
   BMAD_CUSTOMIZATION_SCOPES,
+  BMAD_DEVELOPMENT_STATUSES,
+  BMAD_PERSONA_SLUGS,
+  BMAD_TRACKS,
+  type BmadHelpRecommendation,
   type BmadIpcResult,
   type BmadModule,
+  type BmadOrchestratorEvent,
+  type BmadPersonaIdentity,
+  type BmadPersonaSlug,
   type BmadPhaseGraph,
   type BmadProjectSummary,
   type BmadSkill,
   type BmadSkillManifestEntry,
+  type BmadSprintStatus,
+  type BmadVariableContext,
   type BmadWorkflowDescriptor,
+  type BmadWorkflowMenu,
+  type BmadWorkflowResult,
+  type BmadWorkflowStep,
+  type BmadWorkflowStreamChunk,
+  type BmadWorkflowUserChoice,
 } from '../../shared/types/bmad';
 
 import {
@@ -75,6 +89,24 @@ import {
   startBmadFileWatcher,
   type BmadFileWatcherHandle,
 } from '../ai/bmad/file-watcher';
+import { loadAllPersonas, loadPersona, PersonaError } from '../ai/bmad/persona';
+import { buildVariableContext, VariableSubstitutionError } from '../ai/bmad/variables';
+import { loadStepByName, StepLoaderError } from '../ai/bmad/step-loader';
+import {
+  readSprintStatus,
+  SprintStatusError,
+  updateStoryStatus,
+  writeSprintStatus,
+} from '../ai/bmad/sprint-status';
+import {
+  computeOrchestratorState,
+  createOrchestratorEmitter,
+  OrchestratorError,
+} from '../ai/bmad/orchestrator';
+import { runHelpSync, HelpRunnerError } from '../ai/bmad/help-runner';
+import { runWorkflow, WorkflowRunnerError } from '../ai/bmad/workflow-runner';
+import type { ClaudeProfile } from '../../shared/types/agent';
+import { randomUUID } from 'node:crypto';
 
 // =============================================================================
 // Input schemas
@@ -138,6 +170,79 @@ const WatcherStartInput = z.object({
   usePolling: z.boolean().optional(),
 });
 
+// ─── Phase 2 input schemas ─────────────────────────────────────────────────
+
+const LoadPersonaInput = z.object({
+  projectRoot: z.string().min(1),
+  slug: z.enum(BMAD_PERSONA_SLUGS),
+});
+
+const VariableContextInput = z.object({
+  projectRoot: z.string().min(1),
+  skillDir: z.string().min(1),
+  skillName: z.string().min(1).optional(),
+  module: z.string().min(1).optional(),
+});
+
+const LoadStepInput = z.object({
+  projectRoot: z.string().min(1),
+  skillId: z.string().min(1),
+  stepFileName: z.string().min(1),
+  outputFilePath: z.string().min(1).optional(),
+});
+
+const WriteSprintStatusInput = z.object({
+  projectRoot: z.string().min(1),
+  status: z.object({
+    generated: z.string(),
+    lastUpdated: z.string(),
+    project: z.string(),
+    projectKey: z.string(),
+    trackingSystem: z.string(),
+    storyLocation: z.string(),
+    developmentStatus: z.record(z.string(), z.enum(BMAD_DEVELOPMENT_STATUSES)),
+  }),
+});
+
+const UpdateStoryStatusInput = z.object({
+  projectRoot: z.string().min(1),
+  storyKey: z.string().min(1),
+  status: z.enum(BMAD_DEVELOPMENT_STATUSES),
+});
+
+const TrackInput = z.object({
+  projectRoot: z.string().min(1),
+  track: z.enum(BMAD_TRACKS),
+});
+
+const RunWorkflowInput = z.object({
+  projectRoot: z.string().min(1),
+  skillName: z.string().min(1),
+  personaSlug: z.enum(BMAD_PERSONA_SLUGS).optional(),
+  activeProfile: z.object({
+    id: z.string().min(1),
+  }).passthrough(), // ClaudeProfile has many optional fields; we trust shape upstream.
+  args: z.array(z.string()).optional(),
+  maxTurns: z.number().int().positive().optional(),
+  initialMessages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string(),
+      }),
+    )
+    .optional(),
+});
+
+const MenuResponseInput = z.object({
+  invocationId: z.string().min(1),
+  menuId: z.string().min(1),
+  choice: z.object({
+    optionCode: z.string().optional(),
+    text: z.string(),
+  }),
+});
+
 // =============================================================================
 // Watcher registry (one per project)
 // =============================================================================
@@ -184,6 +289,28 @@ function classifyError(err: unknown): BmadIpcResult<never> {
   if (err instanceof InstallerError) {
     return bmadFail(err.code, err.message, err.details);
   }
+  if (err instanceof PersonaError) {
+    return bmadFail(err.code, err.message, err.details);
+  }
+  if (err instanceof VariableSubstitutionError) {
+    return bmadFail(err.code, err.message, undefined);
+  }
+  if (err instanceof StepLoaderError) {
+    return bmadFail(err.code, err.message, err.details);
+  }
+  if (err instanceof SprintStatusError) {
+    return bmadFail(err.code, err.message, err.details);
+  }
+  if (err instanceof OrchestratorError) {
+    return bmadFail(err.code === 'CONFIG_LOAD_FAILED' ? 'IO_ERROR' : err.code, err.message);
+  }
+  if (err instanceof HelpRunnerError) {
+    return bmadFail(err.code === 'CONFIG_LOAD_FAILED' ? 'IO_ERROR' : err.code, err.message);
+  }
+  if (err instanceof WorkflowRunnerError) {
+    const code = err.code === 'PERSONA_MISMATCH' ? 'INVALID_INPUT' : err.code;
+    return bmadFail(code, err.message, err.details);
+  }
   if (err instanceof Error) {
     appLog.error('[bmad-handlers] unhandled error:', err);
     return bmadFail('UNKNOWN', err.message);
@@ -191,6 +318,27 @@ function classifyError(err: unknown): BmadIpcResult<never> {
   appLog.error('[bmad-handlers] non-error throw:', err);
   return bmadFail('UNKNOWN', 'Non-Error value thrown', err);
 }
+
+// =============================================================================
+// Phase 2 — pending menu request registry
+// =============================================================================
+
+interface PendingMenu {
+  readonly menuId: string;
+  readonly resolver: (choice: BmadWorkflowUserChoice) => void;
+  readonly timeoutHandle: NodeJS.Timeout;
+}
+
+/**
+ * Pending menu requests indexed by `${invocationId}::${menuId}`. The runner
+ * registers a resolver here when `onMenu` fires; the renderer's
+ * `BMAD_WORKFLOW_MENU_RESPONSE` handler retrieves and resolves it.
+ *
+ * Menus expire after 10 minutes by default — if the renderer never replies
+ * (window closed, etc.) the runner aborts cleanly.
+ */
+const pendingMenus = new Map<string, PendingMenu>();
+const MENU_RESPONSE_TIMEOUT_MS = 10 * 60 * 1000;
 
 // =============================================================================
 // registerBmadHandlers
@@ -563,6 +711,291 @@ export function registerBmadHandlers(deps: RegisterBmadHandlersDeps): void {
       } catch (err) {
         return classifyError(err);
       }
+    },
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Phase 2 — Persona / variable / step / sprint-status / orchestrator / help
+  // ──────────────────────────────────────────────────────────────────────────
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_LIST_PERSONAS,
+    async (_e, payload): Promise<BmadIpcResult<readonly BmadPersonaIdentity[]>> => {
+      const v = validate(ProjectRootInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const personas = await loadAllPersonas({
+          projectRoot: v.data.projectRoot,
+          skillRegistry,
+        });
+        return bmadOk(personas);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_LOAD_PERSONA,
+    async (_e, payload): Promise<BmadIpcResult<BmadPersonaIdentity>> => {
+      const v = validate(LoadPersonaInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const persona = await loadPersona(v.data.slug, {
+          projectRoot: v.data.projectRoot,
+          skillRegistry,
+        });
+        return bmadOk(persona);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_GET_VARIABLE_CONTEXT,
+    async (_e, payload): Promise<BmadIpcResult<BmadVariableContext>> => {
+      const v = validate(VariableContextInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const ctx = await buildVariableContext(v.data);
+        return bmadOk(ctx);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_LOAD_STEP,
+    async (_e, payload): Promise<BmadIpcResult<BmadWorkflowStep>> => {
+      const v = validate(LoadStepInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const skill = await skillRegistry.load(v.data.skillId, {
+          projectRoot: v.data.projectRoot,
+        });
+        const variables = await buildVariableContext({
+          projectRoot: v.data.projectRoot,
+          skillDir: skill.skillDir,
+          skillName: skill.canonicalId,
+          module: skill.module,
+        });
+        const step = await loadStepByName({
+          skill,
+          fileName: v.data.stepFileName,
+          variables,
+          ...(v.data.outputFilePath ? { outputFilePath: v.data.outputFilePath } : {}),
+        });
+        return bmadOk(step);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_WRITE_SPRINT_STATUS,
+    async (_e, payload): Promise<BmadIpcResult<{ written: true }>> => {
+      const v = validate(WriteSprintStatusInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        // Cast: zod's record schema produces a type narrower than the union
+        // form expected by writeSprintStatus.
+        await writeSprintStatus({
+          projectRoot: v.data.projectRoot,
+          status: v.data.status as BmadSprintStatus,
+        });
+        return bmadOk({ written: true });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_UPDATE_STORY_STATUS,
+    async (_e, payload): Promise<BmadIpcResult<BmadSprintStatus>> => {
+      const v = validate(UpdateStoryStatusInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const next = await updateStoryStatus({
+          projectRoot: v.data.projectRoot,
+          storyKey: v.data.storyKey,
+          status: v.data.status,
+        });
+        return bmadOk(next);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  // Re-read the sprint-status file (separate from BMAD_READ_SPRINT_STATUS,
+  // which returns the raw YAML; this returns the typed shape).
+  ipcMain.handle(
+    'bmad:readSprintStatusTyped',
+    async (_e, payload): Promise<BmadIpcResult<BmadSprintStatus | null>> => {
+      const v = validate(ProjectRootInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const status = await readSprintStatus({
+          projectRoot: v.data.projectRoot,
+          tolerateMissing: true,
+        });
+        return bmadOk(status);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_GET_HELP_RECOMMENDATION,
+    async (_e, payload): Promise<BmadIpcResult<BmadHelpRecommendation>> => {
+      const v = validate(TrackInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const rec = await runHelpSync({
+          projectRoot: v.data.projectRoot,
+          track: v.data.track,
+        });
+        return bmadOk(rec);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_GET_ORCHESTRATOR_STATE,
+    async (_e, payload): Promise<BmadIpcResult<BmadHelpRecommendation>> => {
+      const v = validate(TrackInput, payload);
+      if (!v.ok) return v.result;
+      try {
+        const emitter = createOrchestratorEmitter();
+        emitter.on('phase-progressed', (event: BmadOrchestratorEvent) => {
+          const window = deps.getMainWindow();
+          if (window && !window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.BMAD_ORCHESTRATOR_EVENT, event);
+          }
+        });
+        const state = await computeOrchestratorState({
+          projectRoot: v.data.projectRoot,
+          track: v.data.track,
+          emitter,
+        });
+        return bmadOk(state);
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_RUN_WORKFLOW,
+    async (event, payload): Promise<BmadIpcResult<BmadWorkflowResult & { invocationId: string }>> => {
+      const v = validate(RunWorkflowInput, payload);
+      if (!v.ok) return v.result;
+      const invocationId = randomUUID();
+
+      try {
+        const window = deps.getMainWindow();
+        const senderId = event.sender.id;
+        const sendChunk = (chunk: BmadWorkflowStreamChunk) => {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send(IPC_CHANNELS.BMAD_WORKFLOW_STREAM, {
+              invocationId,
+              senderId,
+              chunk,
+            });
+          }
+        };
+
+        let persona: BmadPersonaIdentity | undefined;
+        if (v.data.personaSlug) {
+          persona = await loadPersona(v.data.personaSlug as BmadPersonaSlug, {
+            projectRoot: v.data.projectRoot,
+            skillRegistry,
+          });
+        }
+
+        // Bridge `onMenu` callbacks through the IPC layer. The runner's
+        // promise resolves when the renderer responds via
+        // BMAD_WORKFLOW_MENU_RESPONSE for this (invocationId, menuId) pair.
+        const onMenu = async (menu: BmadWorkflowMenu): Promise<BmadWorkflowUserChoice> => {
+          const menuId = randomUUID();
+          const key = `${invocationId}::${menuId}`;
+          const promise = new Promise<BmadWorkflowUserChoice>((resolve) => {
+            const timeoutHandle = setTimeout(() => {
+              pendingMenus.delete(key);
+              resolve({ text: '' }); // empty text → runner treats as abort
+            }, MENU_RESPONSE_TIMEOUT_MS);
+            pendingMenus.set(key, { menuId, resolver: resolve, timeoutHandle });
+          });
+          // Surface the menu to the renderer via the stream channel —
+          // the menu IS one kind of stream chunk (already covered by
+          // `kind: 'menu'`) but we attach the menuId so the renderer can
+          // reply via BMAD_WORKFLOW_MENU_RESPONSE.
+          sendChunk({
+            kind: 'menu',
+            text: menu.prompt,
+            seq: -1,
+            timestamp: Date.now(),
+          });
+          // Plus an additional sentinel chunk carrying the menu structure.
+          // The renderer tracks (invocationId, menuId) pairs to resolve.
+          if (window && !window.isDestroyed()) {
+            window.webContents.send('bmad:workflowMenuRequest', {
+              invocationId,
+              menuId,
+              menu,
+            });
+          }
+          return promise;
+        };
+
+        const profile = v.data.activeProfile as unknown as ClaudeProfile;
+        const result = await runWorkflow({
+          skillName: v.data.skillName,
+          ...(persona ? { persona } : {}),
+          projectRoot: v.data.projectRoot,
+          activeProfile: profile,
+          ...(v.data.args ? { args: v.data.args } : {}),
+          ...(v.data.maxTurns !== undefined ? { maxTurns: v.data.maxTurns } : {}),
+          ...(v.data.initialMessages ? { initialMessages: v.data.initialMessages } : {}),
+          onStreamChunk: sendChunk,
+          onMenu,
+          skillRegistry,
+        });
+
+        // Clean up any orphaned pending menus from this invocation.
+        for (const [key, pending] of [...pendingMenus.entries()]) {
+          if (key.startsWith(`${invocationId}::`)) {
+            clearTimeout(pending.timeoutHandle);
+            pendingMenus.delete(key);
+          }
+        }
+
+        return bmadOk({ ...result, invocationId });
+      } catch (err) {
+        return classifyError(err);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BMAD_WORKFLOW_MENU_RESPONSE,
+    async (_e, payload): Promise<BmadIpcResult<{ resolved: boolean }>> => {
+      const v = validate(MenuResponseInput, payload);
+      if (!v.ok) return v.result;
+      const key = `${v.data.invocationId}::${v.data.menuId}`;
+      const pending = pendingMenus.get(key);
+      if (!pending) return bmadOk({ resolved: false });
+      clearTimeout(pending.timeoutHandle);
+      pendingMenus.delete(key);
+      pending.resolver(v.data.choice);
+      return bmadOk({ resolved: true });
     },
   );
 }

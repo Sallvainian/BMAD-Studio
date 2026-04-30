@@ -354,7 +354,21 @@ const browserMockAPI: ElectronAPI = {
     stopWatcher: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
     onFileEvent: () => () => {},
     onInstallerStream: () => () => {},
-    debugDumpSkills: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } })
+    debugDumpSkills: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    // ─── Phase 2 ──────────────────────────────────────────────────────────
+    listPersonas: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    loadPersona: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getVariableContext: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    loadStep: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    writeSprintStatus: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    updateStoryStatus: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getHelpRecommendation: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getOrchestratorState: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runWorkflow: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    respondToWorkflowMenu: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    onWorkflowStream: () => () => {},
+    onWorkflowMenuRequest: () => () => {},
+    onOrchestratorEvent: () => () => {}
   },
 
   // Claude Code Operations

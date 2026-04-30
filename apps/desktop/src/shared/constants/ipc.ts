@@ -609,8 +609,10 @@ export const IPC_CHANNELS = {
   BMAD_READ_CUSTOMIZATION: 'bmad:readCustomization',
   BMAD_WRITE_CUSTOMIZATION: 'bmad:writeCustomization',
 
-  // Sprint status / story files (read-only in Phase 1; write in Phase 2)
+  // Sprint status / story files
   BMAD_READ_SPRINT_STATUS: 'bmad:readSprintStatus',
+  BMAD_WRITE_SPRINT_STATUS: 'bmad:writeSprintStatus',          // Phase 2
+  BMAD_UPDATE_STORY_STATUS: 'bmad:updateStoryStatus',          // Phase 2 (drag-drop write)
   BMAD_READ_STORY_FILE: 'bmad:readStoryFile',
 
   // Installer
@@ -622,6 +624,19 @@ export const IPC_CHANNELS = {
   BMAD_WATCHER_STOP: 'bmad:watcherStop',
   BMAD_FILE_EVENT: 'bmad:fileEvent',                // Main → renderer event
   BMAD_INSTALLER_STREAM: 'bmad:installerStream',    // Main → renderer event
+
+  // Phase 2: workflow runtime + orchestrator + help
+  BMAD_LIST_PERSONAS: 'bmad:listPersonas',
+  BMAD_LOAD_PERSONA: 'bmad:loadPersona',
+  BMAD_GET_VARIABLE_CONTEXT: 'bmad:getVariableContext',
+  BMAD_LOAD_STEP: 'bmad:loadStep',
+  BMAD_RUN_WORKFLOW: 'bmad:runWorkflow',                       // Long-running; emits stream events
+  BMAD_WORKFLOW_STREAM: 'bmad:workflowStream',                 // Main → renderer streamed chunks
+  BMAD_WORKFLOW_MENU_RESPONSE: 'bmad:workflowMenuResponse',    // Renderer → main user pick
+  BMAD_GET_HELP_RECOMMENDATION: 'bmad:getHelpRecommendation',  // Synchronous help (no model)
+  BMAD_RUN_HELP_AI: 'bmad:runHelpAI',                          // AI-augmented help
+  BMAD_GET_ORCHESTRATOR_STATE: 'bmad:getOrchestratorState',
+  BMAD_ORCHESTRATOR_EVENT: 'bmad:orchestratorEvent',           // Main → renderer
 
   // Phase 1 dev affordance
   BMAD_DEBUG_DUMP_SKILLS: 'bmad:debugDumpSkills'
