@@ -1,6 +1,6 @@
 name: Prepare Release
 
-# Triggers when code is pushed to main (e.g., merging develop → main)
+# Triggers when release metadata is pushed to main
 # If package.json version is newer than the latest tag:
 # 1. Validates CHANGELOG.md has an entry for this version (FAILS if missing)
 # 2. Extracts release notes from CHANGELOG.md
@@ -35,7 +35,7 @@ jobs:
           if [ -z "${{ secrets.PAT_TOKEN }}" ]; then
             echo "::error::PAT_TOKEN secret is not configured."
             echo "::error::This secret is required for automatic release triggering."
-            echo "::error::See https://github.com/AndyMik90/Auto-Claude/pull/1043 for setup instructions."
+            echo "::error::See https://github.com/Sallvainian/BMAD-Studio/actions/secrets for setup."
             exit 1
           fi
 

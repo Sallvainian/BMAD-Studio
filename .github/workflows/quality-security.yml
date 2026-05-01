@@ -11,7 +11,7 @@ on:
       - 'package.json'
       - '.github/workflows/quality-security.yml'
   pull_request:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - 'apps/desktop/**'
       - 'package.json'

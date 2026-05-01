@@ -1,6 +1,6 @@
 name: Beta Release
 
-# Manual trigger for beta releases from develop branch
+# Manual trigger for beta releases from main
 on:
   workflow_dispatch:
     inputs:
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop
+          ref: main
 
       - name: Create and push tag
         if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -71,8 +71,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use tag for real releases, develop branch for dry runs
-          ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
+          # Use tag for real releases, main branch for dry runs
+          ref: ${{ github.event.inputs.dry_run == 'true' && 'main' || format('v{0}', needs.create-tag.outputs.version) }}
 
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
@@ -123,8 +123,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use tag for real releases, develop branch for dry runs
-          ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
+          # Use tag for real releases, main branch for dry runs
+          ref: ${{ github.event.inputs.dry_run == 'true' && 'main' || format('v{0}', needs.create-tag.outputs.version) }}
 
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
@@ -177,8 +177,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use tag for real releases, develop branch for dry runs
-          ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
+          # Use tag for real releases, main branch for dry runs
+          ref: ${{ github.event.inputs.dry_run == 'true' && 'main' || format('v{0}', needs.create-tag.outputs.version) }}
 
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
@@ -328,8 +328,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use tag for real releases, develop branch for dry runs
-          ref: ${{ github.event.inputs.dry_run == 'true' && 'develop' || format('v{0}', needs.create-tag.outputs.version) }}
+          # Use tag for real releases, main branch for dry runs
+          ref: ${{ github.event.inputs.dry_run == 'true' && 'main' || format('v{0}', needs.create-tag.outputs.version) }}
 
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
@@ -558,7 +558,7 @@ jobs:
             3. Enable "Beta Updates" toggle
 
             ### Reporting Issues
-            Please report any issues at https://github.com/AndyMik90/Auto-Claude/issues
+            Please report any issues at https://github.com/Sallvainian/BMAD-Studio/issues
 
             ---
 
