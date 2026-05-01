@@ -56,6 +56,9 @@ lerna-debug.log*
 # ===========================
 # Auto Claude Generated
 # ===========================
+.agent/
+.agents/
+.cursor/
 .auto-claude/
 .aperant/
 .planning/
