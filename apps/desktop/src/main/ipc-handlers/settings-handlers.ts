@@ -25,6 +25,7 @@ import type { APIProfile } from '../../shared/types/profile';
 import type { ClaudeProfile } from '../../shared/types/agent';
 import { loadProfilesFile } from '../utils/profile-manager';
 import { loadProfileStore } from '../claude-profile/profile-storage';
+import { PROMPTS_DIR_MARKER_FILE } from '../ai/prompts/prompt-loader';
 
 const settingsPath = getSettingsPath();
 
@@ -250,8 +251,7 @@ const detectAutoBuildSourcePath = (): string | null => {
   }
 
   for (const p of possiblePaths) {
-    // Use planner.md as marker - this is the file needed for task planning
-    const markerPath = path.join(p, 'planner.md');
+    const markerPath = path.join(p, PROMPTS_DIR_MARKER_FILE);
     const exists = existsSync(p) && existsSync(markerPath);
 
     if (debug) {

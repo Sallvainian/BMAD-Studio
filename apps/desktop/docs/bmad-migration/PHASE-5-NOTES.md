@@ -1,6 +1,6 @@
 ## Phase 5 — Customization UI + Module Manager + Migration + Cleanup
 
-**Status:** ✅ Gate-fix pass complete; legacy cleanup scoped as a Phase 5 follow-up
+**Status:** ✅ Gate-fix pass and scoped legacy cleanup follow-up complete
 
 **Operating contract:** [`ENGINE_SWAP_PROMPT.md`](../../../../ENGINE_SWAP_PROMPT.md)
 **Inventory:** [`INVENTORY.md`](./INVENTORY.md)
@@ -36,11 +36,22 @@
   - `src/renderer/components/bmad/__tests__/BmadModuleManager.test.tsx`
 - EN/FR i18n updated for the module-manager row-update success copy.
 
+## Legacy cleanup follow-up result
+
+- D-021 records the final Phase 5 cleanup policy: legacy task/spec/QA entrypoints fail fast and point users to BMad planning and sprint workflows instead of falling back to the removed native orchestration surface.
+- `src/main/agent/agent-manager.ts` now rejects `startSpecCreation()`, `startTaskExecution()`, and `startQAProcess()` before worker startup. `restartTask()` returns `false` and does not kill, spawn, or restart a worker.
+- `src/main/agent/agent-manager-legacy-entrypoints.test.ts` replaces the deleted subprocess-spawn coverage for D-021 and verifies each legacy entrypoint fails fast without worker spawn/restart.
+- Removed the legacy prompt/orchestration/spec implementation surface: old task/spec/QA prompt files, orchestration/spec implementation files and tests, `SpawnSubagent`, `subtask-prompt-generator`, and the obsolete subprocess-spawn integration test.
+- Retained non-BMad value-adds: PR review/follow-up agents, merge resolver, changelog/insight/analysis paths, roadmap discovery, competitor analysis, and ideation.
+- Updated compile-time references that still pointed at deleted legacy assets: retained agent type lists, prompt-loader marker checks, worker/session paths, MCP/tool registry tests, and prompt path consumers now use retained BMad Studio assets instead of deleted `planner.md`/legacy agents.
+
 ## Tests
 
-- `npm run typecheck` — passing.
+- `npm run typecheck` — passed.
 - `npx vitest run src/main/ai/bmad/__tests__/ src/shared/types/__tests__/ src/renderer/stores/__tests__/bmad-store.test.ts src/renderer/components/bmad/__tests__/ --no-file-parallelism` — **27 files / 417 passed / 4 skipped**.
-- `npm run lint` — exits 0 with the existing warning baseline.
+- `npx vitest run src/main/agent/agent-manager-legacy-entrypoints.test.ts src/main/ai/config/__tests__/agent-configs.test.ts src/main/ai/tools/__tests__/registry.test.ts src/main/ai/mcp/__tests__/client.test.ts src/main/ai/agent/__tests__/executor.test.ts src/main/ai/agent/__tests__/worker-bridge.test.ts src/main/ai/client/__tests__/factory.test.ts src/main/ai/session/__tests__/runner.test.ts src/main/ai/memory/__tests__/types.test.ts --no-file-parallelism` — **9 files / 145 passed**.
+- `npx biome check --write <modified Phase 5 cleanup source files>` — exited 0; checked 27 files; no fixes applied; 14 warnings.
+- `npm run lint` — exited 0 with the existing warning baseline: **873 warnings / 6 infos**.
 
 `npm test` and `npm run test:e2e` were not run in this pass. Full `npm test` still has the pre-existing `github-error-parser.test.ts` hardcoded-date failure documented in Phases 1-4.
 
@@ -49,6 +60,7 @@
 - D-018 — Phase 5 settings surfaces reuse existing BMad IPC instead of adding a parallel settings store.
 - D-019 — Brownfield migrator uses a completion marker for one-shot behavior.
 - D-020 — Module Manager treats `--modules` as the exact kept module set.
+- D-021 — Legacy task/spec/QA entrypoints fail fast after Phase 5 cleanup.
 
 ## Smoke test result
 
@@ -56,12 +68,12 @@ Synthetic migration fixture backs up `.auto-claude/`, writes a migrated product 
 
 ## Known issues / follow-ups
 
-- Full deletion of the legacy orchestration/source prompt tree is not complete in this pass. It is explicitly scoped as a separate Phase 5 follow-up because the old `AgentManager` still routes legacy task entrypoints through the old agent types and prompt loader.
 - Manual packaged-build smoke on macOS/Windows/Linux is still outstanding.
+- PR conflict resolution / merge-up from `develop` is not part of this cleanup pass.
 
-### Legacy cleanup follow-up scope
+### Legacy cleanup follow-up scope (completed)
 
-Replace or remove the legacy task/spec/QA entrypoints first, then delete the old implementation surface in one commit. Exact files to address:
+Replaced or removed the legacy task/spec/QA entrypoints first, then deleted the old implementation surface in one commit. Exact files addressed:
 
 **Runtime entrypoints / type surfaces**
 - `apps/desktop/src/main/agent/agent-manager.ts`

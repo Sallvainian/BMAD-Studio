@@ -11,7 +11,7 @@ import {
   WEB_TOOLS,
   CONTEXT7_TOOLS,
   LINEAR_TOOLS,
-  MEMORY_MCP_TOOLS, GRAPHITI_MCP_TOOLS,
+  MEMORY_MCP_TOOLS,
   PUPPETEER_TOOLS,
   ELECTRON_TOOLS,
   type AgentType,
@@ -76,14 +76,13 @@ describe('tool constants', () => {
 
 describe('AGENT_CONFIGS (registry)', () => {
   it('should have all expected agent types', () => {
-    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(26);
+    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(19);
   });
 
   it('should match tool assignments between config and registry', () => {
-    // Coder should have read + write + web tools
-    const coderConfig = AGENT_CONFIGS.coder;
+    const analysisConfig = AGENT_CONFIGS.analysis;
     for (const tool of [...BASE_READ_TOOLS, ...BASE_WRITE_TOOLS, ...WEB_TOOLS]) {
-      expect(coderConfig.tools).toContain(tool);
+      expect(analysisConfig.tools).toContain(tool);
     }
   });
 });
@@ -124,21 +123,18 @@ describe('ToolRegistry', () => {
 
     const context = createMockContext();
 
-    // spec_critic gets SPEC_TOOLS (Read, Glob, Grep, Write, WebFetch, WebSearch) — no Edit or Bash
-    const criticTools = registry.getToolsForAgent('spec_critic', context);
-    expect(Object.keys(criticTools)).toEqual(
+    const specialistTools = registry.getToolsForAgent('pr_security_specialist', context);
+    expect(Object.keys(specialistTools)).toEqual(
       expect.arrayContaining([
         ...BASE_READ_TOOLS,
-        'Write',
-        ...WEB_TOOLS,
       ]),
     );
-    expect(Object.keys(criticTools)).not.toContain('Edit');
-    expect(Object.keys(criticTools)).not.toContain('Bash');
+    expect(Object.keys(specialistTools)).not.toContain('Write');
+    expect(Object.keys(specialistTools)).not.toContain('Edit');
+    expect(Object.keys(specialistTools)).not.toContain('Bash');
 
-    // coder gets everything
-    const coderTools = registry.getToolsForAgent('coder', context);
-    expect(Object.keys(coderTools)).toEqual(
+    const analysisTools = registry.getToolsForAgent('analysis', context);
+    expect(Object.keys(analysisTools)).toEqual(
       expect.arrayContaining([
         ...BASE_READ_TOOLS,
         ...BASE_WRITE_TOOLS,
@@ -153,7 +149,7 @@ describe('ToolRegistry', () => {
     registry.registerTool('Read', mockTool);
 
     const context = createMockContext();
-    registry.getToolsForAgent('spec_critic', context);
+    registry.getToolsForAgent('analysis', context);
 
     expect(mockTool.bind).toHaveBeenCalledWith(context);
   });
@@ -196,9 +192,9 @@ describe('getAgentConfig (registry)', () => {
 
 describe('getDefaultThinkingLevel (registry)', () => {
   it('should return correct defaults', () => {
-    expect(getDefaultThinkingLevel('coder')).toBe('low');
-    expect(getDefaultThinkingLevel('planner')).toBe('high');
-    expect(getDefaultThinkingLevel('qa_fixer')).toBe('medium');
+    expect(getDefaultThinkingLevel('analysis')).toBe('medium');
+    expect(getDefaultThinkingLevel('roadmap_discovery')).toBe('high');
+    expect(getDefaultThinkingLevel('pr_finding_validator')).toBe('medium');
   });
 });
 
@@ -208,37 +204,12 @@ describe('getDefaultThinkingLevel (registry)', () => {
 
 describe('getRequiredMcpServers (registry)', () => {
   it('should filter memory when not enabled', () => {
-    const servers = getRequiredMcpServers('coder', { memoryEnabled: false });
+    const servers = getRequiredMcpServers('analysis', { memoryEnabled: false });
     expect(servers).not.toContain('memory');
   });
 
-  it('should include memory when enabled', () => {
-    const servers = getRequiredMcpServers('coder', { memoryEnabled: true });
-    expect(servers).toContain('memory');
-  });
-
-  it('should handle browser→electron resolution via mcpConfig', () => {
-    const servers = getRequiredMcpServers('qa_reviewer', {
-      memoryEnabled: true,
-      projectCapabilities: { is_electron: true },
-      mcpConfig: { ELECTRON_MCP_ENABLED: 'true' },
-    });
-    expect(servers).not.toContain('browser');
-    expect(servers).toContain('electron');
-  });
-
-  it('should handle browser→puppeteer resolution via mcpConfig', () => {
-    const servers = getRequiredMcpServers('qa_reviewer', {
-      memoryEnabled: true,
-      projectCapabilities: { is_web_frontend: true, is_electron: false },
-      mcpConfig: { PUPPETEER_MCP_ENABLED: 'true' },
-    });
-    expect(servers).not.toContain('browser');
-    expect(servers).toContain('puppeteer');
-  });
-
   it('should respect CONTEXT7_ENABLED=false in mcpConfig', () => {
-    const servers = getRequiredMcpServers('spec_researcher', {
+    const servers = getRequiredMcpServers('analysis', {
       mcpConfig: { CONTEXT7_ENABLED: 'false' },
     });
     expect(servers).not.toContain('context7');
@@ -252,11 +223,13 @@ describe('getRequiredMcpServers (registry)', () => {
   });
 
   it('should support per-agent MCP REMOVE overrides but protect auto-claude', () => {
-    const servers = getRequiredMcpServers('coder', {
-      memoryEnabled: true,
-      mcpConfig: { AGENT_MCP_coder_REMOVE: 'auto-claude,memory' },
+    const servers = getRequiredMcpServers('analysis', {
+      mcpConfig: {
+        AGENT_MCP_analysis_ADD: 'auto-claude',
+        AGENT_MCP_analysis_REMOVE: 'auto-claude,context7',
+      },
     });
     expect(servers).toContain('auto-claude');
-    expect(servers).not.toContain('memory');
+    expect(servers).not.toContain('context7');
   });
 });

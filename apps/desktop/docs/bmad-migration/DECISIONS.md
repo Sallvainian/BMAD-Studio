@@ -732,3 +732,26 @@ This matches BMAD installer semantics and avoids accidental module removal from 
 - The UI can still expose per-row update buttons, but they run the canonical quick update path and report that the named module was refreshed through the installer.
 - Remove computes the remaining non-core module set and passes that full set to `--action update`.
 - Install preserves currently installed non-core modules and appends newly selected official modules/custom sources.
+
+---
+
+### D-021: Legacy task/spec/QA entrypoints fail fast after Phase 5 cleanup
+
+**Date:** 2026-05-01
+**Phase:** 5
+**Status:** Resolved
+**Author:** GPT-5.5
+
+**Context:**
+The Phase 5 cleanup deletes the old prompt files, `SpawnSubagent`, the procedural orchestration layer, and `src/main/ai/spec/`. Existing IPC handlers can still call `AgentManager.startSpecCreation()`, `startTaskExecution()`, or `startQAProcess()` until Phase 6 removes or rewires the old task UI.
+
+**Decision:**
+Keep those three methods as compatibility stubs that emit a clear BMad migration error and do not spawn a worker. Startup recovery and profile-swap restart for the legacy `.auto-claude` pipeline are also no-ops.
+
+**Rationale:**
+This makes the deleted surface impossible to execute while preserving current IPC/type compatibility. It also avoids starting Phase 6 UI rewiring in the cleanup commit.
+
+**Consequences:**
+- Old task/spec/QA buttons fail safely instead of reaching deleted prompts or agent types.
+- BMad runtime behavior remains on the `_bmad/` and `_bmad-output/` filesystem contract.
+- Phase 6 can remove or reroute the old UI/IPC calls without needing to carry the orchestration code.

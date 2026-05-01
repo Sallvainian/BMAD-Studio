@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 import { AUTO_BUILD_PATHS, DEFAULT_CHANGELOG_PATH } from '../../shared/constants';
 import { getToolPath, getToolInfo } from '../cli-tool-manager';
+import { PROMPTS_DIR_MARKER_FILE } from '../ai/prompts/prompt-loader';
 import type {
   ChangelogTask,
   TaskSpecContent,
@@ -108,7 +109,7 @@ export class ChangelogService extends EventEmitter {
     ];
 
     for (const p of possiblePaths) {
-      if (existsSync(p) && existsSync(path.join(p, 'planner.md'))) {
+      if (existsSync(p) && existsSync(path.join(p, PROMPTS_DIR_MARKER_FILE))) {
         return p;
       }
     }

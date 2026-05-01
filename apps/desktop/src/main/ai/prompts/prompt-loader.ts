@@ -20,19 +20,22 @@ import type { ProjectCapabilities, PromptContext, PromptValidationResult } from 
 // Expected prompt files (used for startup validation)
 // =============================================================================
 
+export const PROMPTS_DIR_MARKER_FILE = 'insight_extractor.md';
+
 const EXPECTED_PROMPT_FILES = [
-  'planner.md',
-  'coder.md',
-  'coder_recovery.md',
-  'followup_planner.md',
-  'qa_reviewer.md',
-  'qa_fixer.md',
-  'spec_gatherer.md',
-  'spec_researcher.md',
-  'spec_writer.md',
-  'spec_critic.md',
-  'complexity_assessor.md',
-  'validation_fixer.md',
+  'insight_extractor.md',
+  'roadmap_discovery.md',
+  'roadmap_features.md',
+  'competitor_analysis.md',
+  'ideation_code_improvements.md',
+  'ideation_code_quality.md',
+  'ideation_documentation.md',
+  'ideation_performance.md',
+  'ideation_security.md',
+  'ideation_ui_ux.md',
+  'github/pr_reviewer.md',
+  'github/pr_parallel_orchestrator.md',
+  'github/pr_finding_validator.md',
 ] as const;
 
 // =============================================================================
@@ -85,7 +88,7 @@ export function resolvePromptsDir(): string {
   ];
 
   for (const candidate of candidateBases) {
-    if (existsSync(join(candidate, 'planner.md'))) {
+    if (existsSync(join(candidate, PROMPTS_DIR_MARKER_FILE))) {
       _resolvedPromptsDir = candidate;
       return candidate;
     }

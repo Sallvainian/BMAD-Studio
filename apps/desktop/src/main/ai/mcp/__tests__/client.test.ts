@@ -205,7 +205,7 @@ describe('createMcpClientsForAgent', () => {
       .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient)
       .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient);
 
-    const clients = await createMcpClientsForAgent('coder');
+    const clients = await createMcpClientsForAgent('analysis');
 
     expect(clients).toHaveLength(2);
     expect(clients[0].serverId).toBe('context7');
@@ -224,7 +224,7 @@ describe('createMcpClientsForAgent', () => {
       .mockResolvedValueOnce(makeMockMcpInstance() as unknown as MCPClient)
       .mockRejectedValueOnce(new Error('connection refused'));
 
-    const clients = await createMcpClientsForAgent('coder');
+    const clients = await createMcpClientsForAgent('analysis');
 
     // Only the successful client should be returned
     expect(clients).toHaveLength(1);
@@ -236,9 +236,9 @@ describe('createMcpClientsForAgent', () => {
     mockResolveMcpServers.mockReturnValueOnce([]);
 
     const resolveOptions = { electronMcpEnabled: true };
-    await createMcpClientsForAgent('qa_reviewer', resolveOptions as unknown as McpServerResolveOptions);
+    await createMcpClientsForAgent('analysis', resolveOptions as unknown as McpServerResolveOptions);
 
-    expect(mockGetRequiredMcpServers).toHaveBeenCalledWith('qa_reviewer', resolveOptions);
+    expect(mockGetRequiredMcpServers).toHaveBeenCalledWith('analysis', resolveOptions);
   });
 });
 

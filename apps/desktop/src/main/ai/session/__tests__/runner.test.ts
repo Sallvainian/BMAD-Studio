@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { SessionConfig, SessionResult, StreamEvent } from '../types';
+import type { SessionConfig, StreamEvent } from '../types';
 
 // =============================================================================
 // Mock AI SDK
@@ -15,7 +15,6 @@ vi.mock('ai', () => ({
 
 // Import after mocking
 import { runAgentSession } from '../runner';
-import type { RunnerOptions } from '../runner';
 
 // =============================================================================
 // Helpers
@@ -23,7 +22,7 @@ import type { RunnerOptions } from '../runner';
 
 function createMockConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
-    agentType: 'coder',
+    agentType: 'analysis',
     model: {} as SessionConfig['model'],
     systemPrompt: 'You are a helpful assistant.',
     initialMessages: [{ role: 'user', content: 'Hello' }],

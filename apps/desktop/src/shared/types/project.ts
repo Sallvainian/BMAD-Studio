@@ -379,7 +379,7 @@ export interface AgentMcpOverride {
 
 /**
  * Map of agent type to their MCP overrides.
- * Agent types match backend AGENT_CONFIGS keys (e.g., 'planner', 'coder', 'qa_reviewer')
+ * Agent types match backend AGENT_CONFIGS keys (e.g., 'analysis', 'pr_reviewer')
  */
 export interface AgentMcpOverrides {
   [agentType: string]: AgentMcpOverride;

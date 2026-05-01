@@ -60,7 +60,6 @@ export {
 } from './insight-extractor.output';
 
 import type { ZodSchema } from 'zod';
-import { ComplexityAssessmentOutputSchema } from './complexity-assessment.output';
 
 /**
  * Get the appropriate output schema for an agent type when using structured output.
@@ -69,8 +68,6 @@ import { ComplexityAssessmentOutputSchema } from './complexity-assessment.output
  */
 export function getOutputSchemaForAgent(agentType: string): ZodSchema | undefined {
   switch (agentType) {
-    case 'complexity_assessor':
-      return ComplexityAssessmentOutputSchema;
     // qa_signoff is read from file after QA session — not returned inline
     // implementation_plan is written via Write tool — not returned inline
     default:

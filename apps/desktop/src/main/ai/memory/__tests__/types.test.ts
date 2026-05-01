@@ -9,15 +9,9 @@ import {
   type Memory,
   type MemoryType,
   type MemorySource,
-  type MemoryScope,
   type UniversalPhase,
   type WorkUnitRef,
-  type MemoryRelation,
-  type MemorySearchFilters,
   type MemoryRecordEntry,
-  type MemoryCandidate,
-  type AcuteCandidate,
-  type SignalType,
   type SessionOutcome,
   type SessionType,
 } from '../types';
@@ -59,10 +53,7 @@ describe('nativePlugin', () => {
 
   it('getRelayTransitions returns expected transitions', () => {
     const transitions = nativePlugin.getRelayTransitions();
-    expect(transitions).toHaveLength(3);
-    expect(transitions[0]).toMatchObject({ from: 'planner', to: 'coder' });
-    expect(transitions[1]).toMatchObject({ from: 'coder', to: 'qa_reviewer' });
-    expect(transitions[2]).toMatchObject({ from: 'qa_reviewer', to: 'qa_fixer' });
+    expect(transitions).toEqual([]);
   });
 });
 

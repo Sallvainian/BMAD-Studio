@@ -26,6 +26,7 @@ import { config } from 'dotenv';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { PROMPTS_DIR_MARKER_FILE } from './ai/prompts/prompt-loader';
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -450,20 +451,20 @@ app.whenReady().then(() => {
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
 
-    // Validate and migrate autoBuildPath - must contain planner.md (prompts directory)
+    // Validate and migrate autoBuildPath - must contain the prompts directory marker.
     // Uses EAFP pattern (try/catch with accessSync) instead of existsSync to avoid TOCTOU race conditions
     let validAutoBuildPath = settings.autoBuildPath;
     if (validAutoBuildPath) {
-      const plannerMdPath = join(validAutoBuildPath, 'planner.md');
-      let plannerExists = false;
+      const markerPath = join(validAutoBuildPath, PROMPTS_DIR_MARKER_FILE);
+      let markerExists = false;
       try {
-        accessSync(plannerMdPath);
-        plannerExists = true;
+        accessSync(markerPath);
+        markerExists = true;
       } catch {
         // File doesn't exist or isn't accessible
       }
 
-      if (!plannerExists) {
+      if (!markerExists) {
         // Migration: Try to fix stale paths from old project structure
         // Old structure: /path/to/project/auto-claude or apps/backend
         // New structure: /path/to/project/apps/desktop/prompts
@@ -473,7 +474,7 @@ app.whenReady().then(() => {
           join(validAutoBuildPath.replace(/[/\\]backend[/\\]*$/, ''), 'desktop', 'prompts'),
         ];
         for (const correctedPath of possibleCorrections) {
-          const correctedPlannerPath = join(correctedPath, 'planner.md');
+          const correctedPlannerPath = join(correctedPath, PROMPTS_DIR_MARKER_FILE);
           let correctedPathExists = false;
           try {
             accessSync(correctedPlannerPath);
@@ -500,7 +501,7 @@ app.whenReady().then(() => {
         }
 
         if (!migrated) {
-          console.warn('[main] Configured autoBuildPath is invalid (missing planner.md), will use auto-detection:', validAutoBuildPath);
+          console.warn(`[main] Configured autoBuildPath is invalid (missing ${PROMPTS_DIR_MARKER_FILE}), will use auto-detection:`, validAutoBuildPath);
           validAutoBuildPath = undefined; // Let auto-detection find the correct path
 
           // Clear the stale setting so this warning doesn't repeat every startup
