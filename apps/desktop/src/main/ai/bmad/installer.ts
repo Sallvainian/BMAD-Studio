@@ -212,7 +212,7 @@ export async function runInstaller(options: RunInstallerOptions): Promise<BmadIn
         reject(
           new InstallerError(
             'INSTALLER_TIMEOUT',
-            `installer aborted${signal ? ` (${signal})` : ''}`,
+            `installer aborted (${signal})`,
           ),
         );
         return;

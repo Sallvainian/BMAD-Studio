@@ -80,17 +80,23 @@ skipUnlessEnabled('orchestrator smoke (BMad Method track) — runs against the r
 
     const planningDir = path.join(REFERENCE_INSTALL, '_bmad-output', 'planning-artifacts');
     const fakePrd = path.join(planningDir, 'prd.md');
-    let createdDir = false;
+    let createdDir: string | undefined;
     let createdFile = false;
 
     try {
-      if (!existsSync(planningDir)) {
-        await fs.mkdir(planningDir, { recursive: true });
-        createdDir = true;
-      }
-      if (!existsSync(fakePrd)) {
-        await fs.writeFile(fakePrd, '# fake PRD for smoke test\n', 'utf-8');
+      createdDir = await fs.mkdir(planningDir, { recursive: true });
+      try {
+        const file = await fs.open(fakePrd, 'wx');
+        try {
+          await file.writeFile('# fake PRD for smoke test\n', 'utf-8');
+        } finally {
+          await file.close();
+        }
         createdFile = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
+        }
       }
 
       const result = await computeOrchestratorState({

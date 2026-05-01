@@ -12,7 +12,7 @@
  *     npm and takes ~10s).
  */
 
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -251,8 +251,6 @@ describe('runInstaller (live integration)', () => {
 
         // Sanity check the produced manifest.
         const manifestPath = path.join(dir, '_bmad', '_config', 'manifest.yaml');
-        const manifestStat = await stat(manifestPath);
-        expect(manifestStat.isFile()).toBe(true);
         const raw = await readFile(manifestPath, 'utf-8');
         expect(raw).toMatch(/version:\s*[\d.]+/);
       } finally {
