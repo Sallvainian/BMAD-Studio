@@ -131,7 +131,6 @@ __pycache__/
 # Development
 dev/
 _bmad/
-_bmad-output/
 .claude/
 OPUS_ANALYSIS_AND_IDEAS.md
 /.github/agents
