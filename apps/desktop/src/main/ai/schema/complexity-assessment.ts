@@ -2,8 +2,7 @@
  * Complexity Assessment Schema
  * ============================
  *
- * Zod schema for validating complexity_assessment.json written by the
- * spec_gatherer agent during the spec creation pipeline.
+ * Zod schema for validating historical complexity_assessment.json artifacts.
  *
  * Handles LLM variations like:
  * - "level" instead of "complexity"

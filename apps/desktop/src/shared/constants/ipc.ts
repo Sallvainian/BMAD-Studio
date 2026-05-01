@@ -592,5 +592,59 @@ export const IPC_CHANNELS = {
   // Queue routing events (main -> renderer)
   QUEUE_PROFILE_SWAPPED: 'queue:profileSwapped',      // Task switched to different profile
   QUEUE_SESSION_CAPTURED: 'queue:sessionCaptured',    // Session ID captured from running task
-  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles' // All profiles unavailable
+  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles', // All profiles unavailable
+
+  // ─── BMad Studio (engine swap) ───────────────────────────────────────────
+  // Project + manifest discovery
+  BMAD_DETECT_PROJECT: 'bmad:detectProject',
+  BMAD_LIST_MODULES: 'bmad:listModules',
+  BMAD_LIST_WORKFLOWS: 'bmad:listWorkflows',
+  BMAD_GET_PHASE_GRAPH: 'bmad:getPhaseGraph',
+
+  // Skill loading
+  BMAD_LIST_SKILLS: 'bmad:listSkills',
+  BMAD_LOAD_SKILL: 'bmad:loadSkill',
+
+  // Customization (per-skill TOML)
+  BMAD_READ_CUSTOMIZATION: 'bmad:readCustomization',
+  BMAD_WRITE_CUSTOMIZATION: 'bmad:writeCustomization',
+
+  // Phase 5: brownfield migration
+  BMAD_DETECT_LEGACY_MIGRATION: 'bmad:detectLegacyMigration',
+  BMAD_RUN_LEGACY_MIGRATION: 'bmad:runLegacyMigration',
+
+  // Sprint status / story files
+  BMAD_READ_SPRINT_STATUS: 'bmad:readSprintStatus',
+  BMAD_READ_SPRINT_STATUS_TYPED: 'bmad:readSprintStatusTyped',  // Phase 3 (typed shape, tolerates missing)
+  BMAD_WRITE_SPRINT_STATUS: 'bmad:writeSprintStatus',          // Phase 2
+  BMAD_UPDATE_STORY_STATUS: 'bmad:updateStoryStatus',          // Phase 2 (drag-drop write)
+  BMAD_READ_STORY_FILE: 'bmad:readStoryFile',
+  BMAD_WRITE_STORY_FILE: 'bmad:writeStoryFile',                // Phase 3 (acceptance-criteria checkboxes)
+  BMAD_LIST_STORY_FILES: 'bmad:listStoryFiles',                // Phase 3 (resolve file paths for kanban)
+
+  // Installer
+  BMAD_RUN_INSTALLER: 'bmad:runInstaller',
+  BMAD_LIST_INSTALLER_OPTIONS: 'bmad:listInstallerOptions',
+
+  // File watcher (lifecycle control + main→renderer events)
+  BMAD_WATCHER_START: 'bmad:watcherStart',
+  BMAD_WATCHER_STOP: 'bmad:watcherStop',
+  BMAD_FILE_EVENT: 'bmad:fileEvent',                // Main → renderer event
+  BMAD_INSTALLER_STREAM: 'bmad:installerStream',    // Main → renderer event
+
+  // Phase 2: workflow runtime + orchestrator + help
+  BMAD_LIST_PERSONAS: 'bmad:listPersonas',
+  BMAD_LOAD_PERSONA: 'bmad:loadPersona',
+  BMAD_GET_VARIABLE_CONTEXT: 'bmad:getVariableContext',
+  BMAD_LOAD_STEP: 'bmad:loadStep',
+  BMAD_RUN_WORKFLOW: 'bmad:runWorkflow',                       // Long-running; emits stream events
+  BMAD_WORKFLOW_STREAM: 'bmad:workflowStream',                 // Main → renderer streamed chunks
+  BMAD_WORKFLOW_MENU_RESPONSE: 'bmad:workflowMenuResponse',    // Renderer → main user pick
+  BMAD_GET_HELP_RECOMMENDATION: 'bmad:getHelpRecommendation',  // Synchronous help (no model)
+  BMAD_RUN_HELP_AI: 'bmad:runHelpAI',                          // AI-augmented help
+  BMAD_GET_ORCHESTRATOR_STATE: 'bmad:getOrchestratorState',
+  BMAD_ORCHESTRATOR_EVENT: 'bmad:orchestratorEvent',           // Main → renderer
+
+  // Phase 1 dev affordance
+  BMAD_DEBUG_DUMP_SKILLS: 'bmad:debugDumpSkills'
 } as const;

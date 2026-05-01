@@ -59,7 +59,6 @@ import { buildToolRegistry } from '../../tools/build-registry';
 import { createSimpleClient, createAgentClient } from '../factory';
 import type { LanguageModel, Tool } from 'ai';
 import type { ToolContext } from '../../tools/types';
-import type { AgentClientConfig } from '../types';
 import type { ProviderAccount } from '../../../../shared/types/provider-account';
 import type { McpClientResult } from '../../mcp/types';
 import type { ToolRegistry } from '../../tools/registry';
@@ -208,8 +207,8 @@ describe('createSimpleClient', () => {
 
 describe('createAgentClient', () => {
   const baseConfig = {
-    agentType: 'coder' as const,
-    systemPrompt: 'You are a coder.',
+    agentType: 'analysis' as const,
+    systemPrompt: 'You are an analyst.',
     toolContext: baseToolContext,
     phase: 'coding' as const,
   };
@@ -220,7 +219,7 @@ describe('createAgentClient', () => {
     expect(result.model).toBe(FAKE_MODEL);
     expect(result.tools).toBeDefined();
     expect(result.mcpClients).toEqual([]);
-    expect(result.systemPrompt).toBe('You are a coder.');
+    expect(result.systemPrompt).toBe('You are an analyst.');
     expect(result.maxSteps).toBe(200);
     expect(result.thinkingLevel).toBeDefined();
     expect(typeof result.cleanup).toBe('function');
@@ -232,7 +231,7 @@ describe('createAgentClient', () => {
     const result = await createAgentClient(baseConfig);
 
     expect(result.thinkingLevel).toBe('high');
-    expect(mockGetDefaultThinkingLevel).toHaveBeenCalledWith('coder');
+    expect(mockGetDefaultThinkingLevel).toHaveBeenCalledWith('analysis');
   });
 
   it('overrides thinking level when thinkingLevel is specified', async () => {
@@ -251,7 +250,7 @@ describe('createAgentClient', () => {
 
     await createAgentClient(baseConfig);
 
-    expect(mockRegistry.getToolsForAgent).toHaveBeenCalledWith('coder', baseToolContext);
+    expect(mockRegistry.getToolsForAgent).toHaveBeenCalledWith('analysis', baseToolContext);
   });
 
   it('creates MCP clients when agent requires servers', async () => {
@@ -262,7 +261,7 @@ describe('createAgentClient', () => {
 
     const result = await createAgentClient(baseConfig);
 
-    expect(mockCreateMcpClientsForAgent).toHaveBeenCalledWith('coder', expect.any(Object));
+    expect(mockCreateMcpClientsForAgent).toHaveBeenCalledWith('analysis', expect.any(Object));
     expect(result.mcpClients).toHaveLength(1);
     expect(result.tools).toHaveProperty('ctx7_tool');
   });
@@ -275,9 +274,9 @@ describe('createAgentClient', () => {
 
   it('uses queue-based auth when queueConfig is provided', async () => {
     const queueAuth = {
-      apiKey: 'sk-queue-coder',
+      apiKey: 'sk-queue-analysis',
       source: 'profile-api-key' as const,
-      accountId: 'acc-coder',
+      accountId: 'acc-analysis',
       resolvedProvider: 'anthropic' as const,
       resolvedModelId: 'claude-sonnet-4-5-20250929',
       reasoningConfig: { type: 'none' as const },
@@ -287,7 +286,7 @@ describe('createAgentClient', () => {
     const result = await createAgentClient({
       ...baseConfig,
       queueConfig: {
-        queue: [{ id: 'acc-coder' } as unknown as ProviderAccount],
+        queue: [{ id: 'acc-analysis' } as unknown as ProviderAccount],
         requestedModel: 'claude-sonnet-4-5-20250929',
       },
     });
@@ -297,7 +296,7 @@ describe('createAgentClient', () => {
       expect.objectContaining({
         config: expect.objectContaining({
           provider: 'anthropic',
-          apiKey: 'sk-queue-coder',
+          apiKey: 'sk-queue-analysis',
         }),
         modelId: 'claude-sonnet-4-5-20250929',
       }),

@@ -61,8 +61,6 @@ const CONTEXT_WINDOW_ABORT_REASON = '__context_window_exhausted__';
 /** Agent types that should receive a convergence nudge when 75% of steps are used.
  *  These are agents that must write file-based output (verdict/report) to be useful. */
 const CONVERGENCE_NUDGE_AGENT_TYPES = new Set<string>([
-  'qa_reviewer', 'qa_fixer',
-  'spec_critic', 'spec_validation',
   'pr_reviewer', 'pr_finding_validator',
 ]);
 

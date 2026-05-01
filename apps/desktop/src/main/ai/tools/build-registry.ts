@@ -17,7 +17,6 @@ import { globTool } from './builtin/glob';
 import { grepTool } from './builtin/grep';
 import { webFetchTool } from './builtin/web-fetch';
 import { webSearchTool } from './builtin/web-search';
-import { spawnSubagentTool } from './builtin/spawn-subagent';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asDefined = (t: unknown): DefinedTool => t as DefinedTool;
@@ -35,6 +34,5 @@ export function buildToolRegistry(): ToolRegistry {
   registry.registerTool('Grep', asDefined(grepTool));
   registry.registerTool('WebFetch', asDefined(webFetchTool));
   registry.registerTool('WebSearch', asDefined(webSearchTool));
-  registry.registerTool('SpawnSubagent', asDefined(spawnSubagentTool));
   return registry;
 }

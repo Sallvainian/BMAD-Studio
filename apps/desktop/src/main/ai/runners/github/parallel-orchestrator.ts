@@ -705,7 +705,7 @@ export class ParallelOrchestratorReviewer {
 
     const systemPrompt = loadPrompt('github/pr_finding_validator');
 
-    // Build tools from pr_finding_validator config (ALL_BUILTIN_TOOLS excl SpawnSubagent)
+    // Build tools from pr_finding_validator config.
     const toolContext: ToolContext = {
       cwd: this.config.projectDir,
       projectDir: this.config.projectDir,
@@ -717,7 +717,6 @@ export class ParallelOrchestratorReviewer {
     const tools: Record<string, AITool> = {};
     const agentConfig = getAgentConfig('pr_finding_validator');
     for (const toolName of agentConfig.tools) {
-      if (toolName === 'SpawnSubagent') continue;
       const definedTool = this.registry.getTool(toolName);
       if (definedTool) {
         tools[toolName] = definedTool.bind(toolContext);

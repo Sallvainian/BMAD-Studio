@@ -19,7 +19,8 @@ import {
   Code,
   Bug,
   Terminal,
-  Users
+  Users,
+  Workflow
 } from 'lucide-react';
 
 // GitLab icon component (lucide-react doesn't have one)
@@ -90,6 +91,8 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
   { id: 'general', icon: Settings2 },
+  { id: 'bmad-customizations', icon: Workflow },
+  { id: 'bmad-modules', icon: Package },
   { id: 'linear', icon: Zap },
   { id: 'github', icon: Github },
   { id: 'gitlab', icon: GitLabIcon },
@@ -367,7 +370,16 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
             {/* Main content */}
             <div className="flex-1 overflow-hidden">
               <ScrollArea className="h-full">
-                <div className={appSection === 'terminal-fonts' ? 'p-8' : 'p-8 max-w-2xl'}>
+                <div
+                  className={
+                    appSection === 'terminal-fonts' ||
+                    (activeTopLevel === 'project' &&
+                      (projectSection === 'bmad-customizations' ||
+                        projectSection === 'bmad-modules'))
+                      ? 'p-8'
+                      : 'p-8 max-w-2xl'
+                  }
+                >
                   {renderContent()}
                 </div>
               </ScrollArea>

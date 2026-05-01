@@ -34,6 +34,7 @@ import { registerProfileHandlers } from './profile-handlers';
 import { registerScreenshotHandlers } from './screenshot-handlers';
 import { registerTerminalWorktreeIpcHandlers } from './terminal';
 import { registerCodexAuthHandlers } from './codex-auth-handlers';
+import { registerBmadHandlers } from './bmad-handlers';
 import { notificationService } from '../notification-service';
 import { setAgentManagerRef } from './utils';
 
@@ -127,6 +128,9 @@ export function setupIpcHandlers(
   // Codex OAuth authentication handlers
   registerCodexAuthHandlers();
 
+  // BMad Studio engine-swap handlers (Phase 1)
+  registerBmadHandlers({ getMainWindow });
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -155,5 +159,6 @@ export {
   registerMcpHandlers,
   registerProfileHandlers,
   registerScreenshotHandlers,
-  registerCodexAuthHandlers
+  registerCodexAuthHandlers,
+  registerBmadHandlers
 };

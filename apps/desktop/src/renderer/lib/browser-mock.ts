@@ -334,6 +334,49 @@ const browserMockAPI: ElectronAPI = {
     onQueueBlockedNoProfiles: () => () => {}
   },
 
+  // BMad Studio engine-swap API — browser stub returns INVALID_INPUT for every
+  // call so renderer code that conditionally enables BMad UI degrades gracefully
+  // outside Electron.
+  bmad: {
+    detectProject: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    listModules: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    listWorkflows: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getPhaseGraph: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    listSkills: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    loadSkill: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    readCustomization: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    writeCustomization: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    detectLegacyMigration: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runLegacyMigration: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    readSprintStatus: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    readStoryFile: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    readSprintStatusTyped: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    writeStoryFile: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    listStoryFiles: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runInstaller: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    listInstallerOptions: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    startWatcher: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    stopWatcher: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    onFileEvent: () => () => {},
+    onInstallerStream: () => () => {},
+    debugDumpSkills: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    // ─── Phase 2 ──────────────────────────────────────────────────────────
+    listPersonas: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    loadPersona: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getVariableContext: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    loadStep: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    writeSprintStatus: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    updateStoryStatus: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getHelpRecommendation: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    getOrchestratorState: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runWorkflow: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    runHelpAI: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    respondToWorkflowMenu: async () => ({ success: false, error: { code: 'INVALID_INPUT', message: 'BMad API unavailable in browser' } }),
+    onWorkflowStream: () => () => {},
+    onWorkflowMenuRequest: () => () => {},
+    onOrchestratorEvent: () => () => {}
+  },
+
   // Claude Code Operations
   checkClaudeCodeVersion: async () => ({
     success: true,

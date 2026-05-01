@@ -40,7 +40,7 @@ function createConfig(overrides: Partial<AgentExecutorConfig> = {}): AgentExecut
     projectId: 'proj-456',
     processType: 'task-execution',
     session: {
-      agentType: 'coder',
+      agentType: 'analysis',
       systemPrompt: 'test',
       initialMessages: [{ role: 'user', content: 'hello' }],
       maxSteps: 10,

@@ -6,7 +6,7 @@
  * Ported from apps/desktop/src/main/ai/client/ (originally from Python core/client).
  *
  * - `createAgentClient()` — Full client with tools, MCP, and security.
- *   Used by planner, coder, QA, and other pipeline agents.
+ *   Used by retained utility, analysis, roadmap, and GitHub agents.
  *
  * - `createSimpleClient()` — Lightweight client for utility runners
  *   (commit messages, PR templates, analysis tasks).
@@ -59,10 +59,10 @@ const DEFAULT_SIMPLE_MAX_STEPS = 1;
  * @example
  * ```ts
  * const client = await createAgentClient({
- *   agentType: 'coder',
- *   systemPrompt: coderPrompt,
+ *   agentType: 'analysis',
+ *   systemPrompt: analysisPrompt,
  *   toolContext: { cwd, projectDir, specDir, securityProfile },
- *   phase: 'coding',
+ *   phase: 'analysis',
  * });
  *
  * try {

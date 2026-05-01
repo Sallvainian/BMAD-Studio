@@ -1,6 +1,6 @@
-# Auto Claude UI - Frontend
+# BMad Studio Desktop
 
-A modern Electron + React desktop application for the Auto Claude autonomous coding framework.
+A modern Electron + React desktop application for driving the BMad Method from a GUI. BMAD remains installed by `npx bmad-method install`; this app reads `_bmad/`, writes `_bmad-output/`, and adds BMad-Help, persona chat, module management, customization editing, and a sprint Kanban.
 
 ## Prerequisites
 
@@ -69,12 +69,13 @@ npm audit
 
 ## Architecture
 
-This project follows a **feature-based architecture** for better maintainability and scalability.
+This project follows a **feature-based architecture**. The BMad runtime lives in `src/main/ai/bmad/`; renderer surfaces live in `src/renderer/components/bmad/`.
 
 ```
 src/
 ├── main/                    # Electron main process
-│   ├── agent/               # Agent management
+│   ├── ai/bmad/             # BMad installer, manifests, runtime, migration
+│   ├── agent/               # Preserved host/session management
 │   ├── changelog/           # Changelog generation
 │   ├── claude-profile/      # Claude profile management
 │   ├── insights/            # Code analysis

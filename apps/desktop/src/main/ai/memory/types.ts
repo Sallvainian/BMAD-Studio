@@ -271,11 +271,7 @@ export const nativePlugin: MemoryMethodologyPlugin = {
       ? `Spec ${ctx.specNumber} / Subtask ${ctx.subtaskId}`
       : `Spec ${ctx.specNumber}`,
   }),
-  getRelayTransitions: (): RelayTransition[] => [
-    { from: 'planner', to: 'coder' },
-    { from: 'coder', to: 'qa_reviewer' },
-    { from: 'qa_reviewer', to: 'qa_fixer', filter: { types: ['error_pattern', 'requirement'] } },
-  ],
+  getRelayTransitions: (): RelayTransition[] => [],
   formatRelayContext: (_memories: Memory[], _toStage: string): string => '',
   extractWorkState: async (_sessionOutput: string): Promise<Record<string, unknown>> => ({}),
   formatWorkStateContext: (_state: Record<string, unknown>): string => '',

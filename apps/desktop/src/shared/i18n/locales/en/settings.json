@@ -357,6 +357,14 @@
       "useClaudeMd": "Use CLAUDE.md",
       "useClaudeMdDescription": "Include CLAUDE.md instructions in agent context"
     },
+    "bmadCustomizations": {
+      "title": "BMad Customizations",
+      "description": "Edit team and personal TOML overrides"
+    },
+    "bmadModules": {
+      "title": "BMad Modules",
+      "description": "Install, update, and remove BMad modules"
+    },
     "claude": {
       "title": "Claude Auth",
       "description": "Claude authentication"

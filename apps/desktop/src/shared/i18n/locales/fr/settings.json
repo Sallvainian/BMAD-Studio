@@ -357,6 +357,14 @@
       "useClaudeMd": "Utiliser CLAUDE.md",
       "useClaudeMdDescription": "Inclure les instructions CLAUDE.md dans le contexte de l'agent"
     },
+    "bmadCustomizations": {
+      "title": "Personnalisations BMad",
+      "description": "Modifier les surcharges TOML d'équipe et personnelles"
+    },
+    "bmadModules": {
+      "title": "Modules BMad",
+      "description": "Installer, mettre à jour et supprimer des modules BMad"
+    },
     "claude": {
       "title": "Auth Claude",
       "description": "Authentification Claude"

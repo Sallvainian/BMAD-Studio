@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { app } from 'electron';
+import { PROMPTS_DIR_MARKER_FILE } from '../ai/prompts/prompt-loader';
 
 /**
  * Get the path to the bundled prompts directory
@@ -26,8 +27,8 @@ export function getBundledSourcePath(): string {
   ];
 
   for (const p of possiblePaths) {
-    // Validate it's a proper prompts directory (must have planner.md)
-    const markerPath = path.join(p, 'planner.md');
+    // Validate it's a proper prompts directory.
+    const markerPath = path.join(p, PROMPTS_DIR_MARKER_FILE);
     if (existsSync(p) && existsSync(markerPath)) {
       return p;
     }
@@ -35,7 +36,7 @@ export function getBundledSourcePath(): string {
 
   // Fallback - warn if this path is also invalid
   const fallback = path.join(app.getAppPath(), '..', 'prompts');
-  const fallbackMarker = path.join(fallback, 'planner.md');
+  const fallbackMarker = path.join(fallback, PROMPTS_DIR_MARKER_FILE);
   if (!existsSync(fallbackMarker)) {
     console.warn(
       `[path-resolver] No valid prompts directory found in development paths, fallback "${fallback}" may be invalid`
@@ -61,14 +62,14 @@ export function getEffectiveSourcePath(): string {
     if (existsSync(settingsPath)) {
       const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
       if (settings.autoBuildPath && existsSync(settings.autoBuildPath)) {
-        // Validate it's a proper prompts source (must have planner.md)
-        const markerPath = path.join(settings.autoBuildPath, 'planner.md');
+        // Validate it's a proper prompts source.
+        const markerPath = path.join(settings.autoBuildPath, PROMPTS_DIR_MARKER_FILE);
         if (existsSync(markerPath)) {
           return settings.autoBuildPath;
         }
         // Invalid path - log warning and fall through to auto-detection
         console.warn(
-          `[path-resolver] Configured autoBuildPath "${settings.autoBuildPath}" is missing planner.md, falling back to bundled source`
+          `[path-resolver] Configured autoBuildPath "${settings.autoBuildPath}" is missing ${PROMPTS_DIR_MARKER_FILE}, falling back to bundled source`
         );
       }
     }
@@ -79,7 +80,7 @@ export function getEffectiveSourcePath(): string {
   if (app.isPackaged) {
     // Check for user-updated source first
     const overridePath = path.join(app.getPath('userData'), 'prompts-source');
-    const overrideMarker = path.join(overridePath, 'planner.md');
+    const overrideMarker = path.join(overridePath, PROMPTS_DIR_MARKER_FILE);
     if (existsSync(overridePath) && existsSync(overrideMarker)) {
       return overridePath;
     }

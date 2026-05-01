@@ -32,20 +32,6 @@ const WEB_TOOLS = ['WebFetch', 'WebSearch'] as const;
 /** All builtin tools — given to most agents since security is enforced at the tool execution layer */
 const ALL_BUILTIN_TOOLS = [...BASE_READ_TOOLS, ...BASE_WRITE_TOOLS, ...WEB_TOOLS] as const;
 
-/** Spec pipeline tools — read codebase + write to spec dir + web research. No Edit, no Bash. */
-const SPEC_TOOLS = [...BASE_READ_TOOLS, 'Write', ...WEB_TOOLS] as const;
-
-// =============================================================================
-// Auto-Claude MCP Tools (Custom build management)
-// =============================================================================
-
-const TOOL_UPDATE_SUBTASK_STATUS = 'mcp__auto-claude__update_subtask_status';
-const TOOL_GET_BUILD_PROGRESS = 'mcp__auto-claude__get_build_progress';
-const TOOL_RECORD_DISCOVERY = 'mcp__auto-claude__record_discovery';
-const TOOL_RECORD_GOTCHA = 'mcp__auto-claude__record_gotcha';
-const TOOL_GET_SESSION_CONTEXT = 'mcp__auto-claude__get_session_context';
-const TOOL_UPDATE_QA_STATUS = 'mcp__auto-claude__update_qa_status';
-
 // =============================================================================
 // External MCP Tools
 // =============================================================================
@@ -89,7 +75,7 @@ export const MEMORY_MCP_TOOLS = [
 export const GRAPHITI_MCP_TOOLS = MEMORY_MCP_TOOLS;
 
 // =============================================================================
-// Browser Automation MCP Tools (QA agents only)
+// Browser Automation MCP Tools
 // =============================================================================
 
 /** Puppeteer MCP tools for web browser automation */
@@ -118,20 +104,6 @@ export const ELECTRON_TOOLS = [
 
 /** All known agent types */
 export type AgentType =
-  | 'spec_gatherer'
-  | 'spec_researcher'
-  | 'spec_writer'
-  | 'spec_critic'
-  | 'spec_discovery'
-  | 'spec_context'
-  | 'spec_validation'
-  | 'spec_compaction'
-  | 'spec_orchestrator'
-  | 'build_orchestrator'
-  | 'planner'
-  | 'coder'
-  | 'qa_reviewer'
-  | 'qa_fixer'
   | 'insights'
   | 'merge_resolver'
   | 'commit_message'
@@ -175,144 +147,6 @@ export interface AgentConfig {
  * See apps/desktop/src/main/ai/config/agent-configs.ts for the full TypeScript implementation.
  */
 export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
-  // ═══════════════════════════════════════════════════════════════════════
-  // SPEC CREATION PHASES (Minimal tools, fast startup)
-  // ═══════════════════════════════════════════════════════════════════════
-  spec_gatherer: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'medium',
-  },
-  spec_researcher: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'medium',
-  },
-  spec_writer: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'high',
-  },
-  spec_critic: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'high',
-  },
-  spec_discovery: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'medium',
-  },
-  spec_context: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'medium',
-  },
-  spec_validation: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'high',
-  },
-  spec_compaction: {
-    tools: [...SPEC_TOOLS],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'medium',
-  },
-
-  /**
-   * Spec Orchestrator — entry point for the full spec creation pipeline.
-   * Drives spec_gatherer → spec_researcher → spec_writer → spec_critic pipeline.
-   * Needs full tool access to read/write spec files and research documentation.
-   */
-  spec_orchestrator: {
-    tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
-    mcpServers: ['context7'],
-    autoClaudeTools: [],
-    thinkingDefault: 'high',
-  },
-
-  /**
-   * Build Orchestrator — entry point for the full build pipeline.
-   * Drives planner → coder → qa_reviewer → qa_fixer pipeline.
-   * Needs full tool access with MCP integrations.
-   */
-  build_orchestrator: {
-    tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
-    autoClaudeTools: [
-      TOOL_GET_BUILD_PROGRESS,
-      TOOL_GET_SESSION_CONTEXT,
-      TOOL_RECORD_DISCOVERY,
-      TOOL_UPDATE_SUBTASK_STATUS,
-    ],
-    thinkingDefault: 'high',
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // BUILD PHASES (Full tools + memory)
-  // Note: "linear" is conditional on project setting "update_linear_with_tasks"
-  // ═══════════════════════════════════════════════════════════════════════
-  planner: {
-    tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
-    autoClaudeTools: [
-      TOOL_GET_BUILD_PROGRESS,
-      TOOL_GET_SESSION_CONTEXT,
-      TOOL_RECORD_DISCOVERY,
-    ],
-    thinkingDefault: 'high',
-  },
-  coder: {
-    tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
-    autoClaudeTools: [
-      TOOL_UPDATE_SUBTASK_STATUS,
-      TOOL_GET_BUILD_PROGRESS,
-      TOOL_RECORD_DISCOVERY,
-      TOOL_RECORD_GOTCHA,
-      TOOL_GET_SESSION_CONTEXT,
-    ],
-    thinkingDefault: 'low',
-  },
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // QA PHASES (Read + test + browser + memory)
-  // ═══════════════════════════════════════════════════════════════════════
-  qa_reviewer: {
-    tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
-    mcpServersOptional: ['linear'],
-    autoClaudeTools: [
-      TOOL_GET_BUILD_PROGRESS,
-      TOOL_UPDATE_QA_STATUS,
-      TOOL_GET_SESSION_CONTEXT,
-    ],
-    thinkingDefault: 'high',
-  },
-  qa_fixer: {
-    tools: [...ALL_BUILTIN_TOOLS],
-    mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
-    mcpServersOptional: ['linear'],
-    autoClaudeTools: [
-      TOOL_UPDATE_SUBTASK_STATUS,
-      TOOL_GET_BUILD_PROGRESS,
-      TOOL_UPDATE_QA_STATUS,
-      TOOL_RECORD_GOTCHA,
-    ],
-    thinkingDefault: 'medium',
-  },
-
   // ═══════════════════════════════════════════════════════════════════════
   // UTILITY PHASES (Minimal, no MCP)
   // ═══════════════════════════════════════════════════════════════════════
@@ -447,7 +281,7 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 /**
  * Get full configuration for an agent type.
  *
- * @param agentType - The agent type identifier (e.g., 'coder', 'planner', 'qa_reviewer')
+ * @param agentType - The agent type identifier (e.g., 'roadmap_discovery', 'pr_reviewer')
  * @returns Configuration for the agent type
  * @throws Error if agentType is not found in AGENT_CONFIGS
  */
