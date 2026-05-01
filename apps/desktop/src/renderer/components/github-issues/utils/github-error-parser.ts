@@ -94,7 +94,8 @@ const NETWORK_PATTERNS = [
  * - "X-Accepted-OAuth-Scopes: repo"
  * Stops at sentence boundaries or non-scope characters
  */
-const REQUIRED_SCOPES_PATTERN = /(?:requires?[:\s]*|missing\s*scopes?[:\s]*|X-Accepted-OAuth-Scopes[:\s]*)([a-z0-9_:]+(?:[,\s]+[a-z0-9_:]+)*)/i;
+const REQUIRED_SCOPES_PATTERN =
+  /(?:requires?[:\s]*|missing\s*scopes?[:\s]*|X-Accepted-OAuth-Scopes[:\s]*)([a-z0-9_:]+(?:[,\s]+[a-z0-9_:]+)*)/i;
 
 /**
  * Pattern to extract HTTP status code from error messages.
@@ -138,7 +139,8 @@ function extractRateLimitResetTime(error: string): Date | undefined {
   }
 
   // Then try absolute timestamp pattern
-  const absolutePattern = /(?:reset[s]?\s*at[:\s]*|X-RateLimit-Reset[:\s]*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z?|\d+)/i;
+  const absolutePattern =
+    /(?:reset[s]?\s*at[:\s]*|X-RateLimit-Reset[:\s]*)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?|\d+)/i;
   const match = error.match(absolutePattern);
   if (!match) {
     return undefined;
@@ -183,8 +185,8 @@ function extractRequiredScopes(error: string): string[] | undefined {
 
   const scopes = match[1]
     .split(/[,\s]+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   return scopes.length > 0 ? scopes : undefined;
 }
@@ -210,7 +212,7 @@ function extractStatusCode(error: string): number | undefined {
  * Check if the error matches any of the given patterns.
  */
 function matchesPatterns(error: string, patterns: RegExp[]): boolean {
-  return patterns.some(pattern => pattern.test(error));
+  return patterns.some((pattern) => pattern.test(error));
 }
 
 /**

@@ -11,6 +11,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
 import * as os from 'os';
+import { fileURLToPath } from 'url';
 
 // Global Navigator declaration for clipboard
 declare global {
@@ -24,6 +25,8 @@ declare global {
 
 // Test data directory
 const TEST_DATA_DIR = path.join(os.tmpdir(), 'auto-claude-terminal-e2e');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Determine platform for platform-specific tests
 const platform = process.platform;
@@ -79,7 +82,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     app = await electron.launch({ args: [appPath] });
 
     window = await app.firstWindow({
-      timeout: 15000
+      timeout: 15000,
     });
 
     // Wait for app to be ready
@@ -106,7 +109,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
 
     // Look for terminal element - skip if not found
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     // Run a command to produce output
@@ -146,7 +149,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('all'), 'Test not applicable to this platform');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     const terminal = window.locator(terminalSelector).first();
@@ -172,7 +175,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('all'), 'Test not applicable to this platform');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     // Set clipboard content
@@ -203,7 +206,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('linux'), 'Linux-specific test');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     const terminal = window.locator(terminalSelector).first();
@@ -243,7 +246,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('linux'), 'Linux-specific test');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     // Set clipboard content
@@ -277,7 +280,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('all'), 'Test not applicable to this platform');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     const terminal = window.locator(terminalSelector).first();
@@ -301,7 +304,7 @@ test.describe('Terminal Copy/Paste Flows', () => {
     test.skip(!shouldRunForPlatform('all'), 'Test not applicable to this platform');
 
     const terminalSelector = '.xterm';
-    const terminalExists = await window.locator(terminalSelector).count() > 0;
+    const terminalExists = (await window.locator(terminalSelector).count()) > 0;
     test.skip(!terminalExists, 'Terminal element not found');
 
     // Mock clipboard permission denial by clearing clipboard
