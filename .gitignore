@@ -130,13 +130,11 @@ dev/
 _bmad/
 _bmad-output/
 .claude/
-/docs
 OPUS_ANALYSIS_AND_IDEAS.md
 /.github/agents
 
 # Auto Claude generated files
 .security-key
-/shared_docs
 logs/security/
 Agents.md
 ENGINE_SWAP_PROMPT_LEAN.md
